@@ -3,6 +3,7 @@ puts "START"
 puts "Requires..."
 require "file"
 require "file_utils"
+require "regex"
 
 jeutoolexe = ""
 
@@ -717,10 +718,157 @@ puts duped_graphics_db
 puts "=========================="
 puts "Itemized File Actions"
 puts "=========================="
+# actor_counter is the UUID for renamed actors
+# before: ZombieMan
+# after: ZombieMan_MonsterMash_0
+actor_counter = 0
+# first step is evaluate the list of files that are in scope
+# DECORATE.raw is always going to be in scope, but any include file
+# is also going to be in scope
+file_list = Array(String).new
+
+# format is: filename, line number, replacement line
+itemized_line_replacements = Array(Tuple(String, Int32, String)).new
 duped_names_db.each_with_index do |duped_actor, duped_actor_index|
-  puts
+  puts "-------------------------------------"
+  puts "Duped Actor Name: #{duped_actor.name}"
+  puts "-------------------------------------"
+  file_path = "./Completed/" + duped_actor.wad_name + "/defs/DECORATE.raw"
+  puts " - File Path: #{file_path}"
+
+  # this is the replacement text that we will use for the duration of this loop
+  substitute_actor = "#{duped_actor.name}_MonsterMash_#{actor_counter}"
+
+  file_list = Array(String).new
+  file_list << file_path
+  puts " - Includes:"
+  File.open(file_path) do |file|
+    file.each_line do |line|
+      if line.starts_with?("#include")
+        include_file_modified = line.strip.lchop("#include ").strip('"').upcase
+        file_path = "./Completed/" + duped_actor.wad_name + "/defs/" + include_file_modified + ".raw"
+        puts " - Include file: #{file_path}"
+        file_list << file_path
+      end
+    end
+  end
+
+  file_list = file_list.uniq
+  puts "File list: #{file_list}"
+  puts "Line changes: "
+  file_list.each do |file|
+    puts "-------------"
+    puts "File: #{file}"
+    File.open(file) do |text|
+      text.each_line.with_index do |line, line_number|
+        if line.downcase.starts_with?("actor".downcase)
+          if (parts = line.strip.split(" ")).size > 1 && parts[1].downcase == duped_actor.name.downcase
+            puts "Actor Definition (#{line_number}): \"#{line}\""
+            actor_regex = "#{line.strip.split(" ")[1]}"
+            replacement_line = line.gsub(Regex.new(actor_regex), substitute_actor)
+            puts "Replacement Actor Definition: \"#{replacement_line}\""
+            itemized_line_replacement = {file, line_number + 1, replacement_line}
+            itemized_line_replacements << itemized_line_replacement
+          end
+        elsif line.downcase.includes?("\"#{duped_actor.name.downcase}\"")
+          puts "Line (#{line_number}) matches: #{line}"
+          actor_regex = "#{duped_actor.name}"
+          replacement_line = line.gsub(/#{actor_regex}/i, substitute_actor) 
+          puts "Replacement Line: #{replacement_line}"
+          itemized_line_replacement = {file, line_number + 1, replacement_line}
+          itemized_line_replacements << itemized_line_replacement
+        end
+      end
+    end
+  end
+  actor_counter += 1
+  puts "------------------------"
 end
 
+# Doomednum conflicts
+actor_counter = 0
+doomednum_counter = 14166
+
+# this will be used to check the actor line to see which field is the doomednum
+def numeric?(str : String) : Bool
+  str.to_i? != nil
+end
+
+duped_doomednum_db.each_with_index do |duped_doomednum, doomednum_index|
+  puts "-------------------------------------"
+  puts "Duped Doomednum: #{duped_doomednum.doomednum}"
+  puts "-------------------------------------"
+  file_path = "./Completed/" + duped_doomednum.wad_name + "/defs/DECORATE.raw"
+  puts " - File Path: #{file_path}"
+
+  # this is the replacement text that we will use for the duration of this loop
+  substitute_doomednum = -1
+  # this is going to start counting at 14166 which should be a nice happy starting point based on ZDoom wiki
+  while true
+    if doomednum_info.fetch(doomednum_counter, nil)
+      doomednum_counter += 1
+    else
+      substitute_doomednum = doomednum_counter
+      doomednum_counter += 1
+      puts "Substitute Doomednum Allocated: #{substitute_doomednum}"
+      # I don't think we need to track the actor numbers in this code, but we already
+      # have a database of numbers going, so pardon the jankey solution with -1, -1
+      doomednum_info[substitute_doomednum] = {-1, -1}
+      break
+    end
+  end
+
+  file_list = Array(String).new
+  file_list << file_path
+  puts " - Includes:"
+  File.open(file_path) do |file|
+    file.each_line do |line|
+      if line.starts_with?("#include")
+        include_file_modified = line.strip.lchop("#include ").strip('"').upcase
+        file_path = "./Completed/" + duped_doomednum.wad_name + "/defs/" + include_file_modified + ".raw"
+        puts " - Include file: #{file_path}"
+        file_list << file_path
+      end
+    end
+  end
+
+  file_list = file_list.uniq
+  puts "File list: #{file_list}"
+  puts "Line changes: "
+  file_list.each do |file|
+    puts "-------------"
+    puts "File: #{file}"
+    File.open(file) do |text|
+      text.each_line.with_index do |line, line_number|
+        if line.downcase.starts_with?("actor".downcase)
+          puts "Actor Line: #{line}"
+          parts = line.strip.split(/\s+/)
+          # find the doomednum in actor line - it will be the first number
+          doomednum_field = -1
+          parts.each_with_index do |part, part_index|
+            if numeric?(part)
+              doomednum_field = part_index
+              break
+            end
+          end
+          next if doomednum_field == -1
+
+          puts "Parts[doomednum_field] = #{parts[doomednum_field]}"
+          if parts[doomednum_field].to_i == duped_doomednum.doomednum
+            puts "Actor Definition (#{line_number}): \"#{line}\""
+            doomednum_regex = "#{line.strip.split(" ")[doomednum_field]}"
+            replacement_line = line.gsub(Regex.new(doomednum_regex), substitute_doomednum)
+            puts "Replacement Actor Definition: \"#{replacement_line}\""
+            itemized_line_replacement = {file, line_number + 1, replacement_line}
+            itemized_line_replacements << itemized_line_replacement
+          end
+        end
+      end
+    end
+  end
+end
+
+puts "Itemized line replacements: #{itemized_line_replacements}"
 
 exit(0)
 
