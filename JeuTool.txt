@@ -1,0 +1,704 @@
+
+JEUTOOL
+=======
+
+by Andrew Apted, 2018.
+
+
+About
+-----
+
+Pronounced: *Zhur-Tool*
+
+JeuTool is a command-line tool for packing and unpacking WAD files.
+The concept is similar to DeuTex, but JeuTool works quite differently.
+For example, it does not require a "wadinfo" file to describe the
+contents of a WAD to build, instead the lumps are just found by
+scanning the filesystem.
+
+
+Website
+-------
+
+https://gitlab.com/andwj/jeutool
+
+
+Binary Packages
+---------------
+
+https://gitlab.com/andwj/jeutool/tags/v0.8.0
+
+
+Legalese
+--------
+
+JeuTool is Copyright (c) 2018 Andrew Apted.
+
+JeuTool is Free Software, under the terms of the GNU General Public
+License, version 3 or (at your option) any later version.
+For the full text see: https://www.gnu.org/licenses/gpl.txt
+
+JeuTool comes with NO WARRANTY of any kind, express or implied.
+Please read the license for full details.
+
+
+Compiling
+---------
+
+JeuTool is written in pure Go, and the dependencies are quite
+minimal (and are also pure Go).  Hence CGO is not required,
+making compiling and even cross-compiling fairly painless.
+
+To build and install the binary:
+
+    go get -v gitlab.com/andwj/jeutool
+
+
+Contact
+-------
+
+You can report bugs via the Issues page on the GitLab project
+page, at the following link:
+
+https://gitlab.com/andwj/jeutool/issues
+
+I prefer not to be contacted by email, thanks.
+
+
+----------------------------------------------------------------------------
+
+JeuTool User Manual
+===================
+
+by Andrew Apted, 2018.
+
+
+Overview
+--------
+
+JeuTool is a command-line utility whose primary purpose is to
+compose and decompose DOOM wad files.  You need to run it from a
+terminal or shell window, though it can be used in scripts too
+(e.g. in a BAT file).
+
+JeuTool supports wad files for DOOM, DOOM II, FreeDoom, Heretic,
+Hexen and Strife, plus some lesser-known games using the DOOM
+engine, like Chex Quest and HacX.  It can pack and unpack wads
+for the game itself (IWADs) and user-created wads (PWADs).
+
+The first argument given to JeuTool is a *command name*, such
+as `extract` to extract the contents of a wad file.  The --help
+option will show a brief help screen showing a summary of the
+available commands and options.  The commands are described in
+detail in the 'Command List' section below.
+
+
+Output Messages
+---------------
+
+The output messages fall into four broad categories, each with
+a distinct color:
+
+- white for general progress messages
+- brown for warning messages
+- red for failure/error messages
+- light blue for verbose messages
+
+Failure messages are prefixed by `ERROR:` and are used to
+indicate that something which would normally work failed for
+some reason.  Any lump that failed to be extracted and any
+recognised file that failed to be imported will be reported
+with a failure message.
+
+Warning messages are prefixed by `Warning:` and indicate that
+there may be a problem with something.  For example: if an
+imported text file seems to be binary then a warning is shown,
+because when the wad is unpacked in the future that lump will
+get exported as a *raw file* and not as a text file.  A common
+source of warnings occurs when building a wad and one of the
+files has an unrecognised file type.
+
+At the end of extracting or building a wad, a colored one-line
+summary is displayed.  This is green if there were no failures,
+and bright red otherwise.  If there were some failures and/or
+some warnings, the total count will also be shown.
+
+
+Exit Codes
+----------
+
+- 0 if OK (though there may have been warnings).
+- 1 if unknown command, could not parse arguments, need a palette, etc.
+- 2 if a failure occurred while building or extracting a wad.
+
+
+Command List
+------------
+
+`info  FILE ...`  
+The info command takes one or more wad filenames as arguments,
+and displays some brief information about them.  It can tell you
+whether the wad is a PWAD or an IWAD, and how many lumps (entries)
+it contains.  When it cannot open the file, or the file is not a
+valid wad file, then an appropriate message is shown instead.
+
+Example:
+
+    $ jeutool info heretic.wad cchest4.wad /foo.wad
+    heretic.wad : IWAD with 2633 lumps
+    cchest4.wad : PWAD with 2680 lumps
+    foo.wad     : open /foo.wad: no such file or directory
+
+
+--------------------------------------------------------------------------
+
+`list  FILE`  
+The list command takes a wad filename argument, and displays a
+listing of the wad's contents to the standard output (stdout).
+The listing shows the lump index, the lump name, the size of
+the lump (in bytes), the position of the lump in the file, and
+what format JeuTool considers the lump to be.  When the format
+cannot be determined, it is shown as "????".
+
+Example:
+
+    $ jeutool list xa-goril.wad
+       0:  DEHACKED      210  at 0x0000000c  Text lump
+       1:  CWILV00      8018  at 0x000000de  DOOM patch image
+       2:  PP_START        0  at 0x00002030  Marker
+       3:  RSKY1       35080  at 0x00002030  DOOM patch image
+       4:  MIDBARS2     1864  at 0x0000a938  DOOM patch image
+       5:  PP_END          0  at 0x0000b080  Marker
+       6:  TEXTURE1    21288  at 0x0000b080  Special data
+       7:  PNAMES       3764  at 0x000103a8  Special data
+       8:  D_RUNNIN    21848  at 0x0001125c  DMX (MUS) music
+       9:  MAP01           0  at 0x000167b4  Level header (DOOM format)
+      10:  THINGS       4820  at 0x000167b4  Level data
+      11:  LINEDEFS    27482  at 0x00017a88  Level data
+      12:  SIDEDEFS    84930  at 0x0001e5e2  Level data
+      13:  VERTEXES     6760  at 0x000331a4  Level data
+      14:  SEGS        36360  at 0x00034c0c  Level data
+      15:  SSECTORS     4328  at 0x0003da14  Level data
+      16:  NODES       30268  at 0x0003eafc  Level data
+      17:  SECTORS      7280  at 0x00046138  Level data
+      18:  REJECT       9800  at 0x00047da8  Level data
+      19:  BLOCKMAP    18522  at 0x0004a3f0  Level data
+
+
+--------------------------------------------------------------------------
+
+`pipe  FILE  LUMP`  
+The pipe command takes a wad file and a lump name, and outputs
+the *raw contents* of that lump to the standard output (stdout).
+You will usually want to redirect the output, e.g. using `>` to
+store the contents into another file, or using `|` to pipe the
+contents into another program.
+
+Since the lump contents are sent to standard output, there are
+no messages shown when using this command, although errors like
+"file not found" still get displayed on standard error (stderr).
+
+The lump name can be uppercase or lowercase, or even a mixture
+of the two, and it will be found in the wad if it exists.  When
+the wad contains multiple lumps with the same name, then the
+*first one* (i.e. with the lowest index) is used.
+
+Example of saving a lump:
+
+    $ jeutool pipe doom2.wad COLORMAP > COLORMAP.raw
+
+Example of reading a text lump:
+
+    $ jeutool pipe freedoom2.wad dehacked | more
+
+
+--------------------------------------------------------------------------
+
+`extract  FILE  [DIR]`  
+The extract command extracts the contents of a wad into a fresh
+directory.  The directory name is optional, when absent it will be
+deduced by removing ".wad" from the wad filename.  If the directory
+cannot be created, e.g. because it already exists, then an error
+message is shown.
+
+Most user-made wads do not contain a palette.  You will need to
+tell JeuTool what palette to use, otherwise the following error
+will be shown:
+
+    jeutool: no PLAYPAL found in wad (use --pal option)
+
+There are several ways to specify a palette, including using one
+of the built-in ones.  See the'Option List' section below for more
+information on the --pal option.
+
+Example:
+
+    $ jeutool extract xa-goril.wad -p doom
+    =======================================================
+     )|(  JeuTool 0.5.7  (C) 2018 Andrew Apted, et al  )|(
+    =======================================================
+
+    Opened WAD file: xa-goril.wad
+    Created output dir: xa-goril
+    Saved base-pal.txt
+    Extracting special...
+    Extracting defs...
+    Extracting graphics...
+    Extracting music...
+    Extracting maps...
+    Extracting patches...
+    Saved config.cfg
+    Closing WAD file
+
+    Ok, all good.
+
+
+--------------------------------------------------------------------------
+
+`build  FILE  [DIR]`  
+The build command constructs a wad file using the contents of a
+directory, such as one previously extracted by JeuTool.
+The directory name is optional, when absent it will be deduced from
+the wad filename by removing the ".wad" extension.  When the wad
+file already exists, it will be silently overwritten by the newly
+composed wad file -- so take care!
+
+Example:
+
+    $ jeutool build xa-goril2.wad xa-goril
+    =======================================================
+     )|(  JeuTool 0.5.7  (C) 2018 Andrew Apted, et al  )|(
+    =======================================================
+
+    Input directory: xa-goril
+    Created WAD file: xa-goril2.wad
+    Loaded palette: base-pal.txt
+    Loaded config.cfg
+    Importing defs...
+    Importing graphics...
+    Importing music...
+    Importing maps...
+    Importing patches...
+    Wrote WAD directory
+
+    Ok, all good.
+
+
+--------------------------------------------------------------------------
+
+Option List
+-----------
+
+`-p  --pal   FILE`  
+Specifies which palette to use for image conversions.  The FILE
+argument is either a file to load the palette from, or the name
+of a built-in palette.  For files, the format may be a WAD file
+(typically an IWAD) containing a PLAYPAL lump, or a PNG image,
+or a text file using the same format as "base-pal.txt", or it can
+be a ".raw" file containing at least 768 bytes (256 RGB triples).
+
+This option is only needed when the palette cannot be determined
+any other way, mainly when using the extract command on a PWAD.
+When the wad contains a PLAYPAL lump (including when building)
+then that is always used and this option is ignored.
+
+The built-in palettes are: doom, heretic, hexen, strife.
+
+`-l  --lower`  
+Causes the extract command to use lowercase filenames for the
+extracted lumps.  The default is to use uppercase for the lump
+name but a lowercase extension, like this: "COLORMAP.png"
+
+Note that the build command does not need this option, the files
+in the input directory are found regardless of their case, and
+are inserted into the output wad as uppercase lump names
+(which is the normal convention for wad files).
+
+`-r  --raw`  
+Causes the extract command to save every lump as-is (without any
+conversion).  The saved files will have the ".raw" extension.
+Maps in the wad are broken apart and their lumps are saved into
+a sub-directory having the name of the map.
+
+Note that the build command does not need this option, as it
+automatically handles ".raw" files, inserting them into the
+output wad as-is (without conversion).  It can also reconstruct
+maps from their raw components.
+
+`-v  --verbose`  
+Produces more verbose output.  In particular, a message will be
+shown for every lump which is extracted from a source wad or
+added to a destination wad.
+
+`-n  --nocolor`  
+Disables the use of colorized output.  Note that color output
+is automatically disabled when the standard output is not a
+terminal, e.g. when piping the output through a pager program
+like "more" or into a file.
+
+`-h  --help`  
+Displays a brief help screen, then exits.
+
+`--version`  
+Displays a version number and date, then exits.
+
+
+File Formats
+------------
+
+One of JeuTool's primary responsibilities is to convert the lumps
+in a wad file to/from a more generally useful format.  For example,
+audio editing software cannot use the raw sound format which DOOM
+uses, hence DOOM sounds are extracted as WAV files, and WAV files
+are converted back to DOOM sounds when building a wad.
+
+However, modern source ports generally accept a wide range of file
+formats stored directly in a lump (without any conversion), and
+JeuTool aims to accommodate such usage as well.  This poses a
+dilemma though: when should a file be imported directly and when
+should it be converted?
+
+JeuTool solves this dilemma as follows: generally files which are
+PNG images and WAV sounds will be converted to/from the normal
+DOOM formats, and most other file types are *not converted*.
+However, PNG and WAV files *can be* imported as-is, without
+conversion, by prefixing their filename with an `=` character.
+
+Some examples:
+
+    graphics/TITLEPIC.png  --> converted to DOOM patch
+    graphics/=INTERPIC.png --> stored as-is (PNG format)
+
+    sounds/DSPISTOL.wav  --> converted to DMX audio
+    sounds/=DSBAREXP.wav --> stored as-is (WAV format)
+
+Note that files in the `special/` directory are an exception, and
+are nearly always converted.  Hence the `=` prefix cannot be used
+there, as it makes no sense to import the PLAYPAL or COLORMAP
+lumps (etc) as a true PNG image.
+
+Also note that files with the ".raw" extension are *always*
+imported as-is when building a wad.  Use this as a last resort
+if you ever need to import a file type which JeuTool does not
+recognise.
+
+
+Images with Offsets
+-------------------
+
+Some graphics in a DOOM wad file contain X and Y offset values
+which are needed ti draw them properly.  This is especially true
+for sprites, which need the X offset to be roughly half the
+image width, and the Y offset to be roughly equal to the image
+height.  A common technique is using a Y offset higher than the
+image height, making the sprite look like it is floating in the
+air.  Having wrong offsets will make a sprite look very odd when
+playing the game.
+
+Since PNG images contain no mechanism to supply X/Y offsets,
+JeuTool allows them to be supplied *in the filename*.  This is
+done by appending the lump name with a comma, the X value, another
+comma, and then the Y value.
+
+Some examples:
+
+    sprites/HEADA1,31,67.png   --> X is 31, Y is 67
+    graphics/STTMINUS,0,-5.png --> X is 0,  Y is -5
+
+Negative values are sometimes used, especially for weapons drawn
+from the player's POV.  These images use X and Y values that are
+relative to the top-left of a 320x200 pixel screen, except that
+the values are negated (e.g. more negative X values push the
+on-screen image further to the right).
+
+Offset values are only usable on PNG images which get converted
+to the DOOM patch format.  The offsets are not allowed on PNG
+images which are imported directly (as-is) using the `=` prefix,
+or with any other type of image format.
+
+There is a source port feature which allows storing X/Y offsets
+*inside* the PNG image itself.  This is achieved using a custom
+chunk called "grAb".  JeuTool does not support this feature in
+any way.
+
+
+Directory Layout
+----------------
+
+This section gives some information about the layout of files and
+directories after extracting a wad.
+
+One principle is that when a directory is used in a ZDoom PK3 or
+Eternity PKE package, then JeuTool generally uses the same name.
+For example, maps (levels) from a wad are stored in the `maps/`
+directory.  This is in contrast to DeuTex which uses `levels/`
+for the same purpose.
+
+Another principle is that every "namespace" inside a wad file
+corresponds to a distinct directory created or scanned by JeuTool.
+For example, everything in the `sprites/` directory will occur
+between **SS_START..SS_END** markers, which is the normal convention
+for sprites in user wads.  On the other hand, there are several
+directories used by JeuTool which do not correspond to any wad
+namespace, such as the `unknown/` directory.
+
+
+Files
+-----
+
+`config.cfg`  
+This file contains some miscellaneous configuration values for the
+wad being built or extracted.  The most important one is whether or
+not the wad is an IWAD or a PWAD.  This config file can be absent,
+in which case the default is to build a PWAD.
+
+`base-pal.txt`  
+This file remembers the base palette (256 RGB colors) used when
+extracting all the graphics, sprites, patches (etc) from a wad.
+The primary purpose is to allow rebuilding the wad without having
+to specify the palette again (via --pal option).  This file is
+optional.
+
+
+Directories
+-----------
+
+`defs/`  
+This directory is where plain text files are stored.  Such files
+are generally used for human-readable definitions, hence the name.
+This is where lumps like DEHACKED, MAPINFO, or DECORATE will be
+extracted to.
+
+`unknown/`  
+This is where lumps are extracted to when JeuTool could not recognise
+their format.  The files placed here are always raw binary files with
+the ".raw" extension, and when building they are always added as-is
+(without conversion).  Be sure to look in this directory when you
+think a lump has gone missing.
+
+`special/`  
+This directory is used for lumps which require special handling or
+don't fit neatly into any other category.  That includes images which
+are stored as a raw block of pixels in the game's palette, like the
+TITLE screen of Heretic and Hexen, which can only be detected by
+their size (e.g. 320*200) or their name (e.g. STRTBOT).
+
+Notable files in this directory:
+- `PLAYPAL.png` is a set of 256-color palettes
+- `COLORMAP.png` is a color mapping used to control lighting
+- `GENMIDI.raw` contains instrument data for FM synthesis (OPL2 chip)
+- `TEXTURE1.txt` specifies how textures are composed from a set of patches
+- `ENDOOM.ans` is a VGA text screen, converted to ANSI escape sequences
+- `SNDCURVE.csv` is Heretic and Hexen's sound attentuation table
+- `STARTUP.png` is Hexen's 640x480 16-color startup screen
+- `XLATAB.png` is Strifes's 256x256 translucency mapping table
+
+`maps/`  
+Maps (levels) are stored here.  Except in --raw mode, the maps are
+kept in their own little wad file, since map lumps depend on each
+other and it is pointless to break them apart, plus every DOOM editor
+requires maps to be in a wad.  When importing a map, the map name is
+taken from the filename, and the name inside the wad is ignored.
+It is an error for the wad to contain no maps or multiple maps.
+
+`demos/`  
+This directory contain demo lumps.  These files use the ".lmp"
+extension, which is the usual convention for DOOM demos.  They
+are a raw binary format which are extracted and imported as-is.
+
+`sounds/`  
+`voices/`  
+These directories are where sound files are stored.
+The voices directory is only used by the game Strife.
+The original games use a formal called "DMX audio" for sound lumps,
+and JeuTool will converted between this format and WAV files when
+extracting or building.
+
+Some source ports allow using WAV files directly, and this can be
+achieved by prefixing the filename with an `=` character.  Other
+audio formats, such as VOC and OGG, may also be supported by some
+engines, and these can be imported as-is (no prefix is necessary).
+
+Note that JeuTool cannot detect when a lump in MP3 or OGG/Vorbis
+format is supposed to be music or a sound effect, so currently
+all such files will be extracted into the music/ directory.
+
+`pcsfx/`  
+This directory is where PC-speaker sound effects are stored.
+The format used for these is a CSV (Comma Separated Values) file,
+which can be read and edited as plain text.  Each line, except the
+header, is a number representing the tone (frequency) to play for
+a small time interval (1/140th second).
+
+`music/`  
+Here is where music files are placed.  The original games used a
+custom music format called "DMX music" or simply "MUS", with the
+file extension ".mus".  It was also discovered that MIDI music
+can also be used directly in a lump.
+
+Modern source ports allow even more formats, including compressed
+audio formats like MP3 and OGG/Vorbis, and also module based music.
+These can also be imported and extracted by JeuTool.
+
+Note that JeuTool currently cannot detect when a lump contains a
+type of module music, such as files created by Scream Tracker or
+Impulse Tracker.  When building, files with ".mod", ".s3m", ".it"
+and ".xm" extensions will be imported, but when extracted they end
+up in the unknown/ directory.
+
+`graphics/`  
+This directory contains all the miscellaneous graphics used by the
+DOOM engine, such as title screens, menu graphics, the red font,
+status bar graphics, etc...  Most lumps which are detected to be
+an image format but are not inside any wad namespace will end up
+in this directory.
+
+Graphics in the original games where mostly in the "DOOM patch"
+format.  However modern source ports generally allow a wide range
+of other formats, like PNG, GIF and TGA.  To import a PNG file as-is
+(with no conversion), prefix the filename with an `=` character.
+For other formats, just place them normally (no prefix is needed).
+
+`hires/`  
+Hires graphics replacements are a feature of ZDoom.  Each image in
+this directory is meant to replace an existing texture, graphic, sprite
+(etc) to provide a higher resolution version of it.  This directory
+corresponds to the **HI_START..HI_END** namespace in a wad file.
+
+`textures/`  
+This directory corresponds to the **TX_START..TX_END** wad namespace,
+and is a feature originally appearing in ZDoom, but now supported by
+other source ports.  Images in this directory are used directly as
+textures, which is a much simpler way of adding textures than via
+the TEXTURE1 and TEXTURE2 lumps.
+
+PNG images are commonly used here (as well as DOOM patch format),
+and these can be imported directly by prefixing the filename with
+an `=` character.
+
+Note that the DeuTex program also uses a textures/ directory, but for
+a very different purpose: to store the TEXTURE1 and TEXTURE2 lumps
+(converted into text files).
+
+`sprites/`  
+This directory corresponds to the **S_START..S_END** wad namespace,
+and contains all the sprites for the game, such as monsters, pickup
+items, decorations, fireballs, as well as the player's weapons as
+seen from the first-person POV.
+
+Sprite images need proper X/Y offsets to be positioned correctly on
+the screen.  With JeuTool, these offsets become part of the filename
+using a ",XXX,YYY" suffix.  See the 'Images with Offsets' section
+above for more details.
+
+`flats/`  
+This directory corresponds to the **F_START..F_END** namespace in a
+wad, and contains the textures used on flat surfaces (floors and
+ceilings) in a map.  Within a wad, flats are just a raw block of
+pixels, with no information to determine their size, hence JeuTool
+needs to guess the image size.  For DOOM, all flats were 64x64, but
+later games used 64x65 and 64x128 for scrolling flats, and some
+source ports support high-resolution flats (e.g. 128x128 pixels).
+
+`patches/`  
+Patches in this context refers to images which are used to compose
+textures, i.e. each texture consists of one or more patches which are
+merged to form a whole texture.  This directory is used to contain
+these patches, and corresponds to the **P_START..P_END** namespace.
+Although the DOOM engine does not require patch images to exist in
+this namespace, it is still handy to have them separated from all
+the other graphics.
+
+Patch lumps, like most other DOOM graphics, are in the DOOM patch
+format, and PNG files in this directory will normally be converted
+between PNG format and DOOM patch format.
+
+`font_a/`  
+`font_ay/`  
+`font_b/`  
+These directories contain the font graphics used by Heretic and Hexen.
+It should contain the full set of characters, e.g. FONTA01 to FONTA59,
+otherwise the engine may crash or show garbage on the screen.
+
+`colormaps/`  
+This directory corresponds to the **C_START..C_END** namespace in a
+wad, and contains colormaps which can be used within levels to provide
+a custom visual effect in a sector (e.g. blue water of gray fog).
+This is a feature introduced by the BOOM source port.
+
+Colormaps are extracted and imported as PNG images, generally with
+256 colors in each row, and 34 rows (one for each light level, plus
+one for the invulnerability effect, and one unused).
+
+Note that other colormaps, such as the standard COLORMAP lump,
+*should not* be placed in this directory, nor should other things
+like font translation tables, otherwise the engine may fail to find
+them.
+
+`translations/`  
+This directory is a feature of the Eternity source port, and
+contains color translation tables used to remap the colors of
+certain sprites, e.g. the player sprite in multiplayer games.
+This directory corresponds to the **T_START..T_END** namespace
+in a wad.
+
+Translation tables are extracted and imported as PNG images,
+generally with 256 colors in each row, but when there are only
+256 colors in total, a size of 16x16 pixels is used instead.
+
+Note that other types of translation tables, e.g. for recoloring
+fonts, should *not* be placed in this directory.
+
+`dialogs/`  
+Here is where Strife's dialog lumps are placed.  These have a name
+like SCRIPT12, and correspond to a map with the same number (MAP12
+in this case).  The format is binary, the raw output of a Strife
+dialog compiler, and the files use the ".o" extension.
+
+The ZDoom port also supports text (a.k.a. "uncompiled") versions
+of these dialog files.  These are also stored here, and have names
+with the "DIALOG" prefix and use the ".txt" file extension.
+
+`acs/`  
+This directory is a ZDoom feature and it contains compiled libraries
+for ACS scripting.  It corresponds to the **A_START..A_END** namespace
+within a wad file.  The files are the raw output of the ACS compiler,
+ACC, and should have the ".o" file extension.
+
+`voxels/`  
+Voxels are another ZDoom feature, and this directory is used for
+voxel models.  It corresponds to the **VX_START..VX_END** wad
+namespace.  The files are assumed to be the KVX format (as far as
+I am aware, ZDoom does not support any other voxel formats), and
+only files with the ".kvx" extension will be imported.
+
+`models/`  
+This directory contains 3D models, which can be used by some
+modern source ports.  The file extensions ".mdl", ".md2", ".md3",
+".dmd", ".3d" and ".obj" are accepted when building, but note that
+the last two cannot be detected by JeuTool inside a lump, and hence
+they are currently extracted into another directory.
+
+
+Miscellaneous Notes
+-------------------
+
+None yet!
+
+
+Further Reading
+---------------
+
+The Doom Wiki (https://doomwiki.org/) is an excellent resource
+concerning all aspects of DOOM and its engine.
+
+The Unofficial DOOM Specs (http://www.gamers.org/dhs/helpdocs/dmsp1666.html)
+(or UDS for short) contains lots of technical details about the
+DOOM wad format.
+
+The ZDoom Wiki (https://zdoom.org/wiki/) is the go-to place for
+information about the features specific to ZDoom.
+
+The Eternity Wiki (http://eternity.youfailit.net/wiki/) is where you
+can discover more about the features of the Eternity Engine.
+
