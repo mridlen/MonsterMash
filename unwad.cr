@@ -137,7 +137,8 @@ class Actor
   property projectile_pass_height : Int32 = 0
   property gravity : Float64 = 1.0
   property friction : Float64 = 1.0
-  property mass : Int32 = 100
+  # apparently mass can be int or hexadecimal, so we import the value as string
+  property mass : String = "100"
   property max_step_height : Int32 = 24
   property max_drop_off_height : Int32 = 24
   # this is a non-exact approximation of 46342/65535
@@ -292,6 +293,125 @@ duped_graphics_db = Array(DupedGraphics).new
 duped_doomednum_db = Array(DupedDoomednums).new
 
 ##########################################
+# Obsidian Reserved Doomednums
+##########################################
+# It is necessary to define these doomednums since we will be handing out unique IDs to all
+# monsters that have conflicting IDs, as well as assigning new IDs to monsters that don't have one
+##########################################
+
+# Hash definition
+doomednum_info = Hash(Int32, Tuple(Int32, Int32)).new
+
+#992 - WADFAB_REACHABLE - this force Obsidian to generate enclosed or closed sectors.
+doomednum_info[992] = {-1, -1}
+# 995 - this marks this sector as a MOVER (lift), and forces bottoms of sidedefs to be unpegged. (The lines composing the affected sector need the 991 action. It can also be used to force the generator into unpegging some surface the genny refuse to do itself!)
+doomednum_info[995] = {-1, -1}
+# 996 - this marks this sector as a DOOR, and forces the tops of sidedefs to be unpegged. (The lines composing the affected sector need the 991 action. It can also be used to force the generator into unpegging some surface the genny refuse to do itself!)
+doomednum_info[996] = {-1, -1}
+# 997 - WADFAB_DELTA - this combined with delta = X, in the prefab's lua will allow obsidian to lower sectors by the defined number under floor height 0 (otherwise sectors under height of 0 simply get booted back up to 0 and cleaned up).
+doomednum_info[997] = {-1, -1}
+# 987 - WADFAB_LIGHT_BRUSH - even if this sector is marked _NOTHING on the floor and ceiling, Obsidian will adopt the sector's brightness setting
+doomednum_info[987] = {-1, -1}
+
+# Reserved Thing IDs
+# 8166 - spot for a big item to pickup (Weapon, Key, Armor, Power-up). Can be influenced with item_kind field to limit what item this should be.
+doomednum_info[8166] = {-1, -1}
+# 8151 - spot for small pickups like armor and health bonus or small ammo drops.
+doomednum_info[8151] = {-1, -1}
+
+# Regular Monsters
+# 8102 - spot for a monster with a radius of 20 or less(Imps, Zombies, Revenants, Lost Souls, Archviles)
+doomednum_info[8102] = {-1, -1}
+# 8103 - same as above, but for monsters below a maximum radius of 32 or less(Pinkies, Cacodemons, Hell Knights, Barons, Pain Elementals)
+doomednum_info[8102] = {-1, -1}
+# 8104 - same as above, but for monsters below a maximum radius of 48 or less(Mancubi, Cyberdemons)
+doomednum_info[8104] = {-1, -1}
+# 8106 - same as above, but for monsters below a maximum radius of 64 or less(Arachnotrons)
+doomednum_info[8106] = {-1, -1}
+# 8108 - same as above, but for monsters below a maximum radius of 128 or less (Masterminds)
+doomednum_info[8108] = {-1, -1}
+
+# Flying Monsters
+# 8112,8113,8114,8116,8118 - same template pattern as regular monsters, but capable of flight
+doomednum_info[8112] = {-1, -1}
+doomednum_info[8113] = {-1, -1}
+doomednum_info[8114] = {-1, -1}
+doomednum_info[8116] = {-1, -1}
+doomednum_info[8118] = {-1, -1}
+
+# Caged Monsters
+# 8122,8123,8124,8126,8128 - same template pattern as regular monsters, but spawn in cages and have projectile/missile attacks
+doomednum_info[8122] = {-1, -1}
+doomednum_info[8123] = {-1, -1}
+doomednum_info[8124] = {-1, -1}
+doomednum_info[8126] = {-1, -1}
+doomednum_info[8128] = {-1, -1}
+
+# Closet / Trap Monsters
+# 8132,8133,8134,8136,8138 - same template pattern as regular monsters, but spawn in monster closets or traps
+doomednum_info[8132] = {-1, -1}
+doomednum_info[8133] = {-1, -1}
+doomednum_info[8134] = {-1, -1}
+doomednum_info[8136] = {-1, -1}
+doomednum_info[8138] = {-1, -1}
+
+# Lights
+# 14999 White
+doomednum_info[14999] = {-1, -1}
+# 14998 Red
+doomednum_info[14998] = {-1, -1}
+# 14997 Orange
+doomednum_info[14997] = {-1, -1}
+# 14996 Yellow
+doomednum_info[14996] = {-1, -1}
+# 14995 Blue
+doomednum_info[14995] = {-1, -1}
+# 14994 Green
+doomednum_info[14994] = {-1, -1}
+# 14993 Beige
+doomednum_info[14993] = {-1, -1}
+# 14992 Purple
+doomednum_info[14992] = {-1, -1}
+
+# Custom decorations
+# 27000 Hospital blood pack
+doomednum_info[27000] = {-1, -1}
+# 27001 Fire
+doomednum_info[27001] = {-1, -1}
+# 27002 Fire with debris
+doomednum_info[27002] = {-1, -1}
+
+# Reserved Linedefs
+# 888 - this linedef will be used as a switch for quest generation in Obsidian e.g. this switch can open some other switched door in the level.
+doomednum_info[888] = {-1, -1}
+
+# Fauna Module
+# ScurryRat
+doomednum_info[30100] = {-1, -1}
+# SpringyFly
+doomednum_info[30000] = {-1, -1}
+
+# Ranges for Frozsoul's Ambient Sounds
+# 20000-20025, 22000-22025, 24000-24025, 26000-26025, 28000-28025, 30000-30025
+ranges = [
+  20000..20025,
+  22000..22025,
+  24000..24025,
+  26000..26025,
+  28000..28025,
+  30000..30025
+]
+
+ranges.each do |range|
+  range.each do |id|
+    doomednum_info[id] = {-1, -1}
+  end
+end
+
+puts "Reserved Doomednums Loaded:"
+puts doomednum_info
+
+##########################################
 # CREATE DIRECTORIES
 ##########################################
 
@@ -406,98 +526,94 @@ Dir.glob("./Processing/*/defs/DECORATE.raw") do |file_path|
       # line.gsub(/\n.+$/, "")
       #end
 
+    end
+  end
+
+  input_file.close
+  output_file.close
+
+  # reopen the *.nocomments2 files and break them down into actors
+  input_text = File.read(dest_path_two)
+  # actors = input_text.scan(/^\s*actor\s+.*{(?:[^{}]+|(?R))*?}/mi) actors =
+  # input_text.split(/^\s*actor\s+/i)
+  actors = input_text.split(/(^|\n)\s*actor/i)
+  # Remove empty strings from the resulting array
+  actors.reject! { |actor| actor.strip.empty? }
+  actors.compact!
+  actors.each_with_index do |actor, actor_index|
+    puts "======================="
+    # there are a few options here and we need to account for all of them
+    # 0 1    2        3       4        5       6
+    # actor blah
+    # actor blah 1234
+    # actor blah replaces oldblah
+    # actor blah replaces oldblah 1234
+    # actor blah : oldblah
+    # actor blah :        oldblah 1234
+    # actor blah :        oldblah replaces oldblah
+    # actor blah :        oldblah replaces oldblah 1234
+  
+    # strip leading and trailing whitespace on each line
+    lines = actor.lines
+    lines.map! { |line| line.strip }
+    lines.reject! { |line| line.empty? }
+    lines.compact!
+    actor = lines.join("\n")
+
+    first_line = lines.first
+    words = first_line.split(/\s+/)
+    # parse partial comments on the actor line and remove
+    partial_comment = -1
+    words.each_with_index do |value, word_index|
+      # the line starts with "/" (only comments have slashes on this line)
+      if value =~ /^\s*\/+/
+        # partial comment will be set to the lowest word number because all the
+        # words after it are a comment as well
+        if partial_comment < 0
+          partial_comment = word_index
+        end
       end
     end
 
-    input_file.close
-    output_file.close
+    if partial_comment > 0
+      words = words[0..partial_comment - 1]
+      puts "Partial comment detected. Updated words array:"
+      words.each do |word|
+        puts word
+      end
+    end
 
-    # reopen the *.nocomments2 files and break them down into actors
-    input_text = File.read(dest_path_two)
-    # actors = input_text.scan(/^\s*actor\s+.*{(?:[^{}]+|(?R))*?}/mi) actors =
-    # input_text.split(/^\s*actor\s+/i)
-    actors = input_text.split(/(^|\n)\s*actor/i)
-    # Remove empty strings from the resulting array
-    actors.reject! { |actor| actor.strip.empty? }
-    actors.compact!
-    actors.each_with_index do |actor, actor_index| puts "======================="
-      # there are a few options here and we need to account for all of them
-      # 0 1    2        3       4        5       6
-      # actor blah
-      # actor blah 1234
-      # actor blah replaces oldblah
-      # actor blah replaces oldblah 1234
-      # actor blah : oldblah
-      # actor blah :        oldblah 1234
-      # actor blah :        oldblah replaces oldblah
-      # actor blah :        oldblah replaces oldblah 1234
-    
-      # strip leading and trailing whitespace on each line
-      lines = actor.lines
-      lines.map! { |line| line.strip }
-      lines.reject! { |line| line.empty? }
-      lines.compact!
-      actor = lines.join
+    number_of_words = words.size
+    puts "Actor: #{words.first}"
+    new_actor = Actor.new("#{words[0].downcase}", actor_index)
+    new_actor.source_wad_folder = wad_folder_name
+    new_actor.source_file = decorate_source_file
 
-      # Output the modified lines
-      lines.each do |line|
-        puts line
+    # number of words == 2 means that word[1] == a number
+    if number_of_words == 2
+      new_actor.doomednum = words[1].to_i
+    end
+
+    # there are 2 possibilities: colon (inheritance), or replaces
+    if number_of_words == 3 || number_of_words == 4
+      if words[1] =~ /^\s*:\s*/
+        new_actor.inherits = words[2]
+      elsif words[1].downcase =~ /^\s*replaces\s*/
+        new_actor.replaces = words[2]
+      else
+        puts "Error: word: #{words[1]} is not a colon, or 'replaces'"
       end
 
-      first_line = lines.first
-      words = first_line.split(/\s+/)
-      # parse partial comments on the actor line and remove
-      partial_comment = -1
-      words.each_with_index do |value, word_index|
-        # the line starts with "/" (only comments have slashes on this line)
-        if value =~ /^\s*\/+/
-          # partial comment will be set to the lowest word number because all the
-          # words after it are a comment as well
-	  if partial_comment < 0
-            partial_comment = word_index
-          end
-        end
+      # if there are 4 words, the last must be doomednum
+      if number_of_words == 4
+        new_actor.doomednum = words[3].to_i
       end
+    end
 
-      if partial_comment > 0
-        words = words[0..partial_comment - 1]
-        puts "Partial comment detected. Updated words array:"
-        words.each do |word|
-          puts word
-        end
-      end
-
-      number_of_words = words.size
-      puts "Actor: #{words.first}"
-      new_actor = Actor.new("#{words[0].downcase}", actor_index)
-      new_actor.source_wad_folder = wad_folder_name
-      new_actor.source_file = decorate_source_file
-
-      # number of words == 2 means that word[1] == a number
-      if number_of_words == 2
-        new_actor.doomednum = words[1].to_i
-      end
-
-      # there are 2 possibilities: colon (inheritance), or replaces
-      if number_of_words == 3 || number_of_words == 4
-        if words[1] =~ /^\s*:\s*/
-          new_actor.inherits = words[2]
-        elsif words[1].downcase =~ /^\s*replaces\s*/
-          new_actor.replaces = words[2]
-        else
-          puts "Error: word: #{words[1]} is not a colon, or 'replaces'"
-        end
-
-        # if there are 4 words, the last must be doomednum
-        if number_of_words == 4
-          new_actor.doomednum = words[3].to_i
-        end
-      end
-
-      # if there are 5-6 words, it means inherit and replace, and 6 is doomednum
-      if number_of_words == 5 || number_of_words == 6
-        new_actor.inherits = words[3]
-        new_actor.replaces = words[5]
+    # if there are 5-6 words, it means inherit and replace, and 6 is doomednum
+    if number_of_words == 5 || number_of_words == 6
+      new_actor.inherits = words[3]
+      new_actor.replaces = words[5]
       if number_of_words == 6
         new_actor.doomednum = words[6].to_i
       end
@@ -506,29 +622,29 @@ Dir.glob("./Processing/*/defs/DECORATE.raw") do |file_path|
     actor.each_line do |line|
       # line.split[0] is always going to be "actor" (case insensitive)
       # line.split[1] is always going to be the actor name
-      if line =~ /^\s*actor/i
-        puts "Actor Name: " + line.split[1]
-	# line.split[2] might be ":", "replaces", or numeric (doomednum), or
-	# nothing
-	if line.split[2]? == ":"
-          puts "  - Inherits: " + line.split[3]?.to_s
-        elsif line.split[2]? == "replaces"
-          puts "  - Replaces: " + line.split[3]?.to_s
-        elsif line.split[2]? != nil
-          puts "  - doomednum: " + line.split[2]?.to_s
-        end
-
-	# line.split[4] might be "replaces" or doomednum
-	if line.split[4]? == "replaces"
-          puts "  - Replaces: " + line.split[5]?.to_s
-	  # line.split[6] if populated is always doomednum
-	  if line.split[6]? != nil
-            puts "  - doomednum: " + line.split[6]?.to_s
-          end
-        elsif line.split[4]? != nil
-          puts "  - doomednum: " + line.split[4]?.to_s
-        end
-      end
+      #if line =~ /^\s*actor/i
+      #  puts "Actor Name: " + line.split[1]
+      #  # line.split[2] might be ":", "replaces", or numeric (doomednum), or
+      #   # nothing
+      #	if line.split[2]? == ":"
+      #   puts "  - Inherits: " + line.split[3]?.to_s
+      # elsif line.split[2]? == "replaces"
+      #    puts "  - Replaces: " + line.split[3]?.to_s
+      # elsif line.split[2]? != nil
+      #    puts "  - doomednum: " + line.split[2]?.to_s
+      # end
+      #
+      # # line.split[4] might be "replaces" or doomednum
+      # if line.split[4]? == "replaces"
+      #    puts "  - Replaces: " + line.split[5]?.to_s
+      #    # line.split[6] if populated is always doomednum
+      #    if line.split[6]? != nil
+      #      puts "  - doomednum: " + line.split[6]?.to_s
+      #    end
+      #  elsif line.split[4]? != nil
+      #    puts "  - doomednum: " + line.split[4]?.to_s
+      #  end
+      #end
 
       if line =~ /^\s*health\s+/i
         puts "  - Health: " + line.split[1]?.to_s
@@ -547,7 +663,7 @@ Dir.glob("./Processing/*/defs/DECORATE.raw") do |file_path|
 
       if line =~ /^\s*mass\s+/i
         puts "  - Mass: " + line.split[1]?.to_s
-        new_actor.mass = line.split[1].to_i
+        new_actor.mass = line.split[1].to_s
       end
 
       if line=~ /^\s*speed\s+/i
@@ -565,12 +681,12 @@ Dir.glob("./Processing/*/defs/DECORATE.raw") do |file_path|
         new_actor.projectile = true
       end
 
-      if line =~ /^\s*monster\s*$/i
+      if line =~ /^\s*monster\s*/i
         puts "  - Monster"
         new_actor.monster = true
       end
 
-      if line =~ /^\s*\+ismonster\s*$/i
+      if line =~ /^\s*\+ismonster\s*/i
         puts "  - Monster"
         new_actor.monster = true
       end
@@ -586,21 +702,19 @@ Dir.glob("./Processing/*/defs/DECORATE.raw") do |file_path|
     end
 
     # Process the Actor's States states =
-    # actor[0].scan(/^\s*states\s*{(?:[^{}]+|(R))*?}/mi) pattern =
-    # /^\s*states\s*{(?:[^{}]+|(R))*?}/mi
-    pattern = /^\s*states\s*{([^{}]+|(R))*?}/mi
-
-    begin
-      states = pattern.match(actor)
-      if states
-        puts "States:"
-        puts "====="
-        puts "#{states[1]}"
-        puts "====="
-      end
-    rescue e : Regex::Error
-      puts "Regex match error: #{e.message}"
-    end
+    #pattern = /^\s*states\s*{([^{}]+|(R))*?}/mi
+    #
+    #begin
+    #  states = pattern.match(actor)
+    #  if states
+    #    puts "States:"
+    #    puts "====="
+    #    puts "#{states[1]}"
+    #    puts "====="
+    #  end
+    #rescue e : Regex::Error
+    #  puts "Regex match error: #{e.message}"
+    #end
     
     actordb << new_actor
 
@@ -633,7 +747,7 @@ actordb.each_with_index do |actor, actor_index|
 end
 
 # Check for duplicate doomednums
-doomednum_info = Hash(Int32, Tuple(Int32, Int32)).new
+# doomednum_info = Hash(Int32, Tuple(Int32, Int32)).new
 
 actordb.each_with_index do |actor, actor_index|
   if doomednum_info.fetch(actor.doomednum, nil) && actor.doomednum != -1
@@ -868,9 +982,74 @@ duped_doomednum_db.each_with_index do |duped_doomednum, doomednum_index|
   end
 end
 
-puts "Itemized line replacements: #{itemized_line_replacements}"
+# Monsters without IDs
+puts "==================================="
+puts "Monsters Without IDs"
+puts "==================================="
+actordb.each_with_index do |actor, actor_index|
+  if actor.monster == true && actor.doomednum == -1
+    puts "======================================"
+    puts "Actor with no doomednum:"
+    puts "Actor: #{actor.name}"
+    puts "Wad: #{actor.source_wad_folder}"
+
+    # evaluate includes
+    file_path = "./Completed/" + actor.source_wad_folder + "/defs/DECORATE.raw"
+    file_list = Array(String).new
+    file_list << file_path
+    File.open(file_path) do |file|
+      file.each_line do |line|
+        if line.starts_with?("#include")
+          include_file_modified = line.strip.lchop("#include ").strip('"').upcase
+          file_path = "./Completed/" + actor.source_wad_folder + "/defs/" + include_file_modified + ".raw"
+          file_list << file_path
+        end
+      end
+    end
+    
+    file_list = file_list.uniq
+
+    puts "File list: #{file_list}"
+    puts "Line changes: "
+    file_list.each do |file|
+      puts "-------------"
+      puts "File: #{file}"
+      File.open(file) do |text|
+        text.each_line.with_index do |line, line_number|
+          actor_parts = line.strip.split(/\s+/)
+          if line.downcase.starts_with?("actor".downcase) && actor_parts[1].downcase == actor.name
+            puts "ACTOR DETECTED: #{line}"
+            parts = line.strip.split(/\s+/)
+            puts "ACTOR: #{parts[1]}"
+             
+
+            # doomednum goes at the end, so we just need to evaluate if there is
+            # any comments
+            last_index = -1
+            parts.each_with_index do |part, part_index|
+              if part =~ /^\/\//
+                break
+              end
+              last_index = part_index
+            end
+
+            parts[last_index] = parts[last_index] + " #{doomednum_counter}"
+            doomednum_counter += 1
+            replacement_line = parts.join(" ")
+            puts "Actor Definition (#{line_number}): \"#{line}\""
+            puts "Replacement Actor Definition: \"#{replacement_line}\""
+            itemized_line_replacement = {file, line_number + 1, replacement_line}
+            itemized_line_replacements << itemized_line_replacement
+          end
+        end
+      end
+    end
+  end
+end
 
 exit(0)
+
+puts "Itemized line replacements: #{itemized_line_replacements}"
 
 puts "ACTOR LIST:"
 actordb.each do |actor|
