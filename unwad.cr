@@ -81,6 +81,9 @@ class Actor
   #
   # This will be "DECORATE.raw.nocomments2" or "OTHERFILE.raw"
   property source_file : String = "UNDEFINED"
+  #
+  # Built In == part of some actor inherent in the doom source code
+  property built_in : Bool = false
 
   # and here we go with the properties inside the DECORATE...
   property game : String = "Doom"
@@ -111,7 +114,7 @@ class Actor
   property rip_min_level : Int32 = 0
   property rip_level_max : Int32 = 0
   property designated_team : Int32 = 0
-  property speed : Int32 = 0
+  property speed : Float64 = 0
   property v_speed : Int32 = 0
   property fast_speed : Int32 = 0
   property float_speed : Int32 = 0
@@ -128,7 +131,7 @@ class Actor
   property friendly_see_blocks : Int32 = 10
   property shadow_aim_factor : Float64 = 1.0
   property shadow_penalty_factor : Float64 = 1.0
-  property radius : Int32 = 20
+  property radius : Float64 = 20.0
   property height : Int32 = 16
   # Death/Burn Height is default 1/4 height, so we might need to fix that later
   property death_height : Int32 = 4
@@ -260,24 +263,17 @@ class Actor
 
   def initialize(@name : String, @index : Int32)
   end
-end
-puts "Actor Struct Defined."
 
-# This is for testing actor creation
-# puts "Testing actor creation..."
-# actors = Array(Actor).new
-# actors << Actor.new("MarkRidlen")
-# actors << Actor.new("TestingOnly")
-# actors << Actor.new("DeleteMe")
-# actors.each do |actor|
-#   puts "Actor name: #{actor.name}"
-#   puts "  - #{actor.health}"
-# end
-# puts "Actor test completed."
-# puts "Clearing actors array"
-# actors.clear
-# puts "Empty array"
-# exit(0)
+  # this function generates a dynamic list of property names
+  # which is useful for doing iteration when doing inheritance
+  def property_list : Array
+    list_of_properties = Array(String).new
+    {% for name in Actor.instance_vars %}
+      list_of_properties << "#{ {{ name.id.symbolize }} }"
+    {% end %}
+    list_of_properties
+  end
+end
 
 ##########################################
 # CREATE ACTORS DATABASE
@@ -477,69 +473,117 @@ puts "ZSCRIPT includes: TBD"
 
 puts "DECORATE includes: TBD"
 
+# Build a list of Processing and Built_In_Actors, and a flag to tell it
+# not to touch the built in actors
+processing_files = Dir.glob("./Processing/*/defs/DECORATE.raw")
+built_in_actors = Dir.glob("./Built_In_Actors/*/*.txt")
+
+# String: Dir name, Bool: true = no touchy, false = touchy
+no_touchy = Hash(String, Bool).new
+processing_files.each do |file_path|
+  no_touchy[file_path] = false
+end
+built_in_actors.each do |file_path|
+  no_touchy[file_path] = true
+end
+
+# concatenate the two file arrays - built in goes first to avoid getting flagged as dupe
+full_dir_list = built_in_actors + processing_files
+
 puts "Removing comments from DECORATE.raw files into DECORATE.nocomments files"
 # Remove DECORATE comments
-Dir.glob("./Processing/*/defs/DECORATE.raw") do |file_path|
-  puts "Source file (comment removal): #{file_path}"
-  # grabbing the wad file source folder name - split on "/" and grab element 2
-  # which is essentially the wad name without ".wad" at the end
-  wad_folder_name = file_path.split(/\//)[2]
-  decorate_source_file = file_path.split(/\//)[4]
-  puts "#{wad_folder_name}"
-  dest_path_one = File.dirname(file_path) + "/" + File.basename(file_path) + ".nocomments1"
-  puts "Output file 1 (comment removal): #{dest_path_one}"
-  dest_path_two = File.dirname(file_path) + "/" + File.basename(file_path) + ".nocomments2"
-  puts "Output file 2 (comment removal): #{dest_path_two}"
-  
-  # Remove block quotes - globally to the entire file
-  puts "Removing block quotes..."
-  input_string = File.read(file_path)
-  output_string = input_string.gsub(%r{/\*.*?\*/}m, "")
-  File.write(dest_path_one, output_string)
+full_dir_list.each do |file_path|
+  if no_touchy[file_path] == false
+    puts "Source file (comment removal): #{file_path}"
+    # grabbing the wad file source folder name - split on "/" and grab element 2
+    # which is essentially the wad name without ".wad" at the end
+    wad_folder_name = file_path.split(/\//)[2]
+    decorate_source_file = file_path.split(/\//)[4]
+    puts "#{wad_folder_name}"
+    dest_path_one = File.dirname(file_path) + "/" + File.basename(file_path) + ".nocomments1"
+    puts "Output file 1 (comment removal): #{dest_path_one}"
+    dest_path_two = File.dirname(file_path) + "/" + File.basename(file_path) + ".nocomments2"
+    puts "Output file 2 (comment removal): #{dest_path_two}"
+      
+    # Remove block quotes - globally to the entire file
+    puts "Removing block quotes..."
+    input_string = File.read(file_path)
+    output_string = input_string.gsub(%r{/\*.*?\*/}m, "")
+    File.write(dest_path_one, output_string)
 
-  input_file = File.open(dest_path_one, "r")
-  output_file = File.open(dest_path_two, "w")
-
-  # Per line processing
-  puts "Per line processing..."
-  input_file.each_line do |line|
-    # Remove comments that start with "//"
-    line = line.gsub(/\/\/.*$/, "")
-    # Only perform processing on the line if it is not empty - to save on CPU
-    # cycles
-    if !line.strip.empty?
-      if line =~ /^\s*#include/i
-        puts "Include file: " + line
-	# replace line with the full text of the included file
-	include_file = line.gsub(/#include\s+"(\w+)"/i) { $1.upcase }
-        line = File.read(File.dirname(file_path) + "/" + include_file + ".raw")
+    input_file = File.open(dest_path_one, "r")
+    output_file = File.open(dest_path_two, "w")
+    
+    # Per line processing
+    puts "Per line processing..."
+    input_file.each_line do |line|
+      # Remove comments that start with "//"
+      line = line.gsub(/\/\/.*$/, "")
+      # Only perform processing on the line if it is not empty - to save on CPU
+      # cycles
+      if !line.strip.empty?
+        if line =~ /^\s*#include/i
+          puts "Include file: " + line
+	  # replace line with the full text of the included file
+	  include_file = line.gsub(/#include\s+"(\w+)"/i) { $1.upcase }
+          line = File.read(File.dirname(file_path) + "/" + include_file + ".raw")
+        end
+        
+        # put curly braces on their own line
+        line = line.gsub(/(\{|\})/) do |match| "\n#{match}" end
+        
+        output_file.puts(line)
+        # This block is deprecated but I might need to refer to this code later
+        # if line =~ /^\s*actor/i # insert a line break prior to the first
+        # opening curly brace "{" # line = line.gsub(/\{/, "\n{") # print the
+        # actor (the part before the first line break) #puts "Actor: " +
+        # line.gsub(/\n.+$/, "")
+        #end
+        
       end
-
-      # put curly braces on their own line
-      line = line.gsub(/(\{|\})/) do |match| "\n#{match}" end
-
-      output_file.puts(line)
-      # This block is deprecated but I might need to refer to this code later
-      # if line =~ /^\s*actor/i # insert a line break prior to the first
-      # opening curly brace "{" # line = line.gsub(/\{/, "\n{") # print the
-      # actor (the part before the first line break) #puts "Actor: " +
-      # line.gsub(/\n.+$/, "")
-      #end
-
     end
+
+    input_file.close
+    output_file.close
+
+    # reopen the *.nocomments2 file
+    input_text = File.read(dest_path_two)
+    input_text = input_text.gsub(/^\s*/, "")
+  else
+    # no_touchy == true
+    # no touchy means we skip all that and just open the file for reading
+    input_text = File.read(file_path)
+
+    # strip leading whitespace
+    input_text = input_text.gsub(/^\s*/, "")
+    # wad_folder_name
+    wad_folder_name = file_path.split(/\//)[2]
+    decorate_source_file = file_path.split(/\//)[3]
   end
 
-  input_file.close
-  output_file.close
-
-  # reopen the *.nocomments2 files and break them down into actors
-  input_text = File.read(dest_path_two)
   # actors = input_text.scan(/^\s*actor\s+.*{(?:[^{}]+|(?R))*?}/mi) actors =
   # input_text.split(/^\s*actor\s+/i)
-  actors = input_text.split(/(^|\n)\s*actor/i)
+  #actors = input_text.split(/(^|\n)\s*actor/i)
+  # split on "actor" preserving the word "actor" in the text
+  input_text = input_text.gsub(/^actor\s+/im, "SPECIALDELIMITERactor ")
+  actors = input_text.split("SPECIALDELIMITER")
+
   # Remove empty strings from the resulting array
   actors.reject! { |actor| actor.strip.empty? }
+  actors.reject! { |actor| actor.starts_with?('/') }
+  
   actors.compact!
+
+  puts "File Path: #{file_path}"
+  puts "Actors:"
+ 
+  actors.each_with_index do |actor, actor_index|
+    puts "Actor (#{actor_index}):"
+    puts "-----------"
+    puts actor
+    puts "-----------"
+  end
+
   actors.each_with_index do |actor, actor_index|
     puts "======================="
     # there are a few options here and we need to account for all of them
@@ -555,7 +599,7 @@ Dir.glob("./Processing/*/defs/DECORATE.raw") do |file_path|
   
     # strip leading and trailing whitespace on each line
     lines = actor.lines
-    lines.map! { |line| line.strip }
+    lines.map! { |line| line.lstrip.strip }
     lines.reject! { |line| line.empty? }
     lines.compact!
     actor = lines.join("\n")
@@ -566,7 +610,8 @@ Dir.glob("./Processing/*/defs/DECORATE.raw") do |file_path|
     partial_comment = -1
     words.each_with_index do |value, word_index|
       # the line starts with "/" (only comments have slashes on this line)
-      if value =~ /^\s*\/+/
+      # or is the word "native"
+      if value.lstrip.strip =~ /^\s*\/+/ || value.downcase.strip == "native"
         # partial comment will be set to the lowest word number because all the
         # words after it are a comment as well
         if partial_comment < 0
@@ -584,38 +629,39 @@ Dir.glob("./Processing/*/defs/DECORATE.raw") do |file_path|
     end
 
     number_of_words = words.size
-    puts "Actor: #{words.first}"
-    new_actor = Actor.new("#{words[0].downcase}", actor_index)
+    puts "Actor: \"#{words[1].downcase}\""
+    puts "File: \"#{file_path}\""
+    new_actor = Actor.new("#{words[1].downcase}", actor_index)
     new_actor.source_wad_folder = wad_folder_name
     new_actor.source_file = decorate_source_file
 
-    # number of words == 2 means that word[1] == a number
-    if number_of_words == 2
-      new_actor.doomednum = words[1].to_i
+    # number of words == 3 means that word[2] == a number
+    if number_of_words == 3
+      new_actor.doomednum = words[2].to_i
     end
 
     # there are 2 possibilities: colon (inheritance), or replaces
-    if number_of_words == 3 || number_of_words == 4
-      if words[1] =~ /^\s*:\s*/
-        new_actor.inherits = words[2]
-      elsif words[1].downcase =~ /^\s*replaces\s*/
-        new_actor.replaces = words[2]
+    if number_of_words == 4 || number_of_words == 5
+      if words[2] =~ /^\s*:\s*/
+        new_actor.inherits = words[3]
+      elsif words[2].downcase =~ /^\s*replaces\s*/
+        new_actor.replaces = words[3]
       else
-        puts "Error: word: #{words[1]} is not a colon, or 'replaces'"
+        puts "Error: word: #{words[2]} is not a colon, or 'replaces'"
       end
 
       # if there are 4 words, the last must be doomednum
-      if number_of_words == 4
-        new_actor.doomednum = words[3].to_i
+      if number_of_words == 5
+        new_actor.doomednum = words[4].to_i
       end
     end
 
     # if there are 5-6 words, it means inherit and replace, and 6 is doomednum
-    if number_of_words == 5 || number_of_words == 6
-      new_actor.inherits = words[3]
-      new_actor.replaces = words[5]
-      if number_of_words == 6
-        new_actor.doomednum = words[6].to_i
+    if number_of_words == 6 || number_of_words == 7
+      new_actor.inherits = words[4]
+      new_actor.replaces = words[6]
+      if number_of_words == 7
+        new_actor.doomednum = words[7].to_i
       end
     end
 
@@ -646,14 +692,19 @@ Dir.glob("./Processing/*/defs/DECORATE.raw") do |file_path|
       #  end
       #end
 
-      if line =~ /^\s*health\s+/i
+      # flag the built in actors
+      if no_touchy[file_path] == true
+        new_actor.built_in = true
+      end
+
+      if line =~ /^\s*health\s+/i && new_actor.name.downcase.strip != "health"
         puts "  - Health: " + line.split[1]?.to_s
         new_actor.health = line.split[1].to_i
       end
 
       if line =~ /^\s*radius\s+/i
         puts "  - Radius: " + line.split[1]?.to_s
-        new_actor.radius = line.split[1].to_i
+        new_actor.radius = line.split[1].to_f
       end
 
       if line =~ /^\s*height\s+/i
@@ -668,7 +719,7 @@ Dir.glob("./Processing/*/defs/DECORATE.raw") do |file_path|
 
       if line=~ /^\s*speed\s+/i
         puts "  - Speed: " + line.split[1]?.to_s
-        new_actor.speed = line.split[1].to_i
+        new_actor.speed = line.split[1].to_f
       end
 
       if line =~ /^\s*painchance\s+/i
@@ -761,6 +812,10 @@ actordb.each_with_index do |actor, actor_index|
 
     new_dupe_doomednum = DupedDoomednums.new(actor.name, actor.doomednum, actor.source_wad_folder, actordb[doomednum_info[actor.doomednum][0]].source_wad_folder)
     duped_doomednum_db << new_dupe_doomednum
+
+    if actor.built_in == true
+      puts "Fatal Error: built in actor flagged as duplicate: #{actor.name}"
+    end
   else
     doomednum_info[actor.doomednum] = {actor_index, actor.index}
   end
@@ -981,6 +1036,50 @@ duped_doomednum_db.each_with_index do |duped_doomednum, doomednum_index|
     end
   end
 end
+
+######################
+# Evaluate Inheritance
+######################
+# 1) we need to compile a list of inherited actors and inheritance depth
+# 2) working backwards from highest inheritance depth, we need to replace the monster and then rewrite the inheritance property
+#    e.g. actor1 : actor2, actor2 : actor3, actor 3: actor4
+#    so in this example we do
+#      set actor3 to actor4, then overwrite inherits, and any defined properties
+#      set actor2 to actor3, then overwrite inherits, and any defined properties
+#      set actor1 to actor2, then overwrite inherits, and any defined properties
+
+puts "#################################"
+puts "# Evaluating Inheritance"
+puts "#################################"
+
+# creating a default actor to do some property math (sort of as a mask, if that makes sense)
+default_actor = Actor.new("default", 1)
+
+property_list = default_actor.property_list
+
+actordb.each_with_index do |actor, actor_index|
+  # inheritance depth, actor
+  inheritance_info = Hash(Int32, String).new
+  inherited_actor_name = actor.inherits
+  inheritance_depth = 0
+  puts "-----------------"
+  puts "Actor: #{actor.name}"
+  while inherited_actor_name != "UNDEFINED"
+    puts "Inherits: #{inherited_actor_name}" 
+    inheritance_info[inheritance_depth] = inherited_actor_name
+    inheritance_depth += 1
+    if name_info.fetch(inherited_actor_name, nil)
+      inherited_actor_index = name_info[inherited_actor_name][0]
+      exit(0)
+      #inherited_actor_name = actordb[name_info[inherited_actor_index]].name
+    else
+      puts "Error: inherited actor #{inherited_actor_name} is not present in source wads"
+      break
+    end
+  end
+end
+
+exit(0)
 
 # Monsters without IDs
 puts "==================================="
