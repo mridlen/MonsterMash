@@ -52,8 +52,9 @@ class DupedDoomednums
   property doomednum : Int32
   property wad_name : String
   property duped_wad_name : String
+  property built_in : Bool = false
 
-  def initialize(@name : String, @doomednum : Int32, @wad_name : String, @duped_wad_name : String)
+  def initialize(@name : String, @doomednum : Int32, @wad_name : String, @duped_wad_name : String, @built_in : Bool)
   end
 end
 
@@ -68,6 +69,8 @@ class Actor
   property replaces : String = "UNDEFINED"
   # -1 will mean undefined
   property doomednum : Int32 = -1
+  # this is rare but sometimes pops up and might be useful later
+  property native : Bool = false
 
   # these next few are things that are not part of the decorate specifications
   # but they are information I will need to collect for logistical purposes
@@ -75,20 +78,19 @@ class Actor
   # sprite prefixes will be comma separated list of 4 character graphic prefixes
   # e.g. "PAIN,BLAH,BORK"
   property sprite_prefixes : String = "UNDEFINED"
-  #
+  # File Path: e.g. "./Processing/Actor/defs/DECORATE.raw"
+  property file_path : String = "UNDEFINED"
   # e.g. Blah.wad -> "Blah"
   property source_wad_folder : String = "UNDEFINED"
-  #
   # This will be "DECORATE.raw.nocomments2" or "OTHERFILE.raw"
   property source_file : String = "UNDEFINED"
-  #
   # Built In == part of some actor inherent in the doom source code
   property built_in : Bool = false
-
+  
   # and here we go with the properties inside the DECORATE...
   property game : String = "Doom"
   property spawn_id : Int32 = 0
-  property conversation_id : Int32 = 0
+  property conversation_id : String = "UNDEFINED"
   property tag : String = "UNDEFINED"
   property health : Int32 = 1000
   property gib_health : Int32 = -1000
@@ -490,49 +492,57 @@ end
 # concatenate the two file arrays - built in goes first to avoid getting flagged as dupe
 full_dir_list = built_in_actors + processing_files
 
+puts full_dir_list
+
 puts "Removing comments from DECORATE.raw files into DECORATE.nocomments files"
 # Remove DECORATE comments
 full_dir_list.each do |file_path|
   if no_touchy[file_path] == false
-    puts "Source file (comment removal): #{file_path}"
+    # puts "Source file (comment removal): #{file_path}"
     # grabbing the wad file source folder name - split on "/" and grab element 2
     # which is essentially the wad name without ".wad" at the end
     wad_folder_name = file_path.split(/\//)[2]
     decorate_source_file = file_path.split(/\//)[4]
     puts "#{wad_folder_name}"
-    dest_path_one = File.dirname(file_path) + "/" + File.basename(file_path) + ".nocomments1"
-    puts "Output file 1 (comment removal): #{dest_path_one}"
-    dest_path_two = File.dirname(file_path) + "/" + File.basename(file_path) + ".nocomments2"
-    puts "Output file 2 (comment removal): #{dest_path_two}"
+    #dest_path_one = File.dirname(file_path) + "/" + File.basename(file_path) + ".nocomments1"
+    #puts "Output file 1 (comment removal): #{dest_path_one}"
+    #dest_path_two = File.dirname(file_path) + "/" + File.basename(file_path) + ".nocomments2"
+    #puts "Output file 2 (comment removal): #{dest_path_two}"
       
     # Remove block quotes - globally to the entire file
-    puts "Removing block quotes..."
-    input_string = File.read(file_path)
-    output_string = input_string.gsub(%r{/\*.*?\*/}m, "")
-    File.write(dest_path_one, output_string)
+    # puts "Removing block quotes..."
+    # input_string = File.read(file_path)
+    # output_string = input_string.gsub(%r{/\*.*?\*/}m, "")
+    # File.write(dest_path_one, output_string)
 
-    input_file = File.open(dest_path_one, "r")
-    output_file = File.open(dest_path_two, "w")
+    input_file = File.read(file_path)
+    #output_file = File.open(dest_path_two, "w")
     
     # Per line processing
     puts "Per line processing..."
     input_file.each_line do |line|
       # Remove comments that start with "//"
-      line = line.gsub(/\/\/.*$/, "")
+      # line = line.gsub(/\/\/.*$/, "")
       # Only perform processing on the line if it is not empty - to save on CPU
       # cycles
       if !line.strip.empty?
         if line =~ /^\s*#include/i
           puts "Include file: " + line
 	  # replace line with the full text of the included file
+          # Going to try to add it to the end of the array and SEE WHAT HAPPENS!
 	  include_file = line.gsub(/#include\s+"(\w+)"/i) { $1.upcase }
-          line = File.read(File.dirname(file_path) + "/" + include_file + ".raw")
+          # line = File.read(File.dirname(file_path) + "/" + include_file + ".raw")
+          new_directory = File.dirname(file_path) + "/" + include_file + ".raw"
+          full_dir_list << new_directory
+          no_touchy[new_directory] = false
         end
         
         # put curly braces on their own line
-        line = line.gsub(/(\{|\})/) do |match| "\n#{match}" end
+        #line = line.gsub(/.+(\{|\})/) do |match|
+        #  "\n#{match}"
+        #end
         
-        output_file.puts(line)
+        #output_file.puts(line)
         # This block is deprecated but I might need to refer to this code later
         # if line =~ /^\s*actor/i # insert a line break prior to the first
         # opening curly brace "{" # line = line.gsub(/\{/, "\n{") # print the
@@ -543,11 +553,11 @@ full_dir_list.each do |file_path|
       end
     end
 
-    input_file.close
-    output_file.close
+    #input_file.close
+    #output_file.close
 
     # reopen the *.nocomments2 file
-    input_text = File.read(dest_path_two)
+    input_text = File.read(file_path)
     input_text = input_text.gsub(/^\s*/, "")
   else
     # no_touchy == true
@@ -556,10 +566,29 @@ full_dir_list.each do |file_path|
 
     # strip leading whitespace
     input_text = input_text.gsub(/^\s*/, "")
+    # file paths are a little different...
     # wad_folder_name
     wad_folder_name = file_path.split(/\//)[2]
     decorate_source_file = file_path.split(/\//)[3]
   end
+
+  # remove "//" comments
+  #input_text = input_text.gsub(/\/\/.*$/m, "")
+  input_text = input_text.gsub(%r{//[^\n]*}, "")
+
+  # remove /* through */ comments
+  input_text = input_text.gsub(/\/\*[\s\S]*\*\//m, "")
+
+  # put curly braces on their own line
+  # Add a newline before opening curly braces on their own line
+  input_text = input_text.gsub('{', "\n{\n")
+  input_text = input_text.gsub('}', "\n}\n")
+
+  # removing any leading or trailing spaces on each line - cleanup
+  input_text = input_text.split("\n").map { |line| line.lstrip.strip }.join("\n")
+
+  # remove any blank lines
+  input_text = input_text.split("\n").reject { |line| line.strip.empty? }.join("\n")
 
   # actors = input_text.scan(/^\s*actor\s+.*{(?:[^{}]+|(?R))*?}/mi) actors =
   # input_text.split(/^\s*actor\s+/i)
@@ -570,9 +599,8 @@ full_dir_list.each do |file_path|
 
   # Remove empty strings from the resulting array
   actors.reject! { |actor| actor.strip.empty? }
-  actors.reject! { |actor| actor.starts_with?('/') }
   
-  actors.compact!
+  #actors.compact!
 
   puts "File Path: #{file_path}"
   puts "Actors:"
@@ -587,12 +615,12 @@ full_dir_list.each do |file_path|
   actors.each_with_index do |actor, actor_index|
     puts "======================="
     # there are a few options here and we need to account for all of them
-    # 0 1    2        3       4        5       6
+    # 0 1    2   3        4        5       6       7
     # actor blah
     # actor blah 1234
     # actor blah replaces oldblah
     # actor blah replaces oldblah 1234
-    # actor blah : oldblah
+    # actor blah :        oldblah
     # actor blah :        oldblah 1234
     # actor blah :        oldblah replaces oldblah
     # actor blah :        oldblah replaces oldblah 1234
@@ -605,13 +633,15 @@ full_dir_list.each do |file_path|
     actor = lines.join("\n")
 
     first_line = lines.first
-    words = first_line.split(/\s+/)
+    words = first_line.downcase.split(/\s+/)
     # parse partial comments on the actor line and remove
     partial_comment = -1
+    native = false
+
+    # if the last field of the "actor" line is "native" we need to parse that out and note the actor property
     words.each_with_index do |value, word_index|
-      # the line starts with "/" (only comments have slashes on this line)
-      # or is the word "native"
-      if value.lstrip.strip =~ /^\s*\/+/ || value.downcase.strip == "native"
+      if value.downcase.strip == "native"
+        native = true
         # partial comment will be set to the lowest word number because all the
         # words after it are a comment as well
         if partial_comment < 0
@@ -634,6 +664,8 @@ full_dir_list.each do |file_path|
     new_actor = Actor.new("#{words[1].downcase}", actor_index)
     new_actor.source_wad_folder = wad_folder_name
     new_actor.source_file = decorate_source_file
+    new_actor.file_path = file_path
+    new_actor.native = native
 
     # number of words == 3 means that word[2] == a number
     if number_of_words == 3
@@ -643,63 +675,85 @@ full_dir_list.each do |file_path|
     # there are 2 possibilities: colon (inheritance), or replaces
     if number_of_words == 4 || number_of_words == 5
       if words[2] =~ /^\s*:\s*/
-        new_actor.inherits = words[3]
+        new_actor.inherits = words[3].downcase
       elsif words[2].downcase =~ /^\s*replaces\s*/
-        new_actor.replaces = words[3]
+        new_actor.replaces = words[3].downcase
       else
         puts "Error: word: #{words[2]} is not a colon, or 'replaces'"
       end
 
       # if there are 4 words, the last must be doomednum
       if number_of_words == 5
+        puts words
         new_actor.doomednum = words[4].to_i
       end
     end
 
     # if there are 5-6 words, it means inherit and replace, and 6 is doomednum
     if number_of_words == 6 || number_of_words == 7
-      new_actor.inherits = words[4]
-      new_actor.replaces = words[6]
+      new_actor.inherits = words[4].downcase
+      new_actor.replaces = words[6].downcase
       if number_of_words == 7
         new_actor.doomednum = words[7].to_i
       end
     end
 
-    actor.each_line do |line|
-      # line.split[0] is always going to be "actor" (case insensitive)
-      # line.split[1] is always going to be the actor name
-      #if line =~ /^\s*actor/i
-      #  puts "Actor Name: " + line.split[1]
-      #  # line.split[2] might be ":", "replaces", or numeric (doomednum), or
-      #   # nothing
-      #	if line.split[2]? == ":"
-      #   puts "  - Inherits: " + line.split[3]?.to_s
-      # elsif line.split[2]? == "replaces"
-      #    puts "  - Replaces: " + line.split[3]?.to_s
-      # elsif line.split[2]? != nil
-      #    puts "  - doomednum: " + line.split[2]?.to_s
-      # end
-      #
-      # # line.split[4] might be "replaces" or doomednum
-      # if line.split[4]? == "replaces"
-      #    puts "  - Replaces: " + line.split[5]?.to_s
-      #    # line.split[6] if populated is always doomednum
-      #    if line.split[6]? != nil
-      #      puts "  - doomednum: " + line.split[6]?.to_s
-      #    end
-      #  elsif line.split[4]? != nil
-      #    puts "  - doomednum: " + line.split[4]?.to_s
-      #  end
-      #end
-
+    # ignore first line
+    actor.each_line.with_index do |line, index|
+      next if index.zero?
       # flag the built in actors
       if no_touchy[file_path] == true
         new_actor.built_in = true
       end
 
+      if line =~ /^\s*game\s+/i
+        puts "  - Game: " + line.split[1]?.to_s
+        new_actor.game = line.split[1]?.to_s
+      end
+
+      if line =~ /^\s*spawnid\s+/i
+        puts "  - SpawnID: " + line.split[1]?.to_s
+        new_actor.spawn_id = line.split[1].to_i
+      end
+
+      if line =~ /^\s*conversationid\s+/i
+        puts "  - ConversationID: " + line.split[1..-1]?.to_s
+        new_actor.conversation_id = line.split[1..-1].to_s
+      end
+
+      if line =~ /^\s*tag\s+/i
+        puts "  - Tag: " + line.split[1]?.to_s
+        new_actor.tag = line.split[1]?.to_s
+      end
+
       if line =~ /^\s*health\s+/i && new_actor.name.downcase.strip != "health"
         puts "  - Health: " + line.split[1]?.to_s
         new_actor.health = line.split[1].to_i
+      end
+
+      if line =~ /^\s*gibhealth\s+/i
+        puts "  - GibHealth: " + line.split[1]?.to_s
+        new_actor.gib_health = line.split[1].to_i
+      end
+
+      if line =~ /^\s*woundhealth\s+/i
+        puts "  - WoundHealth: " + line.split[1]?.to_s
+        new_actor.wound_health = line.split[1].to_i
+      end
+
+      if line =~ /^\s*reactiontime\s+/i
+        puts "  - ReactionTime: " + line.split[1]?.to_s
+        new_actor.reaction_time = line.split[1].to_i
+      end
+
+      if line =~ /^\s*painchance\s+/i
+        puts "  - PainChance: " + line.split[1]?.to_s
+        new_actor.pain_chance = "#{line.split[1]?.to_s},#{line.split[2]?.to_s}"
+      end
+
+      if line =~ /^\s*painthreshold\s+/i
+        puts "  - PainThreshold: " + line.split[1]?.to_s
+        new_actor.pain_threshold = line.split[1].to_i
       end
 
       if line =~ /^\s*radius\s+/i
@@ -720,11 +774,6 @@ full_dir_list.each do |file_path|
       if line=~ /^\s*speed\s+/i
         puts "  - Speed: " + line.split[1]?.to_s
         new_actor.speed = line.split[1].to_f
-      end
-
-      if line =~ /^\s*painchance\s+/i
-        puts "  - Painchance: " + line.split[1]?.to_s + " " + line.split[2]?.to_s
-        new_actor.pain_chance = "#{line.split[1]?.to_s},#{line.split[2]?.to_s}"
       end
 
       if line =~/^\s*projectile\s*$/i
@@ -766,17 +815,78 @@ full_dir_list.each do |file_path|
     #rescue e : Regex::Error
     #  puts "Regex match error: #{e.message}"
     #end
-    
+
     actordb << new_actor
 
     puts "======================="
   end
 end
 
+exit(0)
+
+puts "=========================="
 puts "END FILE READING"
 puts "=========================="
 puts "CHECKING DUPLICATES"
 puts "=========================="
+
+# Experiments with a new duplicate detection method...
+# We are sorting by the different fields that we want to query by...
+# e.g. actors_by_name["doomimp"] will return an array of Actors that are named "doomimp"
+actors_by_name = actordb.reduce(Hash(String, Array(Actor)).new) do |acc, actor|
+  if acc.fetch(actor.name, nil)
+    iteration_array = acc[actor.name]
+  else
+    iteration_array = Array(Actor).new
+  end
+  iteration_array << actor
+  acc[actor.name] = iteration_array
+
+  acc
+end
+
+# the same but with inherited actors
+actors_by_inherits = actordb.reduce(Hash(String, Array(Actor)).new) do |acc, actor|
+  if acc.fetch(actor.inherits, nil)
+    iteration_array = acc[actor.inherits]
+  else
+    iteration_array = Array(Actor).new
+  end
+  iteration_array << actor
+  acc[actor.inherits] = iteration_array
+
+  acc
+end
+
+# the same but with replaced actors
+actors_by_replaces = actordb.reduce(Hash(String, Array(Actor)).new) do |acc, actor|
+  if acc.fetch(actor.replaces, nil)
+    iteration_array = acc[actor.replaces]
+  else
+    iteration_array = Array(Actor).new
+  end
+  iteration_array << actor
+  acc[actor.replaces] = iteration_array
+
+  acc
+end
+
+puts "==================================="
+puts "Actor Dupe Count"
+puts "==================================="
+actors_by_name.each_key do |key|
+  puts "Actor Name: #{key}"
+  puts "Actor Count: #{actors_by_name[key].size}"
+  if actors_by_inherits.fetch(key, nil)
+    puts "Inherit Count: #{actors_by_inherits[key].size}"
+  end
+  if actors_by_replaces.fetch(key, nil)
+    puts "Replace Count: #{actors_by_replaces[key].size}"
+  end
+  puts "----------------------------------"
+end
+
+exit(0)
 
 # Check for duplicate names
 name_info = Hash(String, Tuple(Int32, Int32)).new
@@ -793,7 +903,7 @@ actordb.each_with_index do |actor, actor_index|
     new_dupe_name = DupedActorName.new(actor.name, actor.source_wad_folder, actordb[name_info[actor.name][0]].source_wad_folder)
     duped_names_db << new_dupe_name
   else
-    name_info[actor.name] = {actor_index, actor.index}
+    name_info[actor.name.downcase] = {actor_index, actor.index}
   end
 end
 
@@ -810,12 +920,8 @@ actordb.each_with_index do |actor, actor_index|
     puts "  Source: #{actordb[actor_index].source_wad_folder}"
     puts "  Source: #{actordb[doomednum_info[actor.doomednum][0]].source_wad_folder}"
 
-    new_dupe_doomednum = DupedDoomednums.new(actor.name, actor.doomednum, actor.source_wad_folder, actordb[doomednum_info[actor.doomednum][0]].source_wad_folder)
+    new_dupe_doomednum = DupedDoomednums.new(actor.name, actor.doomednum, actor.source_wad_folder, actordb[doomednum_info[actor.doomednum][0]].source_wad_folder, actor.built_in)
     duped_doomednum_db << new_dupe_doomednum
-
-    if actor.built_in == true
-      puts "Fatal Error: built in actor flagged as duplicate: #{actor.name}"
-    end
   else
     doomednum_info[actor.doomednum] = {actor_index, actor.index}
   end
@@ -964,6 +1070,7 @@ def numeric?(str : String) : Bool
 end
 
 duped_doomednum_db.each_with_index do |duped_doomednum, doomednum_index|
+  next if duped_doomednum.built_in == true
   puts "-------------------------------------"
   puts "Duped Doomednum: #{duped_doomednum.doomednum}"
   puts "-------------------------------------"
@@ -1066,20 +1173,33 @@ actordb.each_with_index do |actor, actor_index|
   puts "Actor: #{actor.name}"
   while inherited_actor_name != "UNDEFINED"
     puts "Inherits: #{inherited_actor_name}" 
+    sleep 20.milliseconds
     inheritance_info[inheritance_depth] = inherited_actor_name
     inheritance_depth += 1
     if name_info.fetch(inherited_actor_name, nil)
-      inherited_actor_index = name_info[inherited_actor_name][0]
-      exit(0)
-      #inherited_actor_name = actordb[name_info[inherited_actor_index]].name
+      if actors_by_name[inherited_actor_name].size == 1
+        inherited_actor_name = actors_by_name[inherited_actor_name][0].inherits
+      elsif actors_by_name[inherited_actor_name].size > 1
+        # we need to determine if there are more than one wad that has this actor name
+        wad_dupe_counter = 0
+        actors_by_name[inherited_actor_name].each_with_index do |actor_by_name, actor_by_name_index|
+          if actor_by_name.built_in == false
+            wad_dupe_counter += 1
+            inherited_actor_name = actor_by_name.inherits
+          end
+          if wad_dupe_counter == 2
+            puts "Fatal Error: inherited actor name is duplicated:"
+            puts actor_by_name.name
+            exit(1)
+          end
+        end
+      end
     else
       puts "Error: inherited actor #{inherited_actor_name} is not present in source wads"
       break
-    end
+    end    
   end
 end
-
-exit(0)
 
 # Monsters without IDs
 puts "==================================="
@@ -1145,8 +1265,6 @@ actordb.each_with_index do |actor, actor_index|
     end
   end
 end
-
-exit(0)
 
 puts "Itemized line replacements: #{itemized_line_replacements}"
 
