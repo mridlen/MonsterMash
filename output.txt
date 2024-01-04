@@ -1,0 +1,2495 @@
+START
+Requires...
+Assigning jeutool...
+Jeutool assigned: jeutool-linux
+Creating Processing directory...
+Creating Source directory...
+Creating Completed directory...
+Deleting all files under Processing directory...
+Deletion completed.
+Extraction process starting...
+Processing file: ./Source/BossesDemo.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/BossesDemo.wad
+Created output dir: ./Source/BossesDemo
+Saved base-pal.txt
+Extracting maps...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/GemTurret.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/GemTurret.wad
+Created output dir: ./Source/GemTurret
+Saved base-pal.txt
+Extracting defs...
+Extracting music...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/monsterdemo.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/monsterdemo.wad
+Created output dir: ./Source/monsterdemo
+Saved base-pal.txt
+Extracting maps...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/lordviledemo.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/lordviledemo.wad
+Created output dir: ./Source/lordviledemo
+Saved base-pal.txt
+Extracting maps...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/RapidFireTrooper.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/RapidFireTrooper.wad
+Created output dir: ./Source/RapidFireTrooper
+Saved base-pal.txt
+Extracting defs...
+Extracting graphics...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/FireWyvern.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/FireWyvern.wad
+Created output dir: ./Source/FireWyvern
+Saved base-pal.txt
+Extracting defs...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/Arachnid.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/Arachnid.wad
+Created output dir: ./Source/Arachnid
+Saved base-pal.txt
+Extracting defs...
+Extracting music...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/QuakeGrunt.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/QuakeGrunt.wad
+Created output dir: ./Source/QuakeGrunt
+Saved base-pal.txt
+Extracting defs...
+Extracting music...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/RocketTurret.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/RocketTurret.wad
+Created output dir: ./Source/RocketTurret
+Saved base-pal.txt
+Extracting unknown...
+Extracting defs...
+Extracting music...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/NightmareCacodemon.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/NightmareCacodemon.wad
+Created output dir: ./Source/NightmareCacodemon
+Saved base-pal.txt
+Extracting defs...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/IceGolem.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/IceGolem.wad
+Created output dir: ./Source/IceGolem
+Saved base-pal.txt
+Extracting defs...
+Extracting sounds...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/KullWarrior.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/KullWarrior.wad
+Created output dir: ./Source/KullWarrior
+Saved base-pal.txt
+Extracting defs...
+Extracting music...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/Reaper.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/Reaper.wad
+Created output dir: ./Source/Reaper
+Saved base-pal.txt
+Extracting defs...
+Extracting sounds...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/Xenodemon.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/Xenodemon.wad
+Created output dir: ./Source/Xenodemon
+Saved base-pal.txt
+Extracting defs...
+Extracting music...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/Scimitar.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/Scimitar.wad
+Created output dir: ./Source/Scimitar
+Saved base-pal.txt
+Extracting defs...
+Extracting sounds...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/DemonWizard.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/DemonWizard.wad
+Created output dir: ./Source/DemonWizard
+Saved base-pal.txt
+Extracting defs...
+Extracting music...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/SkeletonDemon.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/SkeletonDemon.wad
+Created output dir: ./Source/SkeletonDemon
+Saved base-pal.txt
+Extracting defs...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/Acolyte.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/Acolyte.wad
+Created output dir: ./Source/Acolyte
+Saved base-pal.txt
+Extracting defs...
+Extracting music...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/SkeletonImp.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/SkeletonImp.wad
+Created output dir: ./Source/SkeletonImp
+Saved base-pal.txt
+Extracting defs...
+Extracting music...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/HornedDemon.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/HornedDemon.wad
+Created output dir: ./Source/HornedDemon
+Saved base-pal.txt
+Extracting defs...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/Disciple.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/Disciple.wad
+Created output dir: ./Source/Disciple
+Saved base-pal.txt
+Extracting defs...
+Extracting music...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/RotWraith.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/RotWraith.wad
+Created output dir: ./Source/RotWraith
+Saved base-pal.txt
+Extracting defs...
+Extracting music...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/HellsGuard.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/HellsGuard.wad
+Created output dir: ./Source/HellsGuard
+Saved base-pal.txt
+Extracting defs...
+Extracting graphics...
+Extracting music...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/HellforgedDemon.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/HellforgedDemon.wad
+Created output dir: ./Source/HellforgedDemon
+Saved base-pal.txt
+Extracting defs...
+Extracting music...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/InvisibleWarrior.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/InvisibleWarrior.wad
+Created output dir: ./Source/InvisibleWarrior
+Saved base-pal.txt
+Extracting defs...
+Extracting music...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/BlackWidow.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/BlackWidow.wad
+Created output dir: ./Source/BlackWidow
+Saved base-pal.txt
+Extracting defs...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/Xenomorph.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/Xenomorph.wad
+Created output dir: ./Source/Xenomorph
+Saved base-pal.txt
+Extracting defs...
+Extracting sounds...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/bearkiller.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/bearkiller.wad
+Created output dir: ./Source/bearkiller
+Saved base-pal.txt
+Extracting defs...
+Extracting music...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/Cultist.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/Cultist.wad
+Created output dir: ./Source/Cultist
+Saved base-pal.txt
+Extracting defs...
+Extracting graphics...
+Extracting music...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/Horn Beast30018.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/Horn Beast30018.wad
+Created output dir: ./Source/Horn Beast30018
+Saved base-pal.txt
+Extracting defs...
+Extracting sounds...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/Vore.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/Vore.wad
+Created output dir: ./Source/Vore
+Saved base-pal.txt
+Extracting defs...
+Extracting music...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/D4Caco.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/D4Caco.wad
+Created output dir: ./Source/D4Caco
+Saved base-pal.txt
+Extracting defs...
+Extracting music...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/Butcher.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/Butcher.wad
+Created output dir: ./Source/Butcher
+Saved base-pal.txt
+Extracting defs...
+Extracting music...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/Banshee.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/Banshee.wad
+Created output dir: ./Source/Banshee
+Saved base-pal.txt
+Extracting defs...
+Extracting music...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/Daleks.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/Daleks.wad
+Created output dir: ./Source/Daleks
+Saved base-pal.txt
+Extracting defs...
+Extracting music...
+Extracting sounds...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/ChaosWyvern.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/ChaosWyvern.wad
+Created output dir: ./Source/ChaosWyvern
+Saved base-pal.txt
+Extracting defs...
+Extracting music...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/ChaosCube.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/ChaosCube.wad
+Created output dir: ./Source/ChaosCube
+Saved base-pal.txt
+Extracting defs...
+Extracting music...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/Astrademon.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/Astrademon.wad
+Created output dir: ./Source/Astrademon
+Saved base-pal.txt
+Extracting defs...
+Extracting music...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/CrimsonDisciple.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/CrimsonDisciple.wad
+Created output dir: ./Source/CrimsonDisciple
+Saved base-pal.txt
+Extracting defs...
+Extracting music...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/Infernal.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/Infernal.wad
+Created output dir: ./Source/Infernal
+Saved base-pal.txt
+Extracting defs...
+Extracting sounds...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/Nosferati.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/Nosferati.wad
+Created output dir: ./Source/Nosferati
+Saved base-pal.txt
+Extracting defs...
+Extracting graphics...
+Extracting music...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/KnightArcher.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/KnightArcher.wad
+Created output dir: ./Source/KnightArcher
+Saved base-pal.txt
+Extracting defs...
+Extracting sounds...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/Zardaz.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/Zardaz.wad
+Created output dir: ./Source/Zardaz
+Saved base-pal.txt
+Extracting defs...
+Extracting music...
+Extracting sounds...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/Aracknight.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/Aracknight.wad
+Created output dir: ./Source/Aracknight
+Saved base-pal.txt
+Extracting defs...
+Extracting sounds...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/Corpulent.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/Corpulent.wad
+Created output dir: ./Source/Corpulent
+Saved base-pal.txt
+Extracting defs...
+Extracting sounds...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/ImpWarlord.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/ImpWarlord.wad
+Created output dir: ./Source/ImpWarlord
+Saved base-pal.txt
+Extracting defs...
+Extracting sounds...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/Cyclobus.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/Cyclobus.wad
+Created output dir: ./Source/Cyclobus
+Saved base-pal.txt
+Extracting defs...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/Bormereth.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/Bormereth.wad
+Created output dir: ./Source/Bormereth
+Saved base-pal.txt
+Extracting defs...
+Extracting music...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/ApprenticeOfDsparil.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/ApprenticeOfDsparil.wad
+Created output dir: ./Source/ApprenticeOfDsparil
+Saved base-pal.txt
+Extracting defs...
+Extracting graphics...
+Extracting music...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/Robodude Buddy.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/Robodude Buddy.wad
+Created output dir: ./Source/Robodude Buddy
+Saved base-pal.txt
+Extracting defs...
+Extracting music...
+Extracting sounds...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/SlayerKnight.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/SlayerKnight.wad
+Created output dir: ./Source/SlayerKnight
+Saved base-pal.txt
+Extracting defs...
+Extracting music...
+Extracting sounds...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/Black Ops.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/Black Ops.wad
+Created output dir: ./Source/Black Ops
+Saved base-pal.txt
+Extracting unknown...
+Extracting defs...
+Extracting music...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/lordvile.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/lordvile.wad
+Created output dir: ./Source/lordvile
+Saved base-pal.txt
+Extracting unknown...
+Extracting defs...
+Extracting sounds...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/ScorpionMastermind.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/ScorpionMastermind.wad
+Created output dir: ./Source/ScorpionMastermind
+Saved base-pal.txt
+Extracting defs...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/Bosses.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/Bosses.wad
+Created output dir: ./Source/Bosses
+Saved base-pal.txt
+Extracting unknown...
+Extracting defs...
+Extracting sounds...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/monsters.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/monsters.wad
+Created output dir: ./Source/monsters
+Saved base-pal.txt
+Extracting unknown...
+Extracting defs...
+Extracting sounds...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/TouhouDoomAllies_r11.wad
+=======================================================
+ )|(  JeuTool 0.8.0  (C) 2018 Andrew Apted, et al  )|( 
+=======================================================
+
+Opened WAD file: ./Source/TouhouDoomAllies_r11.wad
+Created output dir: ./Source/TouhouDoomAllies_r11
+Saved base-pal.txt
+Extracting defs...
+Extracting music...
+Extracting sounds...
+Extracting acs...
+Extracting sprites...
+Saved config.cfg
+Closing WAD file
+
+Ok, all good.
+Processing file: ./Source/Monster.wad
+Extraction process complete.
+Starting the copy process from Source to Processing...
+Copy from Source to Processing completed.
+Starting Processing procedure...
+ZSCRIPT includes: TBD
+DECORATE includes: TBD
+Removing comments from DECORATE.raw files into DECORATE.nocomments files
+Source file (comment removal): ./Processing/GemTurret/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/GemTurret/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/GemTurret/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: GemTurret
+  - doomednum: 17479
+  - Health: 50
+  - Radius: 16
+  - Height: 40
+  - Mass: 0x7fffffff
+  - Speed: 0
+  - Monster
+Actor Name: GemFlash
+Actor Name: GemExplosion
+Actor Name: GemShard
+  - Radius: 4
+  - Mass: 4
+  - Projectile
+=======================
+Source file (comment removal): ./Processing/RapidFireTrooper/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/RapidFireTrooper/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/RapidFireTrooper/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: RapidFireTrooper
+  - doomednum: 17488
+  - Health: 130
+  - Radius: 20
+  - Height: 56
+  - Speed: 8
+  - Speed: 200
+  - Monster
+=======================
+Source file (comment removal): ./Processing/FireWyvern/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/FireWyvern/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/FireWyvern/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: FireWyvern
+  - doomednum: 3128
+  - Health: 125
+  - Speed: 128
+  - Speed: 16
+  - Radius: 28
+  - Height: 50
+  - Mass: 100
+  - Monster
+Actor Name: WyvernBall
+  - Speed: 10
+  - Radius: 10
+  - Height: 6
+  - Mass: 15
+  - Projectile
+=======================
+Source file (comment removal): ./Processing/Arachnid/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/Arachnid/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/Arachnid/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: Arachnid
+  - doomednum: 17477
+  - Health: 50
+  - Radius: 15
+  - Height: 35
+  - Speed: 15
+  - Speed: 75
+  - Speed: 256
+  - Monster
+=======================
+Source file (comment removal): ./Processing/QuakeGrunt/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/QuakeGrunt/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/QuakeGrunt/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: QuakeGrunt
+  - doomednum: 17487
+  - Monster
+  - Health: 30
+  - Mass: 90
+  - Speed: 10
+  - Radius: 19
+  - Height: 52
+  - Speed: 200
+=======================
+Source file (comment removal): ./Processing/RocketTurret/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/RocketTurret/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/RocketTurret/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: RocketTurret
+  - doomednum: 17489
+  - Radius: 32
+  - Height: 32
+  - Speed: 0
+  - Health: 300
+  - Monster
+Actor Name: RTurretProjectile
+  - Radius: 10
+  - Height: 14
+  - Speed: 24
+  - Projectile
+Actor Name: DeathExplosionSmaller
+=======================
+Source file (comment removal): ./Processing/NightmareCacodemon/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/NightmareCacodemon/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/NightmareCacodemon/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: NightmareCacodemon
+  - doomednum: 17500
+  - Health: 700
+  - Speed: 6
+  - Radius: 31
+  - Height: 56
+  - Speed: 96
+  - Mass: 400
+  - Monster
+=======================
+Source file (comment removal): ./Processing/IceGolem/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/IceGolem/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/IceGolem/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: IceGolem
+  - doomednum: 17475
+  - Health: 360
+  - Radius: 22
+  - Height: 56
+  - Mass: 600
+  - Speed: 16
+  - Speed: 32
+  - Monster
+Actor Name: IceGolemArmor
+  - Inherits: BasicArmorPickup
+Actor Name: IceGolemParticleA
+  - Height: 0
+  - Radius: 0
+  - Mass: 0
+Actor Name: IceGolemParticleTrail
+  - Inherits: IceGolemParticleA
+Actor Name: IceGolemSpect
+  - doomednum: 17476
+  - Health: 360
+  - Radius: 22
+  - Height: 56
+  - Mass: 600
+  - Speed: 16
+  - Speed: 32
+  - Monster
+=======================
+Source file (comment removal): ./Processing/KullWarrior/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/KullWarrior/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/KullWarrior/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: kullwarrior
+  - doomednum: 17485
+  - Health: 2000
+  - Radius: 20
+  - Height: 56
+  - Speed: 15
+  - Speed: 0
+  - Mass: 1000
+  - Monster
+Actor Name: KULLBALL
+  - Radius: 8
+  - Height: 6
+  - Speed: 30
+  - Projectile
+=======================
+Source file (comment removal): ./Processing/Reaper/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/Reaper/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/Reaper/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: Reaper
+  - doomednum: 17488
+  - Health: 300
+  - Radius: 20
+  - Height: 56
+  - Speed: 13
+  - Speed: 128
+  - Monster
+=======================
+Source file (comment removal): ./Processing/Xenodemon/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/Xenodemon/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/Xenodemon/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: Xenodemon
+  - doomednum: 17468
+  - Health: 420
+  - Height: 56
+  - Radius: 31
+  - Speed: 10
+  - Speed: 128
+  - Mass: 400
+  - Monster
+=======================
+Source file (comment removal): ./Processing/Scimitar/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/Scimitar/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/Scimitar/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: Scimitar
+  - doomednum: 17491
+  - Health: 50
+  - Speed: 85
+  - Speed: 20
+  - Radius: 16
+  - Height: 32
+  - Mass: 25
+  - Monster
+Actor Name: ScimShot1
+  - Radius: 4
+  - Height: 8
+  - Speed: 50
+  - Projectile
+Actor Name: ScimTrail1
+  - Radius: 0
+  - Height: 1
+  - Speed: 0
+  - Projectile
+Actor Name: ScimShot2
+  - Radius: 2
+  - Height: 4
+  - Speed: 35
+  - Projectile
+Actor Name: ScimTrail2
+  - Radius: 1
+  - Height: 1
+=======================
+Source file (comment removal): ./Processing/DemonWizard/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/DemonWizard/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/DemonWizard/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: DemonWizard
+  - doomednum: 17471
+  - Health: 220
+  - Radius: 22
+  - Height: 60
+  - Speed: 12
+  - Speed: 64
+  - Monster
+Actor Name: WDemonProj
+  - Radius: 10
+  - Height: 6
+  - Speed: 10
+  - Projectile
+Actor Name: WDemonProj2
+  - Inherits: WDemonProj
+=======================
+Source file (comment removal): ./Processing/SkeletonDemon/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/SkeletonDemon/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/SkeletonDemon/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: SkeletonDemon
+  - Inherits: Demon
+  - doomednum: 17492
+  - Health: 150
+  - Speed: 180
+  - Speed: 10
+  - Radius: 30
+  - Height: 56
+  - Mass: 400
+  - Monster
+=======================
+Source file (comment removal): ./Processing/Acolyte/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/Acolyte/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/Acolyte/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: Acolyte
+  - doomednum: 17449
+  - Health: 150
+  - Speed: 170
+  - Speed: 8
+  - Radius: 20
+  - Height: 56
+  - Mass: 150
+  - Monster
+Actor Name: AcolFX2
+  - Radius: 2
+  - Height: 2
+  - Speed: 0
+  - Projectile
+Actor Name: AcolyteShot
+  - Radius: 8
+  - Height: 16
+  - Speed: 10
+  - Projectile
+Actor Name: AcolFX1
+  - Radius: 0
+  - Height: 2
+  - Speed: 0
+  - Projectile
+=======================
+Source file (comment removal): ./Processing/SkeletonImp/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/SkeletonImp/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/SkeletonImp/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: SkeletonImp
+  - Inherits: DoomImp
+  - doomednum: 17493
+  - Health: 150
+  - Radius: 20
+  - Height: 56
+=======================
+Source file (comment removal): ./Processing/HornedDemon/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/HornedDemon/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/HornedDemon/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: HornedDemon
+  - doomednum: 17481
+  - Health: 500
+  - Radius: 31
+  - Height: 56
+  - Mass: 400
+  - Speed: 13
+  - Speed: 128
+  - Monster
+=======================
+Source file (comment removal): ./Processing/Disciple/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/Disciple/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/Disciple/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: Disciple
+  - doomednum: 17472
+  - Health: 300
+  - Speed: 140
+  - Speed: 8
+  - Radius: 20
+  - Height: 56
+  - Mass: 320
+  - Monster
+Actor Name: DSFX3
+  - Radius: 2
+  - Height: 2
+  - Speed: 0
+  - Projectile
+Actor Name: DiscipleShot1
+  - Radius: 8
+  - Height: 16
+  - Speed: 15
+  - Projectile
+Actor Name: DiscipleShot2
+  - Radius: 8
+  - Height: 16
+  - Speed: 15
+  - Projectile
+Actor Name: DSFX1
+  - Radius: 2
+  - Height: 2
+  - Speed: 0
+  - Projectile
+Actor Name: DSFX2
+  - Radius: 2
+  - Height: 2
+  - Speed: 0
+  - Projectile
+=======================
+Source file (comment removal): ./Processing/RotWraith/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/RotWraith/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/RotWraith/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: RotWraith
+  - doomednum: 17490
+  - Health: 150
+  - Speed: 25
+  - Speed: 11
+  - Height: 55
+  - Radius: 20
+  - Mass: 75
+  - Monster
+  - Speed: 8
+Actor Name: GreenFartCloud
+  - Radius: 2
+  - Height: 2
+Actor Name: FartBallFX
+  - Radius: 2
+  - Height: 2
+Actor Name: FartBall
+  - Speed: 15
+  - Radius: 8
+  - Height: 8
+  - Projectile
+=======================
+Source file (comment removal): ./Processing/HellsGuard/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/HellsGuard/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/HellsGuard/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: HellGuard
+  - doomednum: 17474
+  - Health: 300
+  - Radius: 24
+  - Height: 64
+  - Speed: 8
+  - Speed: 50
+  - Mass: 500
+  - Monster
+Actor Name: HellGuardBall
+  - Radius: 13
+  - Height: 8
+  - Speed: 10
+  - Projectile
+=======================
+Source file (comment removal): ./Processing/HellforgedDemon/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/HellforgedDemon/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/HellforgedDemon/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: HellforgedDemon
+  - Inherits: Demon
+  - doomednum: 17473
+  - Health: 150
+  - Radius: 30
+  - Height: 56
+=======================
+Source file (comment removal): ./Processing/InvisibleWarrior/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/InvisibleWarrior/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/InvisibleWarrior/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: invwar
+  - doomednum: 17483
+  - Health: 640
+  - Radius: 30
+  - Height: 64
+  - Mass: 340
+  - Speed: 12
+  - Speed: 60
+  - Monster
+Actor Name: invisibleattack
+  - Speed: 15
+  - Radius: 10
+  - Height: 6
+  - Projectile
+Actor Name: invisibleeltrail
+  - Radius: 3
+  - Height: 3
+  - Speed: 12
+  - Projectile
+=======================
+Source file (comment removal): ./Processing/BlackWidow/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/BlackWidow/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/BlackWidow/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: BlackWidow
+  - doomednum: 17456
+  - Health: 500
+  - Radius: 64
+  - Height: 64
+  - Mass: 600
+  - Speed: 12
+  - Speed: 128
+  - Monster
+=======================
+Source file (comment removal): ./Processing/Xenomorph/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/Xenomorph/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/Xenomorph/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: Xenomorph
+  - doomednum: 17450
+  - Monster
+  - Health: 300
+  - Radius: 20
+  - Height: 56
+  - Speed: 15
+=======================
+Source file (comment removal): ./Processing/bearkiller/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/bearkiller/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/bearkiller/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: Bearkiller
+  - Inherits: Weapon
+  - doomednum: 21082
+Actor Name: propammo
+  - Radius: 3
+  - Height: 2
+  - Mass: 1
+  - Speed: 1
+=======================
+Source file (comment removal): ./Processing/Cultist/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/Cultist/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/Cultist/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: Cultist
+  - Health: 75
+  - Speed: 200
+  - Speed: 8
+  - Radius: 20
+  - Height: 56
+  - Mass: 100
+  - Monster
+Actor Name: ThrallShot1
+  - Radius: 4
+  - Height: 6
+  - Speed: 20
+  - Projectile
+=======================
+Source file (comment removal): ./Processing/Horn Beast30018/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/Horn Beast30018/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/Horn Beast30018/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: HornBeast
+  - doomednum: 17480
+  - Health: 500
+  - Speed: 10
+  - Radius: 20
+  - Height: 60
+  - Mass: 800
+  - Speed: 50
+  - Speed: "Fire",1
+  - Monster
+Actor Name: HBeastSmoke
+  - Radius: 0
+  - Height: 0
+  - Speed: 0
+  - Projectile
+Actor Name: HBeastShot
+  - Radius: 2
+  - Height: 3
+  - Speed: 20
+  - Projectile
+Actor Name: HBeastFlame
+  - Radius: 5
+  - Height: 4
+  - Speed: 20
+  - Projectile
+=======================
+Source file (comment removal): ./Processing/Vore/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/Vore/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/Vore/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: Vore
+  - doomednum: 17495
+  - Health: 900
+  - Radius: 48
+  - Height: 64
+  - Mass: 1000
+  - Speed: 10
+  - Speed: 80
+  - Monster
+Actor Name: CyanVoreBall
+  - Inherits: FatShot
+Actor Name: VoreBallTracer
+=======================
+Source file (comment removal): ./Processing/D4Caco/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/D4Caco/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/D4Caco/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: D4Caco
+  - Inherits: Cacodemon
+  - doomednum: 17470
+  - Health: 400
+  - Radius: 31
+  - Height: 56
+=======================
+Source file (comment removal): ./Processing/Butcher/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/Butcher/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/Butcher/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: Butcher
+  - doomednum: 17460
+  - Health: 350
+  - Radius: 22
+  - Height: 62
+  - Mass: 600
+  - Speed: 12
+  - Speed: 32
+  - Monster
+Actor Name: ButcherHammer
+  - Speed: 3
+Actor Name: ButcherSpect
+  - doomednum: 17461
+  - Health: 350
+  - Radius: 22
+  - Height: 62
+  - Mass: 600
+  - Speed: 12
+  - Speed: 32
+  - Monster
+=======================
+Source file (comment removal): ./Processing/Banshee/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/Banshee/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/Banshee/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: Banshee
+  - doomednum: 17453
+  - Health: 800
+  - Radius: 15
+  - Height: 60
+  - Mass: 50
+  - Speed: 17
+  - Speed: 100
+  - Monster
+Actor Name: BansheeFire
+  - Radius: 13
+  - Height: 8
+  - Speed: 15
+  - Projectile
+Actor Name: BansheeFire2
+  - Radius: 13
+  - Height: 8
+  - Speed: 15
+  - Projectile
+Actor Name: BansheeFire3
+  - Radius: 24
+  - Height: 24
+  - Speed: 15
+  - Projectile
+Actor Name: BansheeFire4
+  - Radius: 13
+  - Height: 8
+  - Speed: 25
+  - Projectile
+Actor Name: BansheeFire5
+  - Radius: 13
+  - Height: 8
+  - Speed: 20
+  - Projectile
+Actor Name: BansheeTrail
+  - Radius: 20
+  - Height: 56
+  - Speed: 0
+  - Projectile
+Actor Name: BansheeFireTrail
+  - Radius: 20
+  - Height: 56
+  - Speed: 0
+  - Projectile
+Actor Name: BansheeFireTrail2
+  - Radius: 20
+  - Height: 56
+  - Speed: 0
+  - Projectile
+Actor Name: BansheePainToken
+  - Inherits: Ammo
+Actor Name: BansheeFire3Token
+  - Inherits: Ammo
+Actor Name: BansheeMissile5Token
+  - Inherits: Ammo
+Actor Name: LostSoulHexenCompatible
+  - Health: 100
+  - Radius: 16
+  - Height: 56
+  - Mass: 50
+  - Speed: 8
+  - Speed: 256
+  - Monster
+=======================
+Source file (comment removal): ./Processing/Daleks/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/Daleks/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/Daleks/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: DalekBase
+  - doomednum: 12309
+  - Health: 1250
+  - Radius: 20
+  - Height: 56
+  - Mass: 10000
+  - Speed: 2
+  - Speed: 255
+  - Monster
+Actor Name: DalekHead
+  - Radius: 11
+  - Height: 8
+  - Speed: 0
+  - Projectile
+Actor Name: DalekBoom
+  - Radius: 11
+  - Height: 8
+  - Speed: 0
+  - Projectile
+Actor Name: DalekSplatSpawner
+  - Radius: 11
+  - Height: 8
+  - Speed: 40
+  - Projectile
+Actor Name: DalekSplatTrail
+Actor Name: DalekLaser
+  - Radius: 6
+  - Height: 8
+  - Speed: 30
+  - Projectile
+Actor Name: DalekLaserTrail
+  - Radius: 6
+  - Height: 8
+  - Speed: 0
+Actor Name: Dalek1
+  - Inherits: DalekBase
+  - doomednum: 12310
+  - Health: 1500
+Actor Name: Dalek2
+  - Inherits: DalekBase
+  - doomednum: 12311
+  - Health: 2000
+Actor Name: Dalek3
+  - Inherits: DalekBase
+  - doomednum: 12312
+  - Health: 2500
+Actor Name: Dalek4
+  - Inherits: DalekBase
+  - doomednum: 12313
+  - Health: 3000
+Actor Name: Dalek5
+  - Inherits: DalekBase
+  - doomednum: 12314
+  - Health: 4000
+=======================
+Source file (comment removal): ./Processing/ChaosWyvern/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/ChaosWyvern/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/ChaosWyvern/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: ChaosWyvern
+  - doomednum: 17464
+  - Monster
+  - Health: 1000
+  - Speed: 16
+  - Speed: 14
+  - Height: 65
+  - Radius: 32
+  - Mass: 0x7fffffff
+  - Monster
+Actor Name: WyvernBall
+  - Radius: 6
+  - Height: 16
+  - Speed: 20
+  - Projectile
+Actor Name: WyvernBreath
+  - Inherits: PhoenixFX2
+  - Speed: 20
+=======================
+Source file (comment removal): ./Processing/ChaosCube/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/ChaosCube/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/ChaosCube/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: ChaosCube
+  - doomednum: 17463
+  - Health: 250
+  - Radius: 16
+  - Height: 32
+  - Mass: 9999
+  - Speed: 8
+  - Speed: 0
+  - Monster
+Actor Name: PoisonShot
+  - Radius: 5
+  - Height: 5
+  - Speed: 15
+  - Projectile
+Actor Name: PsychicShot
+  - Radius: 5
+  - Height: 5
+  - Speed: 12
+  - Projectile
+Actor Name: IceShot
+  - Radius: 5
+  - Height: 5
+  - Speed: 25
+  - Projectile
+Actor Name: FireShot
+  - Radius: 5
+  - Height: 5
+  - Speed: 20
+  - Projectile
+=======================
+Source file (comment removal): ./Processing/Astrademon/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/Astrademon/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/Astrademon/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: Astrademon
+  - doomednum: 17462
+  - Health: 400
+  - Radius: 31
+  - Height: 56
+  - Mass: 400
+  - Speed: 10
+  - Speed: 128
+  - Monster
+=======================
+Source file (comment removal): ./Processing/CrimsonDisciple/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/CrimsonDisciple/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/CrimsonDisciple/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: CrimsonDisciple
+  - doomednum: 17465
+  - Monster
+  - Speed: 100
+  - Health: 175
+  - Height: 64
+  - Radius: 16
+  - Mass: 250
+  - Speed: 12
+Actor Name: FireWall
+  - Projectile
+  - Height: 20
+  - Radius: 10
+  - Speed: 1
+Actor Name: BloodShot
+  - Projectile
+  - Height: 16
+  - Radius: 8
+  - Speed: 10
+Actor Name: RainShot
+  - Inherits: HornRodFX2
+  - Projectile
+  - Speed: 50
+Actor Name: RainPillar2
+  - Inherits: RainPillar
+Actor Name: CrimsonDiscipleSpect
+  - doomednum: 17466
+  - Monster
+  - Speed: 100
+  - Health: 175
+  - Height: 64
+  - Radius: 16
+  - Mass: 250
+  - Speed: 12
+=======================
+Source file (comment removal): ./Processing/Infernal/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/Infernal/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/Infernal/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: Infernal
+  - doomednum: 17482
+  - Speed: 10
+  - Health: 420
+  - Speed: 13
+  - Radius: 32
+  - Height: 52
+  - Speed: 64
+  - Monster
+Actor Name: InfernalBall
+  - Inherits: CacodemonBall
+=======================
+Source file (comment removal): ./Processing/Nosferati/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/Nosferati/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/Nosferati/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: Nosferati
+  - doomednum: 17486
+  - Health: 400
+  - Radius: 20
+  - Height: 64
+  - Mass: 250
+  - Speed: 12
+  - Speed: 64
+  - Monster
+Actor Name: NosferatiShot
+  - Radius: 10
+  - Height: 6
+  - Speed: 15
+  - Projectile
+Actor Name: NosferatiShotTrail
+  - Radius: 0
+  - Height: 1
+  - Projectile
+Actor Name: NosferatiBatShot
+  - Radius: 10
+  - Height: 6
+  - Speed: 10
+  - Projectile
+Actor Name: NosferatiBatShot2
+  - Inherits: NosferatiBatShot
+Actor Name: NosferatiBatShot3
+  - Inherits: NosferatiBatShot
+Actor Name: NosferatiWarp
+  - Radius: 20
+  - Height: 30
+Actor Name: NosferatiSpeedTrail
+  - Radius: 0
+  - Height: 1
+  - Projectile
+Actor Name: NosferatiPuff
+  - Inherits: BulletPuff
+=======================
+Source file (comment removal): ./Processing/KnightArcher/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/KnightArcher/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/KnightArcher/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: ArcherKnight
+  - doomednum: 17484
+  - Health: 355
+  - Radius: 20
+  - Height: 56
+  - Speed: 13
+  - Speed: 200
+  - Mass: 200
+  - Monster
+Actor Name: ArcherArrow
+  - Radius: 5
+  - Height: 12
+  - Speed: 16
+  - Projectile
+Actor Name: ArcherArrowTrail
+Actor Name: ArcherArrow2
+  - Inherits: ArcherArrow
+  - Speed: 20
+Actor Name: ArcherArrowTrail2
+  - Inherits: ArcherArrowTrail
+=======================
+Source file (comment removal): ./Processing/Zardaz/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/Zardaz/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/Zardaz/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: zardaz
+  - doomednum: 17496
+  - Health: 2000
+  - Radius: 24
+  - Height: 72
+  - Mass: 1000
+  - Speed: 10
+  - Speed: 20
+  - Monster
+Actor Name: Dragonball
+  - Radius: 3
+  - Height: 12
+  - Speed: 20
+  - Projectile
+Actor Name: dragontrail
+  - Radius: 0
+  - Height: 1
+  - Speed: 0
+  - Projectile
+Actor Name: floorshot
+  - Radius: 5
+  - Height: 5
+  - Speed: 15
+  - Projectile
+Actor Name: FloorPuff
+  - Radius: 1
+  - Height: 1
+  - Speed: 0
+  - Projectile
+Actor Name: magicblast
+  - Radius: 8
+  - Height: 8
+  - Speed: 25
+  - Projectile
+Actor Name: magicPuff
+  - Radius: 1
+  - Height: 1
+  - Speed: 0
+  - Projectile
+=======================
+Source file (comment removal): ./Processing/Aracknight/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/Aracknight/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/Aracknight/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: Aracknight
+  - doomednum: 17452
+  - Health: 800
+  - Radius: 64
+  - Height: 64
+  - Mass: 600
+  - Speed: 12
+  - Speed: 128
+  - Monster
+Actor Name: CyanArachknightShot
+  - Inherits: ArachnotronPlasma
+=======================
+Source file (comment removal): ./Processing/Corpulent/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/Corpulent/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/Corpulent/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: Corpulent
+  - Inherits: Fatso
+  - doomednum: 17478
+  - Health: 600
+  - Radius: 48
+  - Height: 64
+Actor Name: ShardBomb
+  - Radius: 8
+  - Height: 8
+  - Speed: 30
+  - Projectile
+Actor Name: BombShard
+  - Radius: 5
+  - Height: 5
+  - Projectile
+=======================
+Source file (comment removal): ./Processing/ImpWarlord/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/ImpWarlord/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/ImpWarlord/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: ImpWarlord
+  - doomednum: 3105
+  - Health: 180
+  - Radius: 20
+  - Height: 56
+  - Speed: 9
+  - Speed: 128
+  - Monster
+Actor Name: YellowSkullSeeker
+  - Radius: 8
+  - Height: 6
+  - Speed: 9
+  - Projectile
+Actor Name: GreenPoisonBall
+  - Radius: 8
+  - Height: 6
+  - Speed: 10
+  - Projectile
+Actor Name: RedSkullBall
+  - Radius: 8
+  - Height: 6
+  - Speed: 15
+  - Projectile
+Actor Name: WarlordShield
+  - Speed: 5
+Actor Name: WarlordMace
+  - Speed: 4
+Actor Name: FamiliarSpawner
+  - Speed: 8
+Actor Name: DragonFamiliar
+  - doomednum: 3106
+  - Health: 25
+  - Radius: 16
+  - Height: 32
+  - Speed: 10
+  - Speed: 200
+  - Monster
+Actor Name: MiniFirePuff
+  - Radius: 6
+  - Height: 10
+  - Speed: 7
+  - Projectile
+Actor Name: MiniFirePuffNoDamage
+  - Inherits: MiniFirePuff
+Actor Name: BatFamiliar
+  - doomednum: 3107
+  - Health: 10
+  - Radius: 12
+  - Height: 24
+  - Speed: 14
+  - Speed: 200
+  - Monster
+=======================
+Source file (comment removal): ./Processing/Cyclobus/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/Cyclobus/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/Cyclobus/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: Cyclobus
+  - doomednum: 17469
+  - Health: 600
+  - Radius: 48
+  - Height: 64
+  - Mass: 1000
+  - Speed: 8
+  - Speed: 80
+  - Monster
+=======================
+Source file (comment removal): ./Processing/Bormereth/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/Bormereth/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/Bormereth/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: Bormereth
+  - doomednum: 17457
+  - Health: 1200
+  - Radius: 30
+  - Height: 64
+  - Speed: 10
+  - Speed: 75
+  - Mass: 2500
+  - Monster
+Actor Name: DBigEttinMace
+  - Speed: 3
+Actor Name: WraithFX12
+  - Inherits: WraithFX1
+Actor Name: PossEttFakeFireBall
+  - Inherits: WraithFX1
+  - Speed: 0
+Actor Name: PossEttFireBall:
+  - doomednum: WraithFX1
+  - Speed: 20
+Actor Name: WraithFX22
+  - Projectile
+  - Speed: 0
+  - Radius: 1
+  - Height: 1
+Actor Name: WraithFX23
+  - Projectile
+  - Speed: 0
+  - Radius: 1
+  - Height: 1
+Actor Name: PEFBExplo
+  - Projectile
+  - Speed: 0
+Actor Name: PEFBTrail
+  - Projectile
+  - Speed: 0
+Actor Name: FirePillarStarter
+  - Projectile
+  - Speed: 28
+Actor Name: FirePillarBase
+  - Projectile
+  - Speed: 0
+Actor Name: FirePillarShot
+  - Projectile
+  - Speed: 0
+  - Radius: 4
+  - Height: 3
+Actor Name: FirePillarShot2
+  - Inherits: FirePillarShot
+=======================
+Source file (comment removal): ./Processing/ApprenticeOfDsparil/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/ApprenticeOfDsparil/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/ApprenticeOfDsparil/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: ApprenticeofDsparil
+  - doomednum: 17451
+  - Health: 550
+  - Radius: 20
+  - Height: 56
+  - Speed: 8
+  - Speed: 100
+  - Monster
+Actor Name: AoDGhost
+  - Radius: 1
+  - Height: 1
+  - Speed: 0
+  - Projectile
+Actor Name: FireBlast
+  - Speed: 25
+  - Projectile
+Actor Name: SuperFireBlast
+  - Inherits: FireBlast
+  - Speed: 16
+=======================
+Source file (comment removal): ./Processing/Robodude Buddy/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/Robodude Buddy/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/Robodude Buddy/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: DudeDontShootMe
+  - Inherits: Inventory
+Actor Name: ShotgunRobodudeItem
+  - Inherits: CustomInventory
+  - Height: 56
+  - Radius: 20
+Actor Name: ShotgunRobodude
+  - Inherits: SwitchingDecoration
+  - doomednum: 17447
+  - Health: 200
+  - Radius: 20
+  - Height: 56
+  - Mass: 100
+  - Speed: 10
+  - Speed: 128
+  - Monster
+Actor Name: DownedShotgunRoboDude
+  - Inherits: SwitchingDecoration
+  - Height: 20
+  - Radius: 20
+Actor Name: ShotgunRoboDudeStartUp
+  - Height: 20
+  - Radius: 8
+  - Speed: 12
+Actor Name: ShotgunRoboDudeShutDown
+  - Height: 56
+  - Radius: 20
+=======================
+Source file (comment removal): ./Processing/SlayerKnight/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/SlayerKnight/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/SlayerKnight/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: SlayerKnight
+  - doomednum: 17494
+  - Health: 600
+  - Radius: 20
+  - Height: 56
+  - Mass: 500
+  - Speed: 13
+  - Speed: 100
+  - Monster
+Actor Name: CyanSlayerKnightTracer
+  - Inherits: RevenantTracer
+=======================
+Source file (comment removal): ./Processing/Black Ops/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/Black Ops/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/Black Ops/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: BlackOpsMale
+  - doomednum: 17454
+  - Health: 80
+  - Radius: 20
+  - Height: 56
+  - Mass: 200
+  - Speed: 9
+  - Speed: 200
+  - Monster
+  - Speed: "Fire",
+  - Speed: "BlackOpsDamageType",
+Actor Name: BlackOpsFemale
+  - Inherits: Shotgunguy
+  - doomednum: 17455
+  - Health: 80
+  - Radius: 20
+  - Height: 56
+  - Mass: 200
+  - Speed: 9
+  - Speed: 200
+  - Monster
+  - Speed: "Fire",
+  - Speed: "BlackOpsDamageType",
+Actor Name: BlackOpsRandomSpawner
+  - Inherits: RandomSpawner
+Actor Name: BlackOpsAmmo
+  - Inherits: inventory
+Actor Name: BlackOpsCharge
+  - Inherits: inventory
+Actor Name: BlackOpsGrenade
+  - Radius: 6
+  - Height: 8
+  - Speed: 30
+  - Projectile
+Actor Name: BlackOpsGib1
+  - Radius: 6
+  - Height: 8
+  - Speed: 10
+  - Mass: 8000
+Actor Name: BlackOpsGib2
+  - Radius: 6
+  - Height: 8
+  - Speed: 10
+  - Mass: 8000
+Actor Name: BlackOpsGib3
+  - Radius: 6
+  - Height: 8
+  - Speed: 10
+  - Mass: 8000
+Actor Name: BlackOpsGib4
+  - Radius: 6
+  - Height: 8
+  - Speed: 10
+  - Mass: 8000
+Actor Name: BlackOpsGib5
+  - Radius: 6
+  - Height: 8
+  - Speed: 10
+  - Mass: 8000
+Actor Name: BlackOpsGib6
+  - Radius: 6
+  - Height: 8
+  - Speed: 10
+  - Mass: 8000
+=======================
+Source file (comment removal): ./Processing/lordvile/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/lordvile/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/lordvile/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: LordVileType1
+  - doomednum: 3716
+  - Health: 1500
+  - Radius: 20
+  - Height: 60
+  - Speed: 15
+  - Speed: 50
+  - Mass: 500
+Actor Name: LordVileType2
+  - doomednum: 3717
+  - Health: 1250
+  - Radius: 20
+  - Height: 60
+  - Speed: 15
+  - Speed: 50
+  - Mass: 500
+Actor Name: LordVileType3
+  - doomednum: 3718
+  - Health: 1250
+  - Radius: 20
+  - Height: 60
+  - Speed: 15
+  - Speed: 50
+  - Mass: 500
+Actor Name: LordVileFlyer
+  - doomednum: 3719
+  - Health: 750
+  - Radius: 20
+  - Height: 60
+  - Speed: 20
+  - Speed: 50
+  - Mass: 500
+Actor Name: LordVileSuperShot
+  - Projectile
+  - Speed: 20
+  - Radius: 45
+  - Height: 45
+Actor Name: LordVileSuperShotTrail
+  - Projectile
+  - Speed: 0
+  - Radius: 45
+  - Height: 45
+Actor Name: LordVileSummoner
+  - Speed: 8
+Actor Name: LordVileSoulShot
+  - Projectile
+  - Radius: 8
+  - Height: 8
+  - Speed: 8
+Actor Name: LordVilePentagram
+  - Radius: 8
+  - Height: 8
+  - Speed: 6
+Actor Name: LordVileFireTrail
+  - Projectile
+  - Speed: 5
+  - Radius: 8
+  - Height: 16
+=======================
+Source file (comment removal): ./Processing/ScorpionMastermind/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/ScorpionMastermind/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/ScorpionMastermind/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: ScorpionMastermind
+  - doomednum: 17499
+  - Health: 2000
+  - Radius: 96
+  - Height: 100
+  - Speed: 12
+  - Speed: 50
+  - Mass: 1000
+  - Monster
+Actor Name: BlackRocket
+  - Radius: 11
+  - Height: 8
+  - Speed: 20
+  - Projectile
+Actor Name: BlackRocketExplosion
+=======================
+Source file (comment removal): ./Processing/Bosses/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/Bosses/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/Bosses/defs/DECORATE.raw.nocomments2
+=======================
+Actor Name: Hectebus
+  - doomednum: 25123
+  - Health: 1000
+  - Radius: 96
+  - Height: 112
+  - Speed: 8
+  - Speed: 48
+  - Mass: 2000
+  - Monster
+Actor Name: HectebusBall
+  - Speed: 25
+  - Height: 12
+  - Radius: 9
+  - Projectile
+Actor Name: HectebusBallTrail
+  - Speed: 0
+  - Height: 6
+  - Radius: 5
+  - Projectile
+Actor Name: HectebusTarget
+  - Speed: 25
+  - Height: 12
+  - Radius: 9
+  - Projectile
+Actor Name: SuperCyber
+  - doomednum: 100
+  - Health: 4000
+  - Mass: 1000
+  - Radius: 40
+  - Height: 110
+  - Speed: 8
+  - Speed: 20
+  - Monster
+Actor Name: Torpedo
+  - doomednum: 101
+  - Mass: 100
+  - Radius: 11
+  - Height: 8
+  - Speed: 15
+Actor Name: BouncingBall
+  - doomednum: 102
+  - Mass: 1
+  - Radius: 8
+  - Height: 6
+  - Speed: 20
+  - Projectile
+Actor Name: InsanitySpider
+  - Inherits: SpiderMastermind
+  - doomednum: 9600
+  - Speed: 32
+  - Health: 5000
+  - Speed: 1
+  - Radius: 96
+  - Height: 100
+Actor Name: InsanityPlasma
+  - Inherits: PlasmaBall
+Actor Name: ErkkiBoss
+  - Inherits: HellKnight
+  - doomednum: 20604
+  - Health: 2000
+  - Speed: 20
+Actor Name: ErkkiBossSpawn
+  - Inherits: BaronOfHell
+  - doomednum: 20605
+  - Health: 2000
+  - Speed: 20
+Actor Name: Aldhivas
+  - doomednum: 5785
+  - Health: 2700
+  - Height: 64
+  - Radius: 22
+  - Speed: 37
+  - Speed: 60
+  - Mass: 270
+  - Monster
+Actor Name: DepthSeeker
+  - doomednum: 6001
+  - Height: 6
+  - Radius: 12
+  - Speed: 19
+  - Projectile
+Actor Name: Inergy
+  - doomednum: 6002
+  - Height: 12
+  - Radius: 12
+  - Speed: 26
+  - Projectile
+Actor Name: Uberzombie
+  - doomednum: 15810
+  - Health: 1800
+  - Height: 56
+  - Radius: 20
+  - Speed: 18
+  - Speed: 80
+  - Mass: 270
+  - Monster
+Actor Name: PlasmaWave
+  - Radius: 8
+  - Height: 6
+  - Speed: 5
+  - Projectile
+Actor Name: EvilDoomguy
+  - doomednum: 3100
+  - Health: 1900
+  - Radius: 20
+  - Height: 56
+  - Speed: 32
+  - Speed: 100
+  - Mass: 800
+  - Monster
+Actor Name: Deathknight
+  - doomednum: 27686
+  - Health: 975
+  - Speed: 18
+  - Radius: 25
+  - Height: 75
+  - Speed: 35
+  - Mass: 150
+  - Monster
+Actor Name: DeathPlasma
+  - Radius: 6
+  - Height: 5
+  - Speed: 35
+  - Projectile
+Actor Name: HammerHound
+  - doomednum: 30006
+  - Health: 3500
+  - Radius: 48
+  - Height: 64
+  - Speed: 7
+  - Speed: 50
+  - Mass: 100000
+  - Monster
+Actor Name: HHShock
+  - Speed: 8
+  - Radius: 12
+  - Height: 16
+  - Projectile
+Actor Name: HHRockSpawner
+  - Speed: 10
+Actor Name: HHRock
+  - Speed: 0
+  - Projectile
+Actor Name: HHTorp
+  - Radius: 4
+  - Height: 8
+  - Speed: 12
+  - Projectile
+Actor Name: HHTorpFX
+  - Speed: 0
+  - Radius: 0
+  - Height: 0
+Actor Name: HHHead
+  - Radius: 4
+  - Height: 4
+  - Speed: 8
+Actor Name: HHBlood
+  - Radius: 1
+  - Height: 1
+  - Speed: 8
+  - Projectile
+Actor Name: HHBlastingCap
+  - Health: 25
+  - Radius: 10
+  - Height: 6
+  - Speed: 0
+  - Monster
+Actor Name: HHBoom
+  - Speed: 0
+Actor Name: HHOrbitRockSpawn
+  - Radius: 6
+  - Height: 8
+  - Speed: 5
+  - Projectile
+Actor Name: HHOrbitRock
+  - Radius: 6
+  - Height: 8
+  - Speed: 5
+  - Projectile
+Actor Name: HHOrbitRockDummy
+  - Radius: 1
+  - Height: 1
+  - Speed: 0
+  - Monster
+Actor Name: HHRock2
+  - Projectile
+  - Height: 8
+  - Radius: 12
+  - Speed: 12
+Actor Name: HHRock3
+  - Speed: 12
+  - Height: 4
+  - Radius: 4
+  - Projectile
+Actor Name: HellsBattery
+  - doomednum: 22448
+  - Monster
+  - Health: 4000
+  - Speed: 7
+  - Radius: 48
+  - Height: 128
+  - Speed: 32
+  - Mass: 5000
+Actor Name: HellsBatteryGore
+  - Monster
+  - Health: 500
+  - Speed: 4
+  - Radius: 48
+  - Height: 128
+  - Speed: 0
+  - Mass: 5000
+Actor Name: HBArm1
+  - Radius: 8
+  - Height: 8
+  - Speed: 12
+  - Projectile
+Actor Name: HBArm2
+  - Radius: 8
+  - Height: 8
+  - Speed: 12
+  - Projectile
+Actor Name: HBBloodSplatterFX
+Actor Name: CannonShell
+  - Radius: 1
+  - Height: 1
+  - Speed: 12
+  - Projectile
+Actor Name: NukeBoomy
+  - Speed: 0
+Actor Name: ChaosRocket
+  - Radius: 4
+  - Height: 8
+  - Speed: 12
+  - Projectile
+Actor Name: ChaosCharge
+  - Radius: 4
+  - Height: 4
+  - Speed: 8
+Actor Name: Nukey
+  - Radius: 4
+  - Height: 8
+  - Speed: 12
+  - Projectile
+Actor Name: NukeRing
+  - Speed: 20
+Actor Name: CannonSteam
+  - Speed: 0
+Actor Name: HexMaker
+  - Speed: 10
+Actor Name: HexMakerB
+  - Speed: 0
+Actor Name: PentFX
+  - Projectile
+  - Speed: 12
+Actor Name: PentFX2
+  - Speed: 12
+  - Projectile
+Actor Name: OldPentFXTail
+  - Speed: 0
+  - Monster
+Actor Name: TargetFire
+  - Speed: 0
+Actor Name: MortarSpawner
+  - Speed: 10
+Actor Name: MortarShell
+  - Speed: 0
+  - Projectile
+Actor Name: PentFXTail
+  - Speed: 0
+  - Monster
+Actor Name: HellsFuryFlame
+  - Projectile
+  - Speed: 12
+Actor Name: Vapor
+  - Speed: 0
+Actor Name: Boomy
+  - Speed: 0
+Actor Name: BloodSplatterFX
+  - Radius: 1
+  - Height: 1
+  - Speed: 8
+  - Projectile
+Actor Name: BloodSplatterFX2
+  - Radius: 1
+  - Height: 1
+  - Speed: 0
+  - Projectile
+Actor Name: InsanityArachnophyte
+  - doomednum: 22446
+  - Health: 1250
+  - Radius: 64
+  - Height: 100
+  - Speed: 6
+  - Speed: 0
+  - Mass: 1000
+  - Monster
+=======================
+Source file (comment removal): ./Processing/monsters/defs/DECORATE.raw
+Output file 1 (comment removal): ./Processing/monsters/defs/DECORATE.raw.nocomments1
+Output file 2 (comment removal): ./Processing/monsters/defs/DECORATE.raw.nocomments2
