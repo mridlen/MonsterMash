@@ -72,6 +72,9 @@ class Actor
   # this is rare but sometimes pops up and might be useful later
   property native : Bool = false
 
+  # sub classes?
+  property inventory : Inventory
+
   # these next few are things that are not part of the decorate specifications
   # but they are information I will need to collect for logistical purposes
   #
@@ -86,6 +89,9 @@ class Actor
   property source_file : String = "UNDEFINED"
   # Built In == part of some actor inherent in the doom source code
   property built_in : Bool = false
+
+  # States will be stored in a hash
+  property states : Hash(String, String) = Hash(String, String).new
   
   # and here we go with the properties inside the DECORATE...
   property game : String = "Doom"
@@ -106,18 +112,20 @@ class Actor
   property self_damage_factor : Float64 = 1.0
   property damage_multiply : Float64 = 1.0
   # damage can be a mathematical expression which might cause problems
-  property damage : Int32 = 0
+  # we will leave default as String "0"
+  property damage : String = "0"
+  # this is ZScript specific
   property damage_function : String = "UNDEFINED"
   # PoisonDamage is "value,[duration,[period]]"
   property poison_damage : String = "0"
   property poison_damage_type : String = "UNDEFINED"
   property radius_damage_factor : Float64 = 1.0
   property ripper_level : Int32 = 0
-  property rip_min_level : Int32 = 0
+  property rip_level_min : Int32 = 0
   property rip_level_max : Int32 = 0
   property designated_team : Int32 = 0
   property speed : Float64 = 0
-  property v_speed : Int32 = 0
+  property v_speed : Float64 = 0.0
   property fast_speed : Int32 = 0
   property float_speed : Int32 = 0
   property species : String = "UNDEFINED"
@@ -147,7 +155,8 @@ class Actor
   property max_step_height : Int32 = 24
   property max_drop_off_height : Int32 = 24
   # this is a non-exact approximation of 46342/65535
-  property max_slope_steepness : Float64 = 0.707122
+  # property max_slope_steepness : Float64 = 0.707122
+  property max_slope_steepness : Float64 = (46342 / 65535)
   property bounce_type : String = "None"
   property bounce_factor : Float64 = 0.7
   property wall_bounce_factor : Float64 = 0.75
@@ -264,6 +273,7 @@ class Actor
   property projectile : Bool = false
 
   def initialize(@name : String, @index : Int32)
+    @inventory = Inventory.new
   end
 
   # this function generates a dynamic list of property names
@@ -277,6 +287,211 @@ class Actor
   end
 end
 
+class Inventory
+  property index : Int32 = 0
+  property name : String = "UNDEFINED"
+
+  property amount : Int32 = -1
+  property def_max_amount : Int32 = 25
+  property max_amount : Int32 = -1
+  property inter_hub_amount : Int32 = -1
+  property icon : String = "UNDEFINED"
+  property alt_hud_icon : String = "UNDEFINED"
+  property pickup_message : String = "UNDEFINED"
+  property pickup_sound : String = "UNDEFINED"
+  property pickup_flash : String = "UNDEFINED"
+  property use_sound : String = "UNDEFINED"
+  property respawn_tics : Int32 = -1
+  property give_quest : Int32 = -1
+  property forbidden_to : String = "UNDEFINED"
+  property restricted_to : String = "UNDEFINED"
+
+  property quiet : Bool = false
+  property auto_active : Bool = false
+  property undroppable : Bool = false
+  property unclearable : Bool = false
+  property inv_bar : Bool = false
+  property hubpower : Bool = false
+  property persistent_power : Bool = false
+  property inter_hub_strip : Bool = false
+  property pickup_flash_flag : Bool = false
+  property always_pickup : Bool = false
+  property fancy_pickup_sound : Bool = false
+  property no_atten_pickup_sound : Bool = false
+  property big_powerup : Bool = false
+  property ignore_skill : Bool = false
+  property additive_time : Bool = false
+  property untossable : Bool = false
+  property restrict_absolutely : Bool = false
+  property no_screen_flash : Bool = false
+  property tossed : Bool = false
+  property always_respawn : Bool = false
+  property transfer : Bool = false
+  property no_teleport_freeze : Bool = false
+  property no_screen_blank : Bool = false
+  property is_health : Bool = false
+  property is_armor : Bool = false
+
+  #def initialize
+  #  @amount = 0
+  #end
+
+  def property_list : Array
+    list_of_properties = Inventory(String).new
+    {% for name in Inventory.instance_vars %}
+      list_of_properties << "#{ {{ name.id.symbolize }} }"
+    {% end %}
+    list_of_properties
+  end
+end
+
+class FakeInventory
+  property respawns : Bool = false
+end
+
+class Armor
+  property save_amount : Int32 = -1
+  property save_percent : Float64 = -1
+  property max_full_absorb : Int32 = -1
+  property max_absorb : Int32 = -1
+  property max_save_amount : Int32 = -1
+  property max_bonus : Int32 = -1
+  property max_bonus_max : Int32 = -1
+end
+
+class Weapon
+  property ammo_give : Int32 = -1
+  property ammo_give_1 : Int32 = -1
+  property ammo_give_2 : Int32 = -1
+  property ammo_type : String = "UNDEFINED"
+  property ammo_type_1 : String = "UNDEFINED"
+  property ammo_type_2 : String = "UNDEFINED"
+  property ammo_use : Int32 = -1
+  property ammo_use_1 : Int32 = -1
+  property ammo_use_2 : Int32 = -1
+  property min_selection_ammo_1 : Int32 = -1
+  property min_selection_ammo_2 : Int32 = -1
+  # this is ZScript only
+  property bob_pivot_3d : String = "UNDEFINED"
+  property bob_range_x : Float64 = 1.0
+  property bob_range_y : Float64 = 1.0
+  property bob_speed : Float64 = 1.0
+  property bob_style : String = "UNDEFINED"
+  property kick_back : Int32 = -1
+  property default_kick_back : Int32 = -1
+  property ready_sound : String = "UNDEFINED"
+  property selection_order : Int32 = -1
+  property sister_weapon : String = "UNDEFINED"
+  property slot_number : Int32 = -1
+  property slot_priority : Float64 = 0.0
+  property up_sound : String = "UNDEFINED"
+  property weapon_scale_x : Float64 = 1.0
+  property weapon_scale_y : Float64 = 1.2
+  # vertial adjustment
+  # I think 0 means don't do anything, there is no "safe" undefined value
+  property y_adjust : Int32 = 0
+  # I think this is float, most multipliers are float
+  property look_scale : Float64 = 0.0
+end
+
+class Ammo
+  property backpack_amount : Int32 = -1
+  property backpack_max_amount : Int32 = -1
+  property drop_amount : Int32 = -1
+end
+
+class WeaponPiece
+  property number : Int32 = -1
+  property weapon : String = "UNDEFINED"
+end
+
+class Health
+  # this is in format: "value, message" so we will just grab the string
+  property low_message : String = "UNDEFINED"
+end
+
+class PuzzleItem
+  property number : Int32 = -1
+  property fail_message : String = "UNDEFINED"
+  property fail_sound : String = "UNDEFINED"
+end
+
+class PlayerPawn
+  property air_capacity : Float64 = 1.0
+  property attack_z_offset : Int32 = 8
+  property clear_color_set : Int32 = -1
+  # this is a range like "0, 0" so we will grab as a string
+  property color_range : String = "UNDEFINED"
+  # format: number, name, start, end, color [...] - we will do string
+  property color_set : String = "UNDEFINED"
+  # format: number, name, table, color - we will do string
+  property color_set_file : String = "UNDEFINED"
+  property crouch_sprite : String = "UNDEFINED"
+  # format: color[, intensity[, damagetype]]
+  property damage_screen_color : String = "UNDEFINED"
+  property display_name : String = "UNDEFINED"
+  property face : String = "UNDEFINED"
+  # format: value min, value max
+  property failing_scream_speed : String = "UNDEFINED"
+  property flechette_type : String = "UNDEFINED"
+  property fly_type : Float64 = 1.0
+  # format: run, value-run. Default is: 1, 1
+  property forward_move : String = "1, 1"
+  property grunt_speed : Float64 = 12.0
+  property heal_radius_type : String = "UNDEFINED"
+  # format: base value, value armor, value sheild, value helm, value amulet
+  # we use string
+  property hexen_armor : String = "UNDEFINED"
+  property invulnerability_mode : String = "UNDEFINED"
+  property jump_z : Float64 = 8.0
+  property max_health : Int32 = 100
+  property morph_weapon : String = "UNDEFINED"
+  property mug_shot_max_health : Int32 = -1
+  property portrait : String = "UNDEFINED"
+  property run_health : Int32 = 0
+  property score_icon : String = "UNDEFINED"
+  # format: value [value-run]
+  property side_move : String = "UNDEFINED"
+  property sound_class : String = "UNDEFINED"
+  property spawn_class : String = "UNDEFINED"
+  # format: classname [amount]
+  property start_item : String = "UNDEFINED"
+  property teleport_freeze_time : Int32 = 18
+  property use_range : Float64 = 64.0
+  property view_bob : Float64 = 1.0
+  property view_bob_speed : Float64 = 20.0
+  property view_height : Float64 = 41.0
+  property water_climb_speed : Float64 = 3.5
+  # format: slot, weapon1[, weapon2, weapon3, ...]
+  property weapon_slot : String = "UNDEFINED"
+end
+
+class Powerup
+  # can be numeric or string
+  property color : String = "UNDEFINED"
+  # format [sourcecolor, ]destcolor
+  property colormap : String = "UNDEFINED"
+  # format: probably usually int value but could be hex like 0x7FFFFFFD
+  property duration : String = "UNDEFINED"
+  property mode : String = "UNDEFINED"
+  property strength : Int32 = 0
+
+  # technically from PowerupGiver class, which only addes this property
+  property type : String = "UNDEFINED"
+end
+
+class PowerSpeed
+  property no_trail : Bool = 0
+end
+
+class HealthPickup
+  # this probably doesn't pertain much to Doom
+  property auto_use : Int32 = 0
+end
+
+class MorphProjectile
+  property player_class : String = "UNDEFINED"
+end
 ##########################################
 # CREATE ACTORS DATABASE
 ##########################################
@@ -390,6 +605,8 @@ doomednum_info[30100] = {-1, -1}
 doomednum_info[30000] = {-1, -1}
 
 # Ranges for Frozsoul's Ambient Sounds
+# We don't technically need to avoid all of them, there are only 26 sounds.
+# But since we are only losing 26 IDs per 2000, there are plenty of IDs to be had.
 # 20000-20025, 22000-22025, 24000-24025, 26000-26025, 28000-28025, 30000-30025
 ranges = [
   20000..20025,
@@ -613,6 +830,45 @@ full_dir_list.each do |file_path|
   end
 
   actors.each_with_index do |actor, actor_index|
+    # parse the actor's states, if any
+    states_raw = actor.gsub(/^states\n/im, "SPECIALDELIMITERstates\n")
+
+    states_raw_split = states_raw.split("SPECIALDELIMITER")
+    states = Hash(String, String).new
+    if states_raw_split.size > 1
+      states_unformatted = states_raw_split[1]
+      
+      unless states_unformatted.nil?
+        states_unformatted = states_unformatted.split("{")[1]
+        states_unformatted = states_unformatted.split("}")[0]
+        states_text = states_unformatted.lstrip
+      else
+        states_text = nil
+      end
+    else
+      states_text = nil
+    end
+    # now we will split out each state into an array
+    unless states_text.nil?
+      states_array = states_text.split(/^(\S*)\:/m)
+      # delete blank first element
+      states_array.delete_at(0)
+    end
+    # now we turn states_array into states hash
+    unless states_array.nil?
+      (0..states_array.size - 1).step(2) do |i|
+        key = states_array[i].downcase
+        j = i + 1
+        value = states_array[j]
+        states[key] = value
+      end
+    end
+    
+    puts "States before:"
+    puts states_text
+    puts "States after:"
+    puts states
+
     puts "======================="
     # there are a few options here and we need to account for all of them
     # 0 1    2   3        4        5       6       7
@@ -661,11 +917,14 @@ full_dir_list.each do |file_path|
     number_of_words = words.size
     puts "Actor: \"#{words[1].downcase}\""
     puts "File: \"#{file_path}\""
+
+    # Create new actor object and populate the information we already collected
     new_actor = Actor.new("#{words[1].downcase}", actor_index)
     new_actor.source_wad_folder = wad_folder_name
     new_actor.source_file = decorate_source_file
     new_actor.file_path = file_path
     new_actor.native = native
+    new_actor.states = states
 
     # number of words == 3 means that word[2] == a number
     if number_of_words == 3
@@ -698,13 +957,22 @@ full_dir_list.each do |file_path|
       end
     end
 
-    # ignore first line
     actor.each_line.with_index do |line, index|
+      # ignore first line - we already read it above
       next if index.zero?
       # flag the built in actors
       if no_touchy[file_path] == true
         new_actor.built_in = true
       end
+
+      ##############################################
+      # PROPERTY DEFINITIONS
+      ##############################################
+      # I realize that these are not alphabetical.
+      # This is because I am keeping them in the order
+      # of the ZDoom wiki. It will make things easier
+      # doing it this way.
+      ##############################################
 
       if line =~ /^\s*game\s+/i
         puts "  - Game: " + line.split[1]?.to_s
@@ -717,13 +985,13 @@ full_dir_list.each do |file_path|
       end
 
       if line =~ /^\s*conversationid\s+/i
-        puts "  - ConversationID: " + line.split[1..-1]?.to_s
-        new_actor.conversation_id = line.split[1..-1].to_s
+        puts "  - ConversationID: " + line.split[1..-1].join(' ')
+        new_actor.conversation_id = line.split[1..-1].join(' ')
       end
 
       if line =~ /^\s*tag\s+/i
-        puts "  - Tag: " + line.split[1]?.to_s
-        new_actor.tag = line.split[1]?.to_s
+        puts "  - Tag: " + line.split[1..-1].join(' ')
+        new_actor.tag = line.split[1..-1].join(' ')
       end
 
       if line =~ /^\s*health\s+/i && new_actor.name.downcase.strip != "health"
@@ -756,6 +1024,138 @@ full_dir_list.each do |file_path|
         new_actor.pain_threshold = line.split[1].to_i
       end
 
+      if line =~ /^\s*damagefactor\s+/i
+        puts "  - DamageFactor: " + line.split[1..-1].join(' ')
+        new_actor.damage_factor = line.split[1..-1].join(' ')
+      end
+
+      if line =~ /^\s*selfdamagefactor\s+/i
+        puts "  - SelfDamageFactor: " + line.split[1]?.to_s
+        new_actor.self_damage_factor = line.split[1].to_f
+      end
+
+      if line =~ /^\s*damagemultiply\s+/i
+        puts "  - DamageMultiply: " + line.split[1]?.to_s
+        new_actor.damage_multiply = line.split[1].to_f
+      end
+
+      if line =~ /^\s*damage\s+/i
+        puts "  - Damage: " + line.split[1]?.to_s
+        new_actor.damage = line.split[1]?.to_s
+      end
+
+      # DamageFunction goes here but it is ZScript specific
+
+      if line =~ /^\s*poisondamage\s+/i
+        puts "  - PoisonDamage: " + line.split[1..-1].join(' ')
+        new_actor.poison_damage = line.split[1..-1].join(' ')
+      end
+
+      if line =~ /^\s*poisondamagetype\s+/i
+        puts "  - PoisonDamageType: " + line.split[1..-1].join(' ')
+        new_actor.poison_damage_type = line.split[1..-1].join(' ')
+      end
+
+      if line =~ /^\s*radiusdamagefactor\s+/i
+        puts "  - RadiusDamageFactor: " + line.split[1]?.to_s
+        new_actor.radius_damage_factor = line.split[1].to_f
+      end
+
+      if line =~ /^\s*ripperlevel\s+/i
+        puts "  - RipperLevel: " + line.split[1]?.to_s
+        new_actor.ripper_level = line.split[1].to_i
+      end
+
+      if line =~ /^\s*riplevelmin\s+/i
+        puts "  - RipLevelMin: " + line.split[1]?.to_s
+        new_actor.rip_level_min = line.split[1].to_i
+      end
+
+      if line =~ /^\s*riplevelmax\s+/i
+        puts "  - RipLevelMax: " + line.split[1]?.to_s
+        new_actor.rip_level_max = line.split[1].to_i
+      end
+
+      if line =~ /^\s*designatedteam\s+/i
+        puts "  - DesignatedTeam: " + line.split[1]?.to_s
+        new_actor.designated_team = line.split[1].to_i
+      end
+
+      if line=~ /^\s*speed\s+/i
+        puts "  - Speed: " + line.split[1]?.to_s
+        new_actor.speed = line.split[1].to_f
+      end
+
+      if line =~ /^\s*vspeed\s+/i
+        puts "  - VSpeed: " + line.split[1]?.to_s
+        new_actor.v_speed = line.split[1].to_f
+      end
+
+      if line=~ /^\s*fastspeed\s+/i
+        puts "  - FastSpeed: " + line.split[1]?.to_s
+        new_actor.fast_speed = line.split[1].to_i
+      end
+
+      if line=~ /^\s*floatspeed\s+/i
+        puts "  - FloatSpeed: " + line.split[1]?.to_s
+        new_actor.float_speed = line.split[1].to_i
+      end
+
+      if line=~ /^\s*species\s+/i
+        puts "  - Species: " + line.split[1]?.to_s
+        new_actor.species = line.split[1].to_s
+      end
+
+      if line=~ /^\s*accuracy\s+/i
+        puts "  - Accuracy: " + line.split[1]?.to_s
+        new_actor.accuracy = line.split[1].to_i
+      end
+
+      if line=~ /^\s*stamina\s+/i
+        puts "  - Stamina: " + line.split[1]?.to_s
+        new_actor.stamina = line.split[1].to_i
+      end
+
+      if line=~ /^\s*activation\s+/i
+        puts "  - Activation: " + line.split[1..-1].join(' ')
+        new_actor.activation = line.split[1..-1].join(' ')
+      end
+
+      if line=~ /^\s*telefogsourcetype\s+/i
+        puts "  - TeleFogSourceType: " + line.split[1]?.to_s
+        new_actor.tele_fog_source_type = line.split[1].to_s
+      end
+
+      if line=~ /^\s*telefogdesttype\s+/i
+        puts "  - TeleFogDestType: " + line.split[1]?.to_s
+        new_actor.tele_fog_dest_type = line.split[1].to_s
+      end
+
+      if line=~ /^\s*threshold\s+/i
+        puts "  - Threshold: " + line.split[1]?.to_s
+        new_actor.threshold = line.split[1].to_i
+      end
+
+      if line=~ /^\s*defthreshold\s+/i
+        puts "  - DefThreshold: " + line.split[1]?.to_s
+        new_actor.def_threshold = line.split[1].to_i
+      end
+
+      if line=~ /^\s*friendlyseeblocks\s+/i
+        puts "  - FriendlySeeBlocks: " + line.split[1]?.to_s
+        new_actor.friendly_see_blocks = line.split[1].to_i
+      end
+
+      if line=~ /^\s*shadowaimfactor\s+/i
+        puts "  - ShadowAimFactor: " + line.split[1]?.to_s
+        new_actor.shadow_aim_factor = line.split[1].to_f
+      end
+
+      if line=~ /^\s*shadowpenaltyfactor\s+/i
+        puts "  - ShadowPenaltyFactor: " + line.split[1]?.to_s
+        new_actor.shadow_penalty_factor = line.split[1].to_f
+      end
+
       if line =~ /^\s*radius\s+/i
         puts "  - Radius: " + line.split[1]?.to_s
         new_actor.radius = line.split[1].to_f
@@ -766,14 +1166,274 @@ full_dir_list.each do |file_path|
         new_actor.height = line.split[1].to_i
       end
 
+      if line =~ /^\s*deathheight\s+/i
+        puts "  - DeathHeight: " + line.split[1]?.to_s
+        new_actor.death_height = line.split[1].to_i
+      end
+
+      if line =~ /^\s*burnheight\s+/i
+        puts "  - BurnHeight: " + line.split[1]?.to_s
+        new_actor.burn_height = line.split[1].to_i
+      end
+
+      if line =~ /^\s*projectilepassheight\s+/i
+        puts "  - ProjectilePassHeight: " + line.split[1]?.to_s
+        new_actor.projectile_pass_height = line.split[1].to_i
+      end
+
+      if line =~ /^\s*gravity\s+/i
+        puts "  - Gravity: " + line.split[1]?.to_s
+        new_actor.gravity = line.split[1].to_f
+      end
+
+      if line =~ /^\s*friction\s+/i
+        puts "  - Height: " + line.split[1]?.to_s
+        new_actor.friction = line.split[1].to_f
+      end
+
       if line =~ /^\s*mass\s+/i
         puts "  - Mass: " + line.split[1]?.to_s
         new_actor.mass = line.split[1].to_s
       end
 
-      if line=~ /^\s*speed\s+/i
-        puts "  - Speed: " + line.split[1]?.to_s
-        new_actor.speed = line.split[1].to_f
+      if line =~ /^\s*maxstepheight\s+/i
+        puts "  - MaxStepHeight: " + line.split[1]?.to_s
+        new_actor.max_step_height = line.split[1].to_i
+      end
+
+      if line =~ /^\s*maxdropoffheight\s+/i
+        puts "  - MaxDropOffHeight: " + line.split[1]?.to_s
+        new_actor.max_drop_off_height = line.split[1].to_i
+      end
+
+      if line =~ /^\s*maxslopesteepness\s+/i
+        puts "  - MaxSlopeSteepness: " + line.split[1]?.to_s
+        new_actor.max_slope_steepness = line.split[1].to_f
+      end
+
+      if line =~ /^\s*bouncetype\s+/i
+        puts "  - BounceType: " + line.split[1]?.to_s
+        new_actor.bounce_type = line.split[1].to_s
+      end
+
+      if line =~ /^\s*bouncefactor\s+/i
+        puts "  - BounceFactor: " + line.split[1]?.to_s
+        new_actor.bounce_factor = line.split[1].to_f
+      end
+
+      if line =~ /^\s*wallbouncefactor\s+/i
+        puts "  - WallBounceFactor: " + line.split[1]?.to_s
+        new_actor.wall_bounce_factor = line.split[1].to_f
+      end
+
+      if line =~ /^\s*bouncecount\s+/i
+        puts "  - BounceCount: " + line.split[1]?.to_s
+        new_actor.bounce_count = line.split[1].to_i
+      end
+
+      if line =~ /^\s*projectilekickback\s+/i
+        puts "  - ProjectileKickBack: " + line.split[1]?.to_s
+        new_actor.projectile_kick_back = line.split[1].to_i
+      end
+
+      if line =~ /^\s*pushfactor\s+/i
+        puts "  - PushFactor: " + line.split[1]?.to_s
+        new_actor.push_factor = line.split[1].to_f
+      end
+
+      if line =~ /^\s*weaveindexxy\s+/i
+        puts "  - WeaveIndexXY: " + line.split[1]?.to_s
+        new_actor.weave_index_xy = line.split[1].to_i
+      end
+
+      if line =~ /^\s*weaveindexz\s+/i
+        puts "  - WeaveIndexZ: " + line.split[1]?.to_s
+        new_actor.weave_index_z = line.split[1].to_i
+      end
+
+      if line =~ /^\s*thrubits\s+/i
+        puts "  - ThruBits: " + line.split[1]?.to_s
+        new_actor.thru_bits = line.split[1].to_i
+      end
+
+      if line =~ /^\s*activesound\s+/i
+        puts "  - ActiveSound: " + line.split[1]?.to_s
+        new_actor.active_sound = line.split[1].to_s
+      end
+
+      if line =~ /^\s*attacksound\s+/i
+        puts "  - AttackSound: " + line.split[1]?.to_s
+        new_actor.attack_sound = line.split[1].to_s
+      end
+
+      if line =~ /^\s*bouncesound\s+/i
+        puts "  - BounceSound: " + line.split[1]?.to_s
+        new_actor.bounce_sound = line.split[1].to_s
+      end
+
+      if line =~ /^\s*crushpainsound\s+/i
+        puts "  - CrushPainSound: " + line.split[1]?.to_s
+        new_actor.crush_pain_sound = line.split[1].to_s
+      end
+
+      if line =~ /^\s*deathsound\s+/i
+        puts "  - DeathSound: " + line.split[1]?.to_s
+        new_actor.death_sound = line.split[1].to_s
+      end
+
+      if line =~ /^\s*howlsound\s+/i
+        puts "  - HowlSound: " + line.split[1]?.to_s
+        new_actor.howl_sound = line.split[1].to_s
+      end
+
+      if line =~ /^\s*painsound\s+/i
+        puts "  - PainSound: " + line.split[1]?.to_s
+        new_actor.pain_sound = line.split[1].to_s
+      end
+
+      if line =~ /^\s*ripsound\s+/i
+        puts "  - RipSound: " + line.split[1]?.to_s
+        new_actor.rip_sound = line.split[1].to_s
+      end
+
+      if line =~ /^\s*seesound\s+/i
+        puts "  - SeeSound: " + line.split[1]?.to_s
+        new_actor.see_sound = line.split[1].to_s
+      end
+
+      if line =~ /^\s*wallbouncesound\s+/i
+        puts "  - WallBounceSound: " + line.split[1]?.to_s
+        new_actor.wall_bounce_sound = line.split[1].to_s
+      end
+
+      if line =~ /^\s*pushsound\s+/i
+        puts "  - PushSound: " + line.split[1]?.to_s
+        new_actor.push_sound = line.split[1].to_s
+      end
+
+      if line =~ /^\s*renderstyle\s+/i
+        puts "  - RenderStyle: " + line.split[1]?.to_s
+        new_actor.render_style = line.split[1].to_s
+      end
+
+      if line =~ /^\s*alpha\s+/i
+        puts "  - Alpha: " + line.split[1]?.to_s
+        new_actor.alpha = line.split[1].to_f
+      end
+
+      if line =~ /^\s*defaultalpha\s+/i
+        puts "  - DefaultAlpha: " + line.split[1]?.to_s
+        new_actor.default_alpha = line.split[1].to_f
+      end
+
+      if line =~ /^\s*stealthalpha\s+/i
+        puts "  - StealthAlpha: " + line.split[1]?.to_s
+        new_actor.stealth_alpha = line.split[1].to_f
+      end
+
+      if line =~ /^\s*xscale\s+/i
+        puts "  - XScale: " + line.split[1]?.to_s
+        new_actor.x_scale = line.split[1].to_f
+      end
+
+      if line =~ /^\s*yscale\s+/i
+        puts "  - YScale: " + line.split[1]?.to_s
+        new_actor.y_scale = line.split[1].to_f
+      end
+
+      if line =~ /^\s*scale\s+/i
+        puts "  - Scale: " + line.split[1]?.to_s
+        new_actor.scale = line.split[1].to_f
+      end
+
+      if line =~ /^\s*lightlevel\s+/i
+        puts "  - LightLevel: " + line.split[1]?.to_s
+        new_actor.light_level = line.split[1].to_i
+      end
+
+      if line =~ /^\s*translation\s+/i
+        puts "  - Translation: " + line.split[1..-1].join(' ')
+        new_actor.translation = line.split[1..-1].join(' ')
+      end
+
+      if line =~ /^\s*bloodcolor\s+/i
+        puts "  - BloodColor: " + line.split[1..-1].join(' ')
+        new_actor.blood_color = line.split[1..-1].join(' ')
+      end
+
+      if line =~ /^\s*bloodtype\s+/i
+        puts "  - BloodType: " + line.split[1..-1].join(' ')
+        new_actor.blood_type = line.split[1..-1].join(' ')
+      end
+
+      if line =~ /^\s*decal\s+/i
+        puts "  - Decal: " + line.split[1]?.to_s
+        new_actor.decal = line.split[1].to_s
+      end
+
+      if line =~ /^\s*stencilcolor\s+/i
+        puts "  - StencilColor: " + line.split[1]?.to_s
+        new_actor.stencil_color = line.split[1].to_s
+      end
+
+      if line =~ /^\s*floatbobphase\s+/i
+        puts "  - FloatBobPhase: " + line.split[1]?.to_s
+        new_actor.float_bob_phase = line.split[1].to_i
+      end
+
+      if line =~ /^\s*floatbobstrength\s+/i
+        puts "  - FloatBobStrength: " + line.split[1]?.to_s
+        new_actor.float_bob_strength = line.split[1].to_i
+      end
+
+      if line =~ /^\s*distancecheck\s+/i
+        puts "  - DistanceCheck: " + line.split[1]?.to_s
+        new_actor.distance_check = line.split[1]?.to_s
+      end
+
+      if line =~ /^\s*spriteangle\s+/i
+        puts "  - SpriteAngle: " + line.split[1]?.to_s
+        new_actor.sprite_angle = line.split[1].to_i
+      end
+
+      if line =~ /^\s*spriterotation\s+/i
+        puts "  - SpriteRotation: " + line.split[1]?.to_s
+        new_actor.sprite_rotation = line.split[1].to_i
+      end
+
+      if line =~ /^\s*visibleangles\s+/i
+        puts "  - VisibleAngles: " + line.split[1..-1].join(' ')
+        new_actor.visible_angles = line.split[1..-1].join(' ')
+      end
+
+      if line =~ /^\s*visiblepitch\s+/i
+        puts "  - VisiblePitch: " + line.split[1..-1].join(' ')
+        new_actor.visible_pitch = line.split[1..-1].join(' ')
+      end
+
+      if line =~ /^\s*renderradius\s+/i
+        puts "  - RenderRadius: " + line.split[1]?.to_s
+        new_actor.render_radius = line.split[1].to_f
+      end
+
+      if line =~ /^\s*cameraheight\s+/i
+        puts "  - CameraHeight: " + line.split[1]?.to_s
+        new_actor.camera_height = line.split[1].to_i
+      end
+
+      if line =~ /^\s*camerafov\s+/i
+        puts "  - CameraFOV: " + line.split[1]?.to_s
+        new_actor.camera_fov = line.split[1].to_f
+      end
+
+      if line =~ /^\s*hitobituary\s+/i
+        puts "  - HitObituary: " + line.split[1]?.to_s
+        new_actor.hit_obituary = line.split[1].to_s
+      end
+
+      if line =~ /^\s*obituary\s+/i
+        puts "  - Obituary: " + line.split[1]?.to_s
+        new_actor.obituary = line.split[1].to_s
       end
 
       if line =~/^\s*projectile\s*$/i
