@@ -491,6 +491,12 @@ end
 
 class MorphProjectile
   property player_class : String = "UNDEFINED"
+  property monster_class : String = "UNDEFINED"
+  property duration : Int32 = -1
+  # has a list of flags, we will capture in String
+  property morph_style : String = "UNDEFINED"
+  property morph_flash : String = "UNDEFINED"
+  property un_morph_flash : String = "UNDEFINED"
 end
 ##########################################
 # CREATE ACTORS DATABASE
