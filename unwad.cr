@@ -185,7 +185,7 @@ class Actor
   property render_style : String = "Normal"
   property alpha : Float64 = 1.0
   # heretic uses 0.4, everything else is 0.6
-  property default_alpha : Float64 = 0.6
+  property default_alpha : Bool = false
   property stealth_alpha : Float64 = 0
   property x_scale : Float64 = 1.0
   property y_scale : Float64 = 1.0
@@ -229,14 +229,14 @@ class Actor
   property max_target_range : Int32 = -1
   # these next 4 are deprecated so I'll assign a -1 to them to disable
   property melee_damage : Int32 = -1
-  property melee_sound : Int32 = -1
+  property melee_sound : String = "UNDEFINED"
   property missile_height : Int32 = -1
-  property missile_type : Int32 = -1
+  property missile_type : String = "UNDEFINED"
   # default A_Explode is -1, so I'll go with that
   property explosion_radius : Int32 = -1
   property explosion_damage : Int32 = -1
   # deprecated = -1
-  property dont_hurt_shooter : Int32 = -1
+  property dont_hurt_shooter : Bool = false
   property pain_type : String = "UNDEFINED"
   property args : String = "UNDEFINED"
   # This might be useful in cases of inheritance. Clear flags clears all flags.
@@ -292,8 +292,9 @@ class Inventory
   property name : String = "UNDEFINED"
 
   property amount : Int32 = -1
-  property def_max_amount : Int32 = 25
-  property max_amount : Int32 = -1
+  property def_max_amount : Bool = false
+  # this can be a hex value like 0x... so String is good
+  property max_amount : String = "UNDEFINED"
   property inter_hub_amount : Int32 = -1
   property icon : String = "UNDEFINED"
   property alt_hud_icon : String = "UNDEFINED"
@@ -481,7 +482,7 @@ class Powerup
 end
 
 class PowerSpeed
-  property no_trail : Bool = 0
+  property no_trail : Bool = false
 end
 
 class HealthPickup
@@ -717,8 +718,9 @@ full_dir_list = built_in_actors + processing_files
 
 puts full_dir_list
 
-puts "Removing comments from DECORATE.raw files into DECORATE.nocomments files"
-# Remove DECORATE comments
+missing_property_names = Hash(String, Array(String)).new
+
+# Processing on each decorate file, and any included files are added to the end
 full_dir_list.each do |file_path|
   if no_touchy[file_path] == false
     # puts "Source file (comment removal): #{file_path}"
@@ -833,6 +835,10 @@ full_dir_list.each do |file_path|
     puts "-----------"
     puts actor
     puts "-----------"
+
+    actor_no_states = actor.gsub(/states\s*{[^{}]*}/mi, "")
+    puts actor_no_states
+    puts "==========="
   end
 
   actors.each_with_index do |actor, actor_index|
@@ -841,6 +847,8 @@ full_dir_list.each do |file_path|
 
     states_raw_split = states_raw.split("SPECIALDELIMITER")
     states = Hash(String, String).new
+    states_text = nil
+    states_array = nil
     if states_raw_split.size > 1
       states_unformatted = states_raw_split[1]
       
@@ -886,23 +894,24 @@ full_dir_list.each do |file_path|
     # actor blah :        oldblah 1234
     # actor blah :        oldblah replaces oldblah
     # actor blah :        oldblah replaces oldblah 1234
-  
-    # strip leading and trailing whitespace on each line
-    lines = actor.lines
-    lines.map! { |line| line.lstrip.strip }
+ 
+    actor_no_states = actor.gsub(/states\s*{[^{}]*}/mi, "") 
+    lines = actor_no_states.lines
+    # strip leading whitespace, trailing whitespace, and downcase
+    lines.map! { |line| line.lstrip.strip.downcase }
     lines.reject! { |line| line.empty? }
     lines.compact!
     actor = lines.join("\n")
 
     first_line = lines.first
-    words = first_line.downcase.split(/\s+/)
+    words = first_line.split
     # parse partial comments on the actor line and remove
     partial_comment = -1
     native = false
 
     # if the last field of the "actor" line is "native" we need to parse that out and note the actor property
     words.each_with_index do |value, word_index|
-      if value.downcase.strip == "native"
+      if value == "native"
         native = true
         # partial comment will be set to the lowest word number because all the
         # words after it are a comment as well
@@ -921,11 +930,11 @@ full_dir_list.each do |file_path|
     end
 
     number_of_words = words.size
-    puts "Actor: \"#{words[1].downcase}\""
+    puts "Actor: \"#{words[1]}\""
     puts "File: \"#{file_path}\""
 
     # Create new actor object and populate the information we already collected
-    new_actor = Actor.new("#{words[1].downcase}", actor_index)
+    new_actor = Actor.new("#{words[1]}", actor_index)
     new_actor.source_wad_folder = wad_folder_name
     new_actor.source_file = decorate_source_file
     new_actor.file_path = file_path
@@ -940,9 +949,9 @@ full_dir_list.each do |file_path|
     # there are 2 possibilities: colon (inheritance), or replaces
     if number_of_words == 4 || number_of_words == 5
       if words[2] =~ /^\s*:\s*/
-        new_actor.inherits = words[3].downcase
-      elsif words[2].downcase =~ /^\s*replaces\s*/
-        new_actor.replaces = words[3].downcase
+        new_actor.inherits = words[3]
+      elsif words[2] =~ /^\s*replaces\s*/
+        new_actor.replaces = words[3]
       else
         puts "Error: word: #{words[2]} is not a colon, or 'replaces'"
       end
@@ -956,8 +965,8 @@ full_dir_list.each do |file_path|
 
     # if there are 5-6 words, it means inherit and replace, and 6 is doomednum
     if number_of_words == 6 || number_of_words == 7
-      new_actor.inherits = words[4].downcase
-      new_actor.replaces = words[6].downcase
+      new_actor.inherits = words[4]
+      new_actor.replaces = words[6]
       if number_of_words == 7
         new_actor.doomednum = words[7].to_i
       end
@@ -980,489 +989,438 @@ full_dir_list.each do |file_path|
       # doing it this way.
       ##############################################
 
-      if line =~ /^\s*game\s+/i
+      # this should give us the first word in the line, which is the property name
+      property_name = line.split[0]?.to_s
+
+      # properties that start with '+' or '-' are boolean flags
+      if property_name =~ /^\s*[\+|\-]/m
+        # there may be many flags on one line, so we need to split and process
+        line.split.each do |flag|
+          flag_boolean = false
+          if flag.char_at(0) == '+'
+            flag_boolean = true
+          elsif flag.char_at(0) == '-'
+            flag_boolean == false
+          end
+          flag_name = flag.lchop
+          puts "  - Flag: #{flag_name} = #{flag_boolean}"
+        end
+      elsif property_name == "game"
         puts "  - Game: " + line.split[1]?.to_s
         new_actor.game = line.split[1]?.to_s
-      end
-
-      if line =~ /^\s*spawnid\s+/i
+      elsif property_name == "spawnid"
         puts "  - SpawnID: " + line.split[1]?.to_s
         new_actor.spawn_id = line.split[1].to_i
-      end
-
-      if line =~ /^\s*conversationid\s+/i
+      elsif property_name == "conversationid"
         puts "  - ConversationID: " + line.split[1..-1].join(' ')
         new_actor.conversation_id = line.split[1..-1].join(' ')
-      end
-
-      if line =~ /^\s*tag\s+/i
+      elsif property_name == "tag"
         puts "  - Tag: " + line.split[1..-1].join(' ')
         new_actor.tag = line.split[1..-1].join(' ')
-      end
-
-      if line =~ /^\s*health\s+/i && new_actor.name.downcase.strip != "health"
+      elsif property_name == "health" && new_actor.name.downcase.strip != "health"
         puts "  - Health: " + line.split[1]?.to_s
         new_actor.health = line.split[1].to_i
-      end
-
-      if line =~ /^\s*gibhealth\s+/i
+      elsif property_name == "gibhealth"
         puts "  - GibHealth: " + line.split[1]?.to_s
         new_actor.gib_health = line.split[1].to_i
-      end
-
-      if line =~ /^\s*woundhealth\s+/i
+      elsif property_name == "woundhealth"
         puts "  - WoundHealth: " + line.split[1]?.to_s
         new_actor.wound_health = line.split[1].to_i
-      end
-
-      if line =~ /^\s*reactiontime\s+/i
+      elsif property_name == "reactiontime"
         puts "  - ReactionTime: " + line.split[1]?.to_s
         new_actor.reaction_time = line.split[1].to_i
-      end
-
-      if line =~ /^\s*painchance\s+/i
+      elsif property_name == "painchance"
         puts "  - PainChance: " + line.split[1]?.to_s
         new_actor.pain_chance = "#{line.split[1]?.to_s},#{line.split[2]?.to_s}"
-      end
-
-      if line =~ /^\s*painthreshold\s+/i
+      elsif property_name == "painthreshold"
         puts "  - PainThreshold: " + line.split[1]?.to_s
         new_actor.pain_threshold = line.split[1].to_i
-      end
-
-      if line =~ /^\s*damagefactor\s+/i
+      elsif property_name == "damagefactor"
         puts "  - DamageFactor: " + line.split[1..-1].join(' ')
         new_actor.damage_factor = line.split[1..-1].join(' ')
-      end
-
-      if line =~ /^\s*selfdamagefactor\s+/i
+      elsif property_name == "selfdamagefactor"
         puts "  - SelfDamageFactor: " + line.split[1]?.to_s
         new_actor.self_damage_factor = line.split[1].to_f
-      end
-
-      if line =~ /^\s*damagemultiply\s+/i
+      elsif property_name == "damagemultiply"
         puts "  - DamageMultiply: " + line.split[1]?.to_s
         new_actor.damage_multiply = line.split[1].to_f
-      end
-
-      if line =~ /^\s*damage\s+/i
+      elsif property_name == "damage"
         puts "  - Damage: " + line.split[1]?.to_s
         new_actor.damage = line.split[1]?.to_s
-      end
-
       # DamageFunction goes here but it is ZScript specific
-
-      if line =~ /^\s*poisondamage\s+/i
+      elsif property_name == "poisondamage"
         puts "  - PoisonDamage: " + line.split[1..-1].join(' ')
         new_actor.poison_damage = line.split[1..-1].join(' ')
-      end
-
-      if line =~ /^\s*poisondamagetype\s+/i
+      elsif property_name == "poisondamagetype"
         puts "  - PoisonDamageType: " + line.split[1..-1].join(' ')
         new_actor.poison_damage_type = line.split[1..-1].join(' ')
-      end
-
-      if line =~ /^\s*radiusdamagefactor\s+/i
+      elsif property_name == "radiusdamagefactor"
         puts "  - RadiusDamageFactor: " + line.split[1]?.to_s
         new_actor.radius_damage_factor = line.split[1].to_f
-      end
-
-      if line =~ /^\s*ripperlevel\s+/i
+      elsif property_name == "ripperlevel"
         puts "  - RipperLevel: " + line.split[1]?.to_s
         new_actor.ripper_level = line.split[1].to_i
-      end
-
-      if line =~ /^\s*riplevelmin\s+/i
+      elsif property_name == "riplevelmin"
         puts "  - RipLevelMin: " + line.split[1]?.to_s
         new_actor.rip_level_min = line.split[1].to_i
-      end
-
-      if line =~ /^\s*riplevelmax\s+/i
+      elsif property_name == "riplevelmax"
         puts "  - RipLevelMax: " + line.split[1]?.to_s
         new_actor.rip_level_max = line.split[1].to_i
-      end
-
-      if line =~ /^\s*designatedteam\s+/i
+      elsif property_name == "designatedteam"
         puts "  - DesignatedTeam: " + line.split[1]?.to_s
         new_actor.designated_team = line.split[1].to_i
-      end
-
-      if line=~ /^\s*speed\s+/i
+      elsif property_name == "speed"
         puts "  - Speed: " + line.split[1]?.to_s
         new_actor.speed = line.split[1].to_f
-      end
-
-      if line =~ /^\s*vspeed\s+/i
+      elsif property_name == "vspeed"
         puts "  - VSpeed: " + line.split[1]?.to_s
         new_actor.v_speed = line.split[1].to_f
-      end
-
-      if line=~ /^\s*fastspeed\s+/i
+      elsif property_name == "fastspeed"
         puts "  - FastSpeed: " + line.split[1]?.to_s
         new_actor.fast_speed = line.split[1].to_i
-      end
-
-      if line=~ /^\s*floatspeed\s+/i
+      elsif property_name == "floatspeed"
         puts "  - FloatSpeed: " + line.split[1]?.to_s
         new_actor.float_speed = line.split[1].to_i
-      end
-
-      if line=~ /^\s*species\s+/i
+      elsif property_name == "species"
         puts "  - Species: " + line.split[1]?.to_s
         new_actor.species = line.split[1].to_s
-      end
-
-      if line=~ /^\s*accuracy\s+/i
+      elsif property_name == "accuracy"
         puts "  - Accuracy: " + line.split[1]?.to_s
         new_actor.accuracy = line.split[1].to_i
-      end
-
-      if line=~ /^\s*stamina\s+/i
+      elsif property_name == "stamina"
         puts "  - Stamina: " + line.split[1]?.to_s
         new_actor.stamina = line.split[1].to_i
-      end
-
-      if line=~ /^\s*activation\s+/i
+      elsif property_name == "activation"
         puts "  - Activation: " + line.split[1..-1].join(' ')
         new_actor.activation = line.split[1..-1].join(' ')
-      end
-
-      if line=~ /^\s*telefogsourcetype\s+/i
+      elsif property_name == "telefogsourcetype"
         puts "  - TeleFogSourceType: " + line.split[1]?.to_s
         new_actor.tele_fog_source_type = line.split[1].to_s
-      end
-
-      if line=~ /^\s*telefogdesttype\s+/i
+      elsif property_name == "telefogdesttype"
         puts "  - TeleFogDestType: " + line.split[1]?.to_s
         new_actor.tele_fog_dest_type = line.split[1].to_s
-      end
-
-      if line=~ /^\s*threshold\s+/i
+      elsif property_name == "threshold"
         puts "  - Threshold: " + line.split[1]?.to_s
         new_actor.threshold = line.split[1].to_i
-      end
-
-      if line=~ /^\s*defthreshold\s+/i
+      elsif property_name == "defthreshold"
         puts "  - DefThreshold: " + line.split[1]?.to_s
         new_actor.def_threshold = line.split[1].to_i
-      end
-
-      if line=~ /^\s*friendlyseeblocks\s+/i
+      elsif property_name == "friendlyseeblocks"
         puts "  - FriendlySeeBlocks: " + line.split[1]?.to_s
         new_actor.friendly_see_blocks = line.split[1].to_i
-      end
-
-      if line=~ /^\s*shadowaimfactor\s+/i
+      elsif property_name == "shadowaimfactor"
         puts "  - ShadowAimFactor: " + line.split[1]?.to_s
         new_actor.shadow_aim_factor = line.split[1].to_f
-      end
-
-      if line=~ /^\s*shadowpenaltyfactor\s+/i
+      elsif property_name == "shadowpenaltyfactor"
         puts "  - ShadowPenaltyFactor: " + line.split[1]?.to_s
         new_actor.shadow_penalty_factor = line.split[1].to_f
-      end
-
-      if line =~ /^\s*radius\s+/i
+      elsif property_name == "radius"
         puts "  - Radius: " + line.split[1]?.to_s
         new_actor.radius = line.split[1].to_f
-      end
-
-      if line =~ /^\s*height\s+/i
+      elsif property_name == "height"
         puts "  - Height: " + line.split[1]?.to_s
         new_actor.height = line.split[1].to_i
-      end
-
-      if line =~ /^\s*deathheight\s+/i
+      elsif property_name == "deathheight"
         puts "  - DeathHeight: " + line.split[1]?.to_s
         new_actor.death_height = line.split[1].to_i
-      end
-
-      if line =~ /^\s*burnheight\s+/i
+      elsif property_name == "burnheight"
         puts "  - BurnHeight: " + line.split[1]?.to_s
         new_actor.burn_height = line.split[1].to_i
-      end
-
-      if line =~ /^\s*projectilepassheight\s+/i
+      elsif property_name == "projectilepassheight"
         puts "  - ProjectilePassHeight: " + line.split[1]?.to_s
         new_actor.projectile_pass_height = line.split[1].to_i
-      end
-
-      if line =~ /^\s*gravity\s+/i
+      elsif property_name == "gravity"
         puts "  - Gravity: " + line.split[1]?.to_s
         new_actor.gravity = line.split[1].to_f
-      end
-
-      if line =~ /^\s*friction\s+/i
+      elsif property_name == "friction"
         puts "  - Height: " + line.split[1]?.to_s
         new_actor.friction = line.split[1].to_f
-      end
-
-      if line =~ /^\s*mass\s+/i
+      elsif property_name == "mass"
         puts "  - Mass: " + line.split[1]?.to_s
         new_actor.mass = line.split[1].to_s
-      end
-
-      if line =~ /^\s*maxstepheight\s+/i
+      elsif property_name == "maxstepheight"
         puts "  - MaxStepHeight: " + line.split[1]?.to_s
         new_actor.max_step_height = line.split[1].to_i
-      end
-
-      if line =~ /^\s*maxdropoffheight\s+/i
+      elsif property_name == "maxdropoffheight"
         puts "  - MaxDropOffHeight: " + line.split[1]?.to_s
         new_actor.max_drop_off_height = line.split[1].to_i
-      end
-
-      if line =~ /^\s*maxslopesteepness\s+/i
+      elsif property_name == "maxslopesteepness"
         puts "  - MaxSlopeSteepness: " + line.split[1]?.to_s
         new_actor.max_slope_steepness = line.split[1].to_f
-      end
-
-      if line =~ /^\s*bouncetype\s+/i
+      elsif property_name == "bouncetype"
         puts "  - BounceType: " + line.split[1]?.to_s
         new_actor.bounce_type = line.split[1].to_s
-      end
-
-      if line =~ /^\s*bouncefactor\s+/i
+      elsif property_name == "bouncefactor"
         puts "  - BounceFactor: " + line.split[1]?.to_s
         new_actor.bounce_factor = line.split[1].to_f
-      end
-
-      if line =~ /^\s*wallbouncefactor\s+/i
+      elsif property_name == "wallbouncefactor"
         puts "  - WallBounceFactor: " + line.split[1]?.to_s
         new_actor.wall_bounce_factor = line.split[1].to_f
-      end
-
-      if line =~ /^\s*bouncecount\s+/i
+      elsif property_name == "bouncecount"
         puts "  - BounceCount: " + line.split[1]?.to_s
         new_actor.bounce_count = line.split[1].to_i
-      end
-
-      if line =~ /^\s*projectilekickback\s+/i
+      elsif property_name == "projectilekickback"
         puts "  - ProjectileKickBack: " + line.split[1]?.to_s
         new_actor.projectile_kick_back = line.split[1].to_i
-      end
-
-      if line =~ /^\s*pushfactor\s+/i
+      elsif property_name == "pushfactor"
         puts "  - PushFactor: " + line.split[1]?.to_s
         new_actor.push_factor = line.split[1].to_f
-      end
-
-      if line =~ /^\s*weaveindexxy\s+/i
+      elsif property_name == "weaveindexxy"
         puts "  - WeaveIndexXY: " + line.split[1]?.to_s
         new_actor.weave_index_xy = line.split[1].to_i
-      end
-
-      if line =~ /^\s*weaveindexz\s+/i
+      elsif property_name == "weaveindexz"
         puts "  - WeaveIndexZ: " + line.split[1]?.to_s
         new_actor.weave_index_z = line.split[1].to_i
-      end
-
-      if line =~ /^\s*thrubits\s+/i
+      elsif property_name == "thrubits"
         puts "  - ThruBits: " + line.split[1]?.to_s
         new_actor.thru_bits = line.split[1].to_i
-      end
-
-      if line =~ /^\s*activesound\s+/i
+      elsif property_name == "activesound"
         puts "  - ActiveSound: " + line.split[1]?.to_s
         new_actor.active_sound = line.split[1].to_s
-      end
-
-      if line =~ /^\s*attacksound\s+/i
+      elsif property_name == "attacksound"
         puts "  - AttackSound: " + line.split[1]?.to_s
         new_actor.attack_sound = line.split[1].to_s
-      end
-
-      if line =~ /^\s*bouncesound\s+/i
+      elsif property_name == "bouncesound"
         puts "  - BounceSound: " + line.split[1]?.to_s
         new_actor.bounce_sound = line.split[1].to_s
-      end
-
-      if line =~ /^\s*crushpainsound\s+/i
+      elsif property_name == "crushpainsound"
         puts "  - CrushPainSound: " + line.split[1]?.to_s
         new_actor.crush_pain_sound = line.split[1].to_s
-      end
-
-      if line =~ /^\s*deathsound\s+/i
+      elsif property_name == "deathsound"
         puts "  - DeathSound: " + line.split[1]?.to_s
         new_actor.death_sound = line.split[1].to_s
-      end
-
-      if line =~ /^\s*howlsound\s+/i
+      elsif property_name == "howlsound"
         puts "  - HowlSound: " + line.split[1]?.to_s
         new_actor.howl_sound = line.split[1].to_s
-      end
-
-      if line =~ /^\s*painsound\s+/i
+      elsif property_name == "painsound"
         puts "  - PainSound: " + line.split[1]?.to_s
         new_actor.pain_sound = line.split[1].to_s
-      end
-
-      if line =~ /^\s*ripsound\s+/i
+      elsif property_name == "ripsound"
         puts "  - RipSound: " + line.split[1]?.to_s
         new_actor.rip_sound = line.split[1].to_s
-      end
-
-      if line =~ /^\s*seesound\s+/i
+      elsif property_name == "seesound"
         puts "  - SeeSound: " + line.split[1]?.to_s
         new_actor.see_sound = line.split[1].to_s
-      end
-
-      if line =~ /^\s*wallbouncesound\s+/i
+      elsif property_name == "wallbouncesound"
         puts "  - WallBounceSound: " + line.split[1]?.to_s
         new_actor.wall_bounce_sound = line.split[1].to_s
-      end
-
-      if line =~ /^\s*pushsound\s+/i
+      elsif property_name == "pushsound"
         puts "  - PushSound: " + line.split[1]?.to_s
         new_actor.push_sound = line.split[1].to_s
-      end
-
-      if line =~ /^\s*renderstyle\s+/i
+      elsif property_name == "renderstyle"
         puts "  - RenderStyle: " + line.split[1]?.to_s
         new_actor.render_style = line.split[1].to_s
-      end
-
-      if line =~ /^\s*alpha\s+/i
+      elsif property_name == "alpha"
         puts "  - Alpha: " + line.split[1]?.to_s
         new_actor.alpha = line.split[1].to_f
-      end
-
-      if line =~ /^\s*defaultalpha\s+/i
+      elsif property_name == "defaultalpha"
         puts "  - DefaultAlpha: " + line.split[1]?.to_s
-        new_actor.default_alpha = line.split[1].to_f
-      end
-
-      if line =~ /^\s*stealthalpha\s+/i
+        new_actor.default_alpha = true
+      elsif property_name == "stealthalpha"
         puts "  - StealthAlpha: " + line.split[1]?.to_s
         new_actor.stealth_alpha = line.split[1].to_f
-      end
-
-      if line =~ /^\s*xscale\s+/i
+      elsif property_name == "xscale"
         puts "  - XScale: " + line.split[1]?.to_s
         new_actor.x_scale = line.split[1].to_f
-      end
-
-      if line =~ /^\s*yscale\s+/i
+      elsif property_name == "yscale"
         puts "  - YScale: " + line.split[1]?.to_s
         new_actor.y_scale = line.split[1].to_f
-      end
-
-      if line =~ /^\s*scale\s+/i
+      elsif property_name == "scale"
         puts "  - Scale: " + line.split[1]?.to_s
         new_actor.scale = line.split[1].to_f
-      end
-
-      if line =~ /^\s*lightlevel\s+/i
+      elsif property_name == "lightlevel"
         puts "  - LightLevel: " + line.split[1]?.to_s
         new_actor.light_level = line.split[1].to_i
-      end
-
-      if line =~ /^\s*translation\s+/i
+      elsif property_name == "translation"
         puts "  - Translation: " + line.split[1..-1].join(' ')
         new_actor.translation = line.split[1..-1].join(' ')
-      end
-
-      if line =~ /^\s*bloodcolor\s+/i
+      elsif property_name == "bloodcolor"
         puts "  - BloodColor: " + line.split[1..-1].join(' ')
         new_actor.blood_color = line.split[1..-1].join(' ')
-      end
-
-      if line =~ /^\s*bloodtype\s+/i
+      elsif property_name == "bloodtype"
         puts "  - BloodType: " + line.split[1..-1].join(' ')
         new_actor.blood_type = line.split[1..-1].join(' ')
-      end
-
-      if line =~ /^\s*decal\s+/i
+      elsif property_name == "decal"
         puts "  - Decal: " + line.split[1]?.to_s
         new_actor.decal = line.split[1].to_s
-      end
-
-      if line =~ /^\s*stencilcolor\s+/i
+      elsif property_name == "stencilcolor"
         puts "  - StencilColor: " + line.split[1]?.to_s
         new_actor.stencil_color = line.split[1].to_s
-      end
-
-      if line =~ /^\s*floatbobphase\s+/i
+      elsif property_name == "floatbobphase"
         puts "  - FloatBobPhase: " + line.split[1]?.to_s
         new_actor.float_bob_phase = line.split[1].to_i
-      end
-
-      if line =~ /^\s*floatbobstrength\s+/i
+      elsif property_name == "floatbobstrength"
         puts "  - FloatBobStrength: " + line.split[1]?.to_s
         new_actor.float_bob_strength = line.split[1].to_i
-      end
-
-      if line =~ /^\s*distancecheck\s+/i
+      elsif property_name == "distancecheck"
         puts "  - DistanceCheck: " + line.split[1]?.to_s
         new_actor.distance_check = line.split[1]?.to_s
-      end
-
-      if line =~ /^\s*spriteangle\s+/i
+      elsif property_name == "spriteangle"
         puts "  - SpriteAngle: " + line.split[1]?.to_s
         new_actor.sprite_angle = line.split[1].to_i
-      end
-
-      if line =~ /^\s*spriterotation\s+/i
+      elsif property_name == "spriterotation"
         puts "  - SpriteRotation: " + line.split[1]?.to_s
         new_actor.sprite_rotation = line.split[1].to_i
-      end
-
-      if line =~ /^\s*visibleangles\s+/i
+      elsif property_name == "visibleangles"
         puts "  - VisibleAngles: " + line.split[1..-1].join(' ')
         new_actor.visible_angles = line.split[1..-1].join(' ')
-      end
-
-      if line =~ /^\s*visiblepitch\s+/i
+      elsif property_name == "visiblepitch"
         puts "  - VisiblePitch: " + line.split[1..-1].join(' ')
         new_actor.visible_pitch = line.split[1..-1].join(' ')
-      end
-
-      if line =~ /^\s*renderradius\s+/i
+      elsif property_name == "renderradius"
         puts "  - RenderRadius: " + line.split[1]?.to_s
         new_actor.render_radius = line.split[1].to_f
-      end
-
-      if line =~ /^\s*cameraheight\s+/i
+      elsif property_name == "cameraheight"
         puts "  - CameraHeight: " + line.split[1]?.to_s
         new_actor.camera_height = line.split[1].to_i
-      end
-
-      if line =~ /^\s*camerafov\s+/i
+      elsif property_name == "camerafov"
         puts "  - CameraFOV: " + line.split[1]?.to_s
         new_actor.camera_fov = line.split[1].to_f
-      end
-
-      if line =~ /^\s*hitobituary\s+/i
+      elsif property_name == "hitobituary"
         puts "  - HitObituary: " + line.split[1]?.to_s
         new_actor.hit_obituary = line.split[1].to_s
-      end
-
-      if line =~ /^\s*obituary\s+/i
+      elsif property_name == "obituary"
         puts "  - Obituary: " + line.split[1]?.to_s
         new_actor.obituary = line.split[1].to_s
-      end
-
-      if line =~/^\s*projectile\s*$/i
+      elsif property_name == "minmissilechance"
+        puts "  - MinMissileChance: " + line.split[1]?.to_s
+        new_actor.min_missile_chance = line.split[1].to_i
+      elsif property_name == "damagetype"
+        puts "  - DamageType: " + line.split[1]?.to_s
+        new_actor.damage_type = line.split[1].to_s
+      elsif property_name == "deathtype"
+        puts "  - DeathType: " + line.split[1]?.to_s
+        new_actor.death_type = line.split[1].to_s
+      elsif property_name == "meleethreshold"
+        puts "  - MeleeThreshold: " + line.split[1]?.to_s
+        new_actor.melee_threshold = line.split[1].to_i
+      elsif property_name == "meleerange"
+        puts "  - MeleeRange: " + line.split[1]?.to_s
+        new_actor.melee_range = line.split[1].to_i
+      elsif property_name == "max_target_range"
+        puts "  - MaxTargetRange: " + line.split[1]?.to_s
+        new_actor.max_target_range = line.split[1].to_i
+      elsif property_name == "meleedamage"
+        puts "  - MeleeDamage: " + line.split[1]?.to_s
+        new_actor.melee_damage = line.split[1].to_i
+      elsif property_name == "meleesound"
+        puts "  - MeleeSound: " + line.split[1]?.to_s
+        new_actor.melee_sound = line.split[1].to_s
+      elsif property_name == "missileheight"
+        puts "  - MissileHeight: " + line.split[1]?.to_s
+        new_actor.missile_height = line.split[1].to_i
+      elsif property_name == "missiletype"
+        puts "  - MissileType: " + line.split[1]?.to_s
+        new_actor.missile_type = line.split[1].to_s
+      elsif property_name == "explosionradius"
+        puts "  - ExplosionRadius: " + line.split[1]?.to_s
+        new_actor.explosion_radius = line.split[1].to_i
+      elsif property_name == "explosiondamage"
+        puts "  - ExplosionDamage: " + line.split[1]?.to_s
+        new_actor.explosion_damage = line.split[1].to_i
+      elsif property_name == "donthurtshooter"
+        puts "  - DontHurtShooter: " + line.split[1]?.to_s
+        new_actor.dont_hurt_shooter = true
+      elsif property_name == "paintype"
+        puts "  - PainType: " + line.split[1]?.to_s
+        new_actor.pain_type = line.split[1].to_s
+      elsif property_name == "projectile"
         puts "  - Projectile"
         new_actor.projectile = true
-      end
-
-      if line =~ /^\s*monster\s*/i
+      elsif property_name == "monster"
         puts "  - Monster"
         new_actor.monster = true
-      end
-
-      if line =~ /^\s*\+ismonster\s*/i
+      elsif property_name == "+ismonster"
         puts "  - Monster"
         new_actor.monster = true
-      end
-
-      if line =~ /^\s*inventory\s*$/i
-        puts "  - Inventory"
-      end
-
-      if line =~/^\s*weapon\s*$/i
-        puts "  - Weapon"
+      elsif property_name == "{" || property_name == "}"
+      elsif property_name == "args"
+        puts "  - Args: " + line.split[1..-1].join(' ')
+        new_actor.args = line.split[1..-1].join(' ')
+      elsif property_name == "clearflags"
+        # I don't know what we need to do with this one but it might be
+        # fairly complicated. I think this means clear all inherited flags.
+        puts "  - ClearFlags: " + line.split[1]?.to_s
+        new_actor.clear_flags = true
+      elsif property_name == "dropitem"
+        puts "  - DropItem: " + line.split[1..-1].join(' ')
+        new_actor.drop_item = line.split[1..-1].join(' ')
+      #Deprecated properties go here:
+      # - Spawn
+      # - See
+      # - Melee
+      # - Pain
+      # - Death
+      # - XDeath
+      # - Burn
+      # - Ice
+      # - Disintegrate
+      # - Raise
+      # - Crash
+      # - Wound
+      # - Crush
+      # - Heal
+      elsif property_name == "skip_super"
+        puts "  - Skip_Super"
+        new_actor.skip_super = true
+      elsif property_name == "visibletoteam"
+        puts "  - VisibleToTeam: " + line.split[1]?.to_s
+        new_actor.visible_to_team = line.split[1].to_i
+      elsif property_name == "visibletoplayerclass"
+        puts "  - VisibleToPlayerClass: " + line.split[1..-1].join(' ')
+        new_actor.visible_to_player_class = line.split[1..-1].join(' ')
+      elsif property_name == "inventory.amount"
+        puts "  - Inventory.Amount: " + line.split[1]?.to_s
+        new_actor.inventory.amount = line.split[1].to_i
+      elsif property_name == "inventory.defmaxamount"
+        puts "  - Inventory.DefMaxAmount"
+        new_actor.inventory.def_max_amount = true
+      elsif property_name == "inventory.maxamount"
+        puts "  - Inventory.MaxAmount: " + line.split[1]?.to_s
+        new_actor.inventory.max_amount = line.split[1].to_s
+      elsif property_name == "inventory.interhubamount"
+        puts "  - Inventory.InterHubAmount: " + line.split[1]?.to_s
+        new_actor.inventory.inter_hub_amount = line.split[1].to_i
+      elsif property_name == "inventory.icon"
+        puts "  - Inventory.Icon: " + line.split[1]?.to_s
+        new_actor.inventory.icon = line.split[1].to_s
+      elsif property_name == "inventory.althudicon"
+        puts "  - Inventory.AltHUDIcon: " + line.split[1]?.to_s
+        new_actor.inventory.alt_hud_icon = line.split[1].to_s
+      elsif property_name == "inventory.pickupmessage"
+        puts "  - Inventory.PickupMessage: " + line.split[1..-1].join(' ')
+        new_actor.inventory.pickup_message = line.split[1..-1].join(' ')
+      elsif property_name == "inventory.pickupsound"
+        puts "  - Inventory.PickupSound: " + line.split[1..-1].join(' ')
+        new_actor.inventory.pickup_sound = line.split[1..-1].join(' ')
+      elsif property_name == "inventory.pickupflash"
+        puts "  - Inventory.PickupFlash: " + line.split[1]?.to_s
+        new_actor.inventory.pickup_flash = line.split[1].to_s
+      elsif property_name == "inventory.usesound"
+        puts "  - Inventory.UseSound: " + line.split[1]?.to_s
+        new_actor.inventory.use_sound = line.split[1].to_s
+      elsif property_name == "inventory.respawntics"
+        puts "  - Inventory.RespawnTics: " + line.split[1]?.to_s
+        new_actor.inventory.respawn_tics = line.split[1].to_i
+      elsif property_name == "inventory.givequest"
+        puts "  - Inventory.GiveQuest: " + line.split[1]?.to_s
+        new_actor.inventory.give_quest = line.split[1].to_i
+      elsif property_name == "inventory.forbiddento"
+        puts "  - Inventory.ForbiddenTo: " + line.split[1..-1].join(' ')
+        new_actor.inventory.forbidden_to = line.split[1..-1].join(' ')
+      elsif property_name == "inventory.restrictedto"
+        puts "  - Inventory.RestrictedTo: " + line.split[1..-1].join(' ')
+        new_actor.inventory.restricted_to = line.split[1..-1].join(' ')
+      elsif property_name == "{" || property_name == "}" || property_name == "#include"
+        # ignore these and do nothing
+      else
+        if missing_property_names.fetch(property_name, nil)
+          list_of_actors_missing_this_property = missing_property_names[property_name]
+        else
+          list_of_actors_missing_this_property = Array(String).new
+        end
+        list_of_actors_missing_this_property << new_actor.name
+        missing_property_names[property_name] = list_of_actors_missing_this_property
       end
 
     end
@@ -1488,6 +1446,17 @@ full_dir_list.each do |file_path|
   end
 end
 
+puts "=================="
+puts "Missing Properties"
+puts "=================="
+missing_property_names.each do |key, value|
+  puts "Missing Property: #{key}"
+  puts "Offending Actors:"
+  value.each do |actor_name|
+    puts actor_name
+  end
+end
+puts "=================="
 exit(0)
 
 puts "=========================="
