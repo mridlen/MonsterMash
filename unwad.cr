@@ -719,6 +719,7 @@ full_dir_list = built_in_actors + processing_files
 puts full_dir_list
 
 missing_property_names = Hash(String, Array(String)).new
+missing_actor_flags = Hash(String, Array(String)).new
 
 # Processing on each decorate file, and any included files are added to the end
 full_dir_list.each do |file_path|
@@ -1217,6 +1218,200 @@ full_dir_list.each do |file_path|
           elsif flag_name == "hitowner"
 
           # Bouncing
+          elsif flag_name == "bounceonwalls"
+          elsif flag_name == "bounceonfloors"
+          elsif flag_name == "bounceonceilings"
+          elsif flag_name == "allowbounceonactors"
+          elsif flag_name == "bounceautooff"
+          elsif flag_name == "bounceautooffflooronly"
+          elsif flag_name == "bouncelikeheretic"
+          elsif flag_name == "bounceonactors"
+          elsif flag_name == "bounceonunrippables"
+          elsif flag_name == "nowallbouncesnd"
+          elsif flag_name == "nobouncesound"
+          elsif flag_name == "explodeonwater"
+          elsif flag_name == "canbounceonwater"
+          elsif flag_name == "mbfbouncer"
+          elsif flag_name == "usebouncestate"
+          elsif flag_name == "dontbounceonshootables"
+          elsif flag_name == "dontbounceonsky"
+          
+          # Miscellaneous
+          elsif flag_name == "iceshatter"
+          elsif flag_name == "dropped"
+          elsif flag_name == "ismonster"
+          elsif flag_name == "corpse"
+          elsif flag_name == "countitem"
+          elsif flag_name == "countkill"
+          elsif flag_name == "countsecret"
+          elsif flag_name == "notdmatch"
+          elsif flag_name == "nonshootable"
+          elsif flag_name == "dropoff"
+          elsif flag_name == "puffonactors"
+          elsif flag_name == "allowparticles"
+          elsif flag_name == "alwayspuff"
+          elsif flag_name == "puffgetsowner"
+          elsif flag_name == "forcedecal"
+          elsif flag_name == "nodecal"
+          elsif flag_name == "synchronized"
+          elsif flag_name == "alwaysfast"
+          elsif flag_name == "neverfast"
+          elsif flag_name == "oldradiusdmg"
+          elsif flag_name == "usespecial"
+          elsif flag_name == "bumpspecial"
+          elsif flag_name == "bossdeath"
+          elsif flag_name == "nointeraction"
+          elsif flag_name == "notautomated"
+          elsif flag_name == "nomenu"
+          elsif flag_name == "pickup"
+          elsif flag_name == "touchy"
+          elsif flag_name == "vulnerable"
+          elsif flag_name == "notonautomap"
+          elsif flag_name == "weaponspawn"
+          
+          # Limited Use
+          elsif flag_name == "getowner"
+          elsif flag_name == "seesdaggers"
+          elsif flag_name == "incombat"
+          elsif flag_name == "noclip"
+          elsif flag_name == "nosector"
+          elsif flag_name == "icecorpse"
+          elsif flag_name == "justhit"
+          elsif flag_name == "justattacked"
+          elsif flag_name == "teleport"
+          elsif flag_name == "blasted"
+          elsif flag_name == "explocount"
+          elsif flag_name == "skullfly"
+          elsif flag_name == "retargetafterslam"
+          elsif flag_name == "onlyslamsolid"
+          elsif flag_name == "specialfiredamage"
+          elsif flag_name == "specialfloorclip"
+          elsif flag_name == "summonedmonster"
+          elsif flag_name == "special"
+          elsif flag_name == "nosavegame"
+
+          # Boss Triggers
+          elsif flag_name == "e1m8boss"
+          elsif flag_name == "e2m8boss"
+          elsif flag_name == "e3m8boss"
+          elsif flag_name == "e4m6boss"
+          elsif flag_name == "e4m8boss"
+
+          # Internal Flags
+          elsif flag_name == "inchase"
+          elsif flag_name == "unmorphed"
+          elsif flag_name == "fly"
+          elsif flag_name == "onmobj"
+          elsif flag_name == "argsdefined"
+          elsif flag_name == "nosightcheck"
+          elsif flag_name == "crashed"
+          elsif flag_name == "warnbot"
+          elsif flag_name == "huntplayers"
+          elsif flag_name == "nohateplayers"
+          elsif flag_name == "scrollmove"
+          elsif flag_name == "vfricition"
+          elsif flag_name == "bossspawned"
+          elsif flag_name == "avoidingdropoff"
+          elsif flag_name == "chasegoal"
+          elsif flag_name == "inconversation"
+          elsif flag_name == "armed"
+          elsif flag_name == "falling"
+          elsif flag_name == "linedone"
+          elsif flag_name == "shattering"
+          elsif flag_name == "killed"
+          elsif flag_name == "bosscube"
+          elsif flag_name == "intrymove"
+          elsif flag_name == "handlenodelay"
+          elsif flag_name == "flycheat"
+          elsif flag_name == "respawninvul"
+          
+          # Depricated Flags
+          elsif flag_name == "lowgravity"
+          elsif flag_name == "quartergravity"
+          elsif flag_name == "longmeleerange"
+          elsif flag_name == "shortmissilerange"
+          elsif flag_name == "highermprob"
+          elsif flag_name == "fireresist"
+          elsif flag_name == "donthurtspecies"
+          elsif flag_name == "firedamage"
+          elsif flag_name == "icedamage"
+          elsif flag_name == "hereticbounce"
+          elsif flag_name == "hexenbounce"
+          elsif flag_name == "doombounce"
+          elsif flag_name == "faster"
+          elsif flag_name == "fastmelee"
+
+          # Additional Flags
+          elsif flag_name == "inventory.quiet"
+          elsif flag_name == "inventory.autoactivate"
+          elsif flag_name == "inventory.undroppable"
+          elsif flag_name == "inventory.unclearable"
+          elsif flag_name == "inventory.invbar"
+          elsif flag_name == "inventory.hubpower"
+          elsif flag_name == "inventory.persistentpower"
+          elsif flag_name == "inventory.interhubstrip"
+          elsif flag_name == "inventory.pickupflash"
+          elsif flag_name == "inventory.alwayspickup"
+          elsif flag_name == "inventory.fancypickupsound"
+          elsif flag_name == "inventory.noattenpickupsound"
+          elsif flag_name == "inventory.bigpowerup"
+          elsif flag_name == "inventory.neverrespawn"
+          elsif flag_name == "inventory.keepdepleted"
+          elsif flag_name == "inventory.ignoreskill"
+          elsif flag_name == "inventory.additivetime"
+          elsif flag_name == "inventory.untossable"
+          elsif flag_name == "inventory.restrictabsolutely"
+          elsif flag_name == "inventory.noscreenflash"
+          elsif flag_name == "inventory.tossed"
+          elsif flag_name == "inventory.alwaysrespawn"
+          elsif flag_name == "inventory.transfer"
+          elsif flag_name == "inventory.noteleportfreeze"
+          elsif flag_name == "inventory.noscreenblink"
+          elsif flag_name == "inventory.ishealth"
+          elsif flag_name == "inventory.isarmor"
+
+          # Weapons
+          elsif flag_name == "weapon.noautofire"
+          elsif flag_name == "weapon.readysndhalf"
+          elsif flag_name == "weapon.dontbob"
+          elsif flag_name == "weapon.axeblood"
+          elsif flag_name == "weapon.noalert"
+          elsif flag_name == "weapon.ammo_optional"
+          elsif flag_name == "weapon.alt_ammo_optional"
+          elsif flag_name == "weapon.ammo_checkboth"
+          elsif flag_name == "weapon.primary_uses_both"
+          elsif flag_name == "weapon.alt_uses_both"
+          elsif flag_name == "weapon.wimpy_weapon"
+          elsif flag_name == "weapon.powered_up"
+          elsif flag_name == "weapon.staff2_kickback"
+          elsif flag_name == "weapon.explosive"
+          elsif flag_name == "weapon.meleeweapon"
+          elsif flag_name == "weapon.bfg"
+          elsif flag_name == "weapon.cheatnotweapon"
+          elsif flag_name == "weapon.noautoswitchto"
+          elsif flag_name == "weapon.noautoaim"
+          elsif flag_name == "weapon.nodeathdeselect"
+          elsif flag_name == "weapon.nodeathinput"
+          
+          # PowerSpeed
+          elsif flag_name == "powerspeed.notrail"
+          
+          # Players
+          elsif flag_name == "playerpawn.nothrustwheninvul"
+          elsif flag_name == "playerpawn.cansupermorph"
+          elsif flag_name == "playerpawn.crouchablemorph"
+          elsif flag_name == "playerpawn.weaponlevel2ended"
+          
+          # Catchall for missing stuff to double check things
+          else
+            if missing_actor_flags.fetch(flag_name, nil)
+              missing_flag = missing_actor_flags[flag_name]
+            else
+              missing_flag = Array(String).new
+            end 
+            missing_flag << new_actor.source_wad_folder
+            missing_actor_flags[flag_name] = missing_flag
+            missing_actor_flags[flag_name].uniq!
           end
         end
       elsif property_name == "game"
@@ -1633,7 +1828,7 @@ full_dir_list.each do |file_path|
         else
           list_of_actors_missing_this_property = Array(String).new
         end
-        list_of_actors_missing_this_property << new_actor.name
+        list_of_actors_missing_this_property << new_actor.source_wad_folder
         missing_property_names[property_name] = list_of_actors_missing_this_property
       end
 
@@ -1671,6 +1866,17 @@ missing_property_names.each do |key, value|
   end
 end
 puts "=================="
+
+puts "=================="
+puts "Missing Flags"
+puts "=================="
+missing_actor_flags.each do |key, value|
+  puts "Missing Flag: #{key}"
+  puts "Offending Actors:"
+  value.each do |actor_name|
+    puts actor_name
+  end
+end
 exit(0)
 
 puts "=========================="
