@@ -5,6 +5,9 @@ require "file"
 require "file_utils"
 require "regex"
 
+# Other Code Specific To MonsterMash
+require "./requires/classes.cr"
+
 jeutoolexe = ""
 
 puts "Assigning jeutool..."
@@ -23,482 +26,8 @@ puts "Jeutool assigned: #{jeutoolexe}"
 # DATA STRUCTURES
 ##########################################
 
-puts "Defining classes to track duplicate entries..."
-# we will use an array of this to track duplicate actor names
-class DupedActorName
-  # name is the Actor name
-  property name : String
-  property wad_name : String
-  property duped_wad_name : String
- 
-  def initialize(@name : String, @wad_name : String, @duped_wad_name : String)
-  end
-end
+# < these have been moved to ./requires/classes.cr >
 
-# graphic prefix collisions
-class DupedGraphics
-  # name is the 4 letter prefix
-  property name : String
-  property wad_name : String
-  property duped_wad_name : String
-
-  def initialize(@name : String, @wad_name : String, @duped_wad_name : String)
-  end
-end
-
-# doomednum duplicates
-class DupedDoomednums
-  property name : String
-  property doomednum : Int32
-  property wad_name : String
-  property duped_wad_name : String
-  property built_in : Bool = false
-
-  def initialize(@name : String, @doomednum : Int32, @wad_name : String, @duped_wad_name : String, @built_in : Bool)
-  end
-end
-
-puts "Defining Actor Class..."
-class Actor
-  # we need a unique index id, because actor names might conflict at first
-  property index : Int32 = -1
-
-  # these first few are defined on the actor line
-  property name : String = "UNDEFINED"
-  property inherits : String = "UNDEFINED"
-  property replaces : String = "UNDEFINED"
-  # -1 will mean undefined
-  property doomednum : Int32 = -1
-  # this is rare but sometimes pops up and might be useful later
-  property native : Bool = false
-
-  # sub classes?
-  property inventory : Inventory
-
-  # these next few are things that are not part of the decorate specifications
-  # but they are information I will need to collect for logistical purposes
-  #
-  # sprite prefixes will be comma separated list of 4 character graphic prefixes
-  # e.g. "PAIN,BLAH,BORK"
-  property sprite_prefixes : String = "UNDEFINED"
-  # File Path: e.g. "./Processing/Actor/defs/DECORATE.raw"
-  property file_path : String = "UNDEFINED"
-  # e.g. Blah.wad -> "Blah"
-  property source_wad_folder : String = "UNDEFINED"
-  # This will be "DECORATE.raw.nocomments2" or "OTHERFILE.raw"
-  property source_file : String = "UNDEFINED"
-  # Built In == part of some actor inherent in the doom source code
-  property built_in : Bool = false
-
-  # States will be stored in a hash
-  property states : Hash(String, String) = Hash(String, String).new
-  
-  # and here we go with the properties inside the DECORATE...
-  property game : String = "Doom"
-  property spawn_id : Int32 = 0
-  property conversation_id : String = "UNDEFINED"
-  property tag : String = "UNDEFINED"
-  property health : Int32 = 1000
-  property gib_health : Int32 = -1000
-  property wound_health : Int32 = 6
-  property reaction_time : Int32 = 8
-  # painchance is a string of comma key value pairs separated by semicolon
-  # e.g. "PainChance,0;Fire,10;Something,24"
-  # PainChance is the main one that is used that is not per damage type
-  property pain_chance : String = "PainChance,0"
-  property pain_threshold : Int32 = 0
-  # damagefactor is key value like painchance
-  property damage_factor : String = "DamageFactor,1.0"
-  property self_damage_factor : Float64 = 1.0
-  property damage_multiply : Float64 = 1.0
-  # damage can be a mathematical expression which might cause problems
-  # we will leave default as String "0"
-  property damage : String = "0"
-  # this is ZScript specific
-  property damage_function : String = "UNDEFINED"
-  # PoisonDamage is "value,[duration,[period]]"
-  property poison_damage : String = "0"
-  property poison_damage_type : String = "UNDEFINED"
-  property radius_damage_factor : Float64 = 1.0
-  property ripper_level : Int32 = 0
-  property rip_level_min : Int32 = 0
-  property rip_level_max : Int32 = 0
-  property designated_team : Int32 = 0
-  property speed : Float64 = 0
-  property v_speed : Float64 = 0.0
-  property fast_speed : Int32 = 0
-  property float_speed : Int32 = 0
-  property species : String = "UNDEFINED"
-  property accuracy : Int32 = 100
-  property stamina : Int32 = 100
-  # flags separated by pipes
-  # e.g. "THINGSPEC_Default | THINGSPEC_ThingTargets"
-  property activation : String = "UNDEFINED"
-  property tele_fog_source_type : String = "TeleportFog"
-  property tele_fog_dest_type : String = "TeleportFog"
-  property threshold : Int32 = 0
-  property def_threshold : Int32 = 0
-  property friendly_see_blocks : Int32 = 10
-  property shadow_aim_factor : Float64 = 1.0
-  property shadow_penalty_factor : Float64 = 1.0
-  property radius : Float64 = 20.0
-  property height : Int32 = 16
-  # Death/Burn Height is default 1/4 height, so we might need to fix that later
-  property death_height : Int32 = 4
-  property burn_height : Int32 = 4
-  # default of 0 here means "use the actor's height"
-  property projectile_pass_height : Int32 = 0
-  property gravity : Float64 = 1.0
-  property friction : Float64 = 1.0
-  # apparently mass can be int or hexadecimal, so we import the value as string
-  property mass : String = "100"
-  property max_step_height : Int32 = 24
-  property max_drop_off_height : Int32 = 24
-  # this is a non-exact approximation of 46342/65535
-  # property max_slope_steepness : Float64 = 0.707122
-  property max_slope_steepness : Float64 = (46342 / 65535)
-  property bounce_type : String = "None"
-  property bounce_factor : Float64 = 0.7
-  property wall_bounce_factor : Float64 = 0.75
-  # default is 0 if bounce_type is "None" which is also default
-  property bounce_count : Int32 = 0
-  # I have no idea what type of default value this has
-  property projectile_kick_back : Int32 = 0
-  property push_factor : Float64 = 0.25
-  # values allowed for weave are 0-63 but I don't know if that's a float or int
-  # I'm assuming 6-bit int for values of 0-63
-  property weave_index_xy : Int32 = 0
-  property weave_index_z : Int32 = 0
-  # again not sure if int or float
-  property thru_bits : Int32 = 0
-  property active_sound : String = "UNDEFINED"
-  property attack_sound : String = "UNDEFINED"
-  property bounce_sound : String = "UNDEFINED"
-  property crush_pain_sound : String = "UNDEFINED"
-  property death_sound : String = "UNDEFINED"
-  property howl_sound : String = "UNDEFINED"
-  property pain_sound : String = "UNDEFINED"
-  property rip_sound : String = "UNDEFINED"
-  property see_sound : String = "UNDEFINED"
-  property wall_bounce_sound : String = "UNDEFINED"
-  property push_sound : String = "UNDEFINED"
-  property render_style : String = "Normal"
-  property alpha : Float64 = 1.0
-  # heretic uses 0.4, everything else is 0.6
-  property default_alpha : Bool = false
-  property stealth_alpha : Float64 = 0
-  property x_scale : Float64 = 1.0
-  property y_scale : Float64 = 1.0
-  property scale : Float64 = 1.0
-  # Values allowed are 0-255 or -1
-  # default -1 means the actor uses sectors light level
-  property light_level : Int32 = -1
-  # translation can be one of the following:
-  # > value (0-2)
-  # > string "112:127=208:223"
-  # > translation variable "TranslationBlah"
-  # > Translation Ice # This is a custom variable that uses unique colors
-  property translation : String = "UNDEFINED"
-  property blood_color : String = "UNDEFINED"
-  # Can have multiple comma separated fields
-  property blood_type : String = "UNDEFINED"
-  property decal : String = "UNDEFINED"
-  property stencil_color : String = "UNDEFINED"
-  property float_bob_phase : Int32 = -1
-  property float_bob_strength : Float64 = 1.0
-  property distance_check : String = "UNDEFINED"
-  # 180 = actors front - read the Zdoom wiki
-  property sprite_angle : Int32 = 180
-  property sprite_rotation : Int32 = 0
-  # will take two comma separated values
-  property visible_angles : String = "UNDEFINED"
-  property visible_pitch : String = "UNDEFINED"
-  property render_radius : Float64 = 0.0
-  # Having trouble finding a default here, but I think it is 32
-  property camera_height : Int32 = 32
-  property camera_fov : Float64 = 90.0
-  property hit_obituary : String = "UNDEFINED"
-  property obituary : String = "UNDEFINED"
-  property min_missile_chance : Int32 = 200
-  property damage_type : String = "UNDEFINED"
-  property death_type : String = "UNDEFINED"
-  # no idea what the default is, so we'll do -1 to disable
-  property melee_threshold : Int32 = -1
-  property melee_range : Int32 = 44
-  # no idea what the default is, so we'll do -1 to disable
-  property max_target_range : Int32 = -1
-  # these next 4 are deprecated so I'll assign a -1 to them to disable
-  property melee_damage : Int32 = -1
-  property melee_sound : String = "UNDEFINED"
-  property missile_height : Int32 = -1
-  property missile_type : String = "UNDEFINED"
-  # default A_Explode is -1, so I'll go with that
-  property explosion_radius : Int32 = -1
-  property explosion_damage : Int32 = -1
-  # deprecated = -1
-  property dont_hurt_shooter : Bool = false
-  property pain_type : String = "UNDEFINED"
-  property args : String = "UNDEFINED"
-  # This might be useful in cases of inheritance. Clear flags clears all flags.
-  property clear_flags : Bool = false
-  # String "classname[, probability [, amount]]"
-  property drop_item : String = "UNDEFINED"
-
-  # deprecated properties that we should throw a warning about
-  # deprecated because of "goto" keyword
-  property spawn : Int32 = -1
-  property see : Int32 = -1
-  property melee : Int32 = -1
-  property missile : Int32 = -1
-  property pain : Int32 = -1
-  property death : Int32 = -1
-  property x_death : Int32 = -1
-  property burn : Int32 = -1
-  property ice : Int32 = -1
-  property disintegrate : Int32 = -1
-  property raise : Int32 = -1
-  property crash : Int32 = -1
-  property wound : Int32 = -1
-  property crush : Int32 = -1
-  property heal : Int32 = -1
-
-  # Reinitializes the actor as if it has no parent. This can be used to have access to the parent's states without inheriting its attributes.
-  property skip_super : Bool = false
-  property visible_to_team : Int32 = 0
-  # Comma separated player classes
-  property visible_to_player_class : String = "UNDEFINED"
-
-  # flag combos that are technically properties
-  property monster : Bool = false
-  property projectile : Bool = false
-
-  def initialize(@name : String, @index : Int32)
-    @inventory = Inventory.new
-  end
-
-  # this function generates a dynamic list of property names
-  # which is useful for doing iteration when doing inheritance
-  def property_list : Array
-    list_of_properties = Array(String).new
-    {% for name in Actor.instance_vars %}
-      list_of_properties << "#{ {{ name.id.symbolize }} }"
-    {% end %}
-    list_of_properties
-  end
-end
-
-class Inventory
-  property index : Int32 = 0
-  property name : String = "UNDEFINED"
-
-  property amount : Int32 = -1
-  property def_max_amount : Bool = false
-  # this can be a hex value like 0x... so String is good
-  property max_amount : String = "UNDEFINED"
-  property inter_hub_amount : Int32 = -1
-  property icon : String = "UNDEFINED"
-  property alt_hud_icon : String = "UNDEFINED"
-  property pickup_message : String = "UNDEFINED"
-  property pickup_sound : String = "UNDEFINED"
-  property pickup_flash : String = "UNDEFINED"
-  property use_sound : String = "UNDEFINED"
-  property respawn_tics : Int32 = -1
-  property give_quest : Int32 = -1
-  property forbidden_to : String = "UNDEFINED"
-  property restricted_to : String = "UNDEFINED"
-
-  property quiet : Bool = false
-  property auto_active : Bool = false
-  property undroppable : Bool = false
-  property unclearable : Bool = false
-  property inv_bar : Bool = false
-  property hubpower : Bool = false
-  property persistent_power : Bool = false
-  property inter_hub_strip : Bool = false
-  property pickup_flash_flag : Bool = false
-  property always_pickup : Bool = false
-  property fancy_pickup_sound : Bool = false
-  property no_atten_pickup_sound : Bool = false
-  property big_powerup : Bool = false
-  property ignore_skill : Bool = false
-  property additive_time : Bool = false
-  property untossable : Bool = false
-  property restrict_absolutely : Bool = false
-  property no_screen_flash : Bool = false
-  property tossed : Bool = false
-  property always_respawn : Bool = false
-  property transfer : Bool = false
-  property no_teleport_freeze : Bool = false
-  property no_screen_blank : Bool = false
-  property is_health : Bool = false
-  property is_armor : Bool = false
-
-  #def initialize
-  #  @amount = 0
-  #end
-
-  def property_list : Array
-    list_of_properties = Inventory(String).new
-    {% for name in Inventory.instance_vars %}
-      list_of_properties << "#{ {{ name.id.symbolize }} }"
-    {% end %}
-    list_of_properties
-  end
-end
-
-class FakeInventory
-  property respawns : Bool = false
-end
-
-class Armor
-  property save_amount : Int32 = -1
-  property save_percent : Float64 = -1
-  property max_full_absorb : Int32 = -1
-  property max_absorb : Int32 = -1
-  property max_save_amount : Int32 = -1
-  property max_bonus : Int32 = -1
-  property max_bonus_max : Int32 = -1
-end
-
-class Weapon
-  property ammo_give : Int32 = -1
-  property ammo_give_1 : Int32 = -1
-  property ammo_give_2 : Int32 = -1
-  property ammo_type : String = "UNDEFINED"
-  property ammo_type_1 : String = "UNDEFINED"
-  property ammo_type_2 : String = "UNDEFINED"
-  property ammo_use : Int32 = -1
-  property ammo_use_1 : Int32 = -1
-  property ammo_use_2 : Int32 = -1
-  property min_selection_ammo_1 : Int32 = -1
-  property min_selection_ammo_2 : Int32 = -1
-  # this is ZScript only
-  property bob_pivot_3d : String = "UNDEFINED"
-  property bob_range_x : Float64 = 1.0
-  property bob_range_y : Float64 = 1.0
-  property bob_speed : Float64 = 1.0
-  property bob_style : String = "UNDEFINED"
-  property kick_back : Int32 = -1
-  property default_kick_back : Int32 = -1
-  property ready_sound : String = "UNDEFINED"
-  property selection_order : Int32 = -1
-  property sister_weapon : String = "UNDEFINED"
-  property slot_number : Int32 = -1
-  property slot_priority : Float64 = 0.0
-  property up_sound : String = "UNDEFINED"
-  property weapon_scale_x : Float64 = 1.0
-  property weapon_scale_y : Float64 = 1.2
-  # vertial adjustment
-  # I think 0 means don't do anything, there is no "safe" undefined value
-  property y_adjust : Int32 = 0
-  # I think this is float, most multipliers are float
-  property look_scale : Float64 = 0.0
-end
-
-class Ammo
-  property backpack_amount : Int32 = -1
-  property backpack_max_amount : Int32 = -1
-  property drop_amount : Int32 = -1
-end
-
-class WeaponPiece
-  property number : Int32 = -1
-  property weapon : String = "UNDEFINED"
-end
-
-class Health
-  # this is in format: "value, message" so we will just grab the string
-  property low_message : String = "UNDEFINED"
-end
-
-class PuzzleItem
-  property number : Int32 = -1
-  property fail_message : String = "UNDEFINED"
-  property fail_sound : String = "UNDEFINED"
-end
-
-class PlayerPawn
-  property air_capacity : Float64 = 1.0
-  property attack_z_offset : Int32 = 8
-  property clear_color_set : Int32 = -1
-  # this is a range like "0, 0" so we will grab as a string
-  property color_range : String = "UNDEFINED"
-  # format: number, name, start, end, color [...] - we will do string
-  property color_set : String = "UNDEFINED"
-  # format: number, name, table, color - we will do string
-  property color_set_file : String = "UNDEFINED"
-  property crouch_sprite : String = "UNDEFINED"
-  # format: color[, intensity[, damagetype]]
-  property damage_screen_color : String = "UNDEFINED"
-  property display_name : String = "UNDEFINED"
-  property face : String = "UNDEFINED"
-  # format: value min, value max
-  property failing_scream_speed : String = "UNDEFINED"
-  property flechette_type : String = "UNDEFINED"
-  property fly_type : Float64 = 1.0
-  # format: run, value-run. Default is: 1, 1
-  property forward_move : String = "1, 1"
-  property grunt_speed : Float64 = 12.0
-  property heal_radius_type : String = "UNDEFINED"
-  # format: base value, value armor, value sheild, value helm, value amulet
-  # we use string
-  property hexen_armor : String = "UNDEFINED"
-  property invulnerability_mode : String = "UNDEFINED"
-  property jump_z : Float64 = 8.0
-  property max_health : Int32 = 100
-  property morph_weapon : String = "UNDEFINED"
-  property mug_shot_max_health : Int32 = -1
-  property portrait : String = "UNDEFINED"
-  property run_health : Int32 = 0
-  property score_icon : String = "UNDEFINED"
-  # format: value [value-run]
-  property side_move : String = "UNDEFINED"
-  property sound_class : String = "UNDEFINED"
-  property spawn_class : String = "UNDEFINED"
-  # format: classname [amount]
-  property start_item : String = "UNDEFINED"
-  property teleport_freeze_time : Int32 = 18
-  property use_range : Float64 = 64.0
-  property view_bob : Float64 = 1.0
-  property view_bob_speed : Float64 = 20.0
-  property view_height : Float64 = 41.0
-  property water_climb_speed : Float64 = 3.5
-  # format: slot, weapon1[, weapon2, weapon3, ...]
-  property weapon_slot : String = "UNDEFINED"
-end
-
-class Powerup
-  # can be numeric or string
-  property color : String = "UNDEFINED"
-  # format [sourcecolor, ]destcolor
-  property colormap : String = "UNDEFINED"
-  # format: probably usually int value but could be hex like 0x7FFFFFFD
-  property duration : String = "UNDEFINED"
-  property mode : String = "UNDEFINED"
-  property strength : Int32 = 0
-
-  # technically from PowerupGiver class, which only addes this property
-  property type : String = "UNDEFINED"
-end
-
-class PowerSpeed
-  property no_trail : Bool = false
-end
-
-class HealthPickup
-  # this probably doesn't pertain much to Doom
-  property auto_use : Int32 = 0
-end
-
-class MorphProjectile
-  property player_class : String = "UNDEFINED"
-  property monster_class : String = "UNDEFINED"
-  property duration : Int32 = -1
-  # has a list of flags, we will capture in String
-  property morph_style : String = "UNDEFINED"
-  property morph_flash : String = "UNDEFINED"
-  property un_morph_flash : String = "UNDEFINED"
-end
 ##########################################
 # CREATE ACTORS DATABASE
 ##########################################
@@ -822,6 +351,15 @@ full_dir_list.each do |file_path|
   # split on "actor" preserving the word "actor" in the text
   input_text = input_text.gsub(/^actor\s+/im, "SPECIALDELIMITERactor ")
   actors = input_text.split("SPECIALDELIMITER")
+ 
+  # I might revisit this method later, but for now this is not quite working... :-/
+  # actors = input_text.split(/^actor\s+([^\{]*\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi, remove_empty: true)
+
+  puts "Actors:"
+  actors.each do |actor|
+   puts actor
+   puts "------"
+  end
 
   # Remove empty strings from the resulting array
   actors.reject! { |actor| actor.strip.empty? }
@@ -837,11 +375,13 @@ full_dir_list.each do |file_path|
     puts actor
     puts "-----------"
 
-    actor_no_states = actor.gsub(/states\s*{[^{}]*}/mi, "")
+    #actor_no_states = actor.gsub(/states\s*{[^{}]*}/mi, "")
+    actor_no_states = actor.gsub(/states\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi, "")
+    #actor.actor_text = actor_no_states
     puts actor_no_states
     puts "==========="
   end
-
+ 
   actors.each_with_index do |actor, actor_index|
     # parse the actor's states, if any
     states_raw = actor.gsub(/^states\n/im, "SPECIALDELIMITERstates\n")
@@ -896,7 +436,8 @@ full_dir_list.each do |file_path|
     # actor blah :        oldblah replaces oldblah
     # actor blah :        oldblah replaces oldblah 1234
  
-    actor_no_states = actor.gsub(/states\s*{[^{}]*}/mi, "") 
+    #actor_no_states = actor.gsub(/states\s*{[^{}]*}/mi, "") 
+    actor_no_states = actor.gsub(/states\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi, "") 
     lines = actor_no_states.lines
     # strip leading whitespace, trailing whitespace, and downcase
     lines.map! { |line| line.lstrip.strip.downcase }
@@ -941,6 +482,7 @@ full_dir_list.each do |file_path|
     new_actor.file_path = file_path
     new_actor.native = native
     new_actor.states = states
+    new_actor.actor_text = actor_no_states
 
     # number of words == 3 means that word[2] == a number
     if number_of_words == 3
@@ -993,9 +535,27 @@ full_dir_list.each do |file_path|
       # this should give us the first word in the line, which is the property name
       property_name = line.split[0]?.to_s
 
+      # action refers to a function definition in DECORATE or ZSCRIPT
+      # we can probably just ignore these
+      if property_name == "action"
+        if line.split[1]?.to_s == "native"
+          puts "  - Action Native: #{line.split[2..-1]?.to_s}"
+        else
+          puts "  - Action: #{line.split[1..-1]?.to_s}"
+        end
+      # const = constants, we might need to evaluate these in some rare cases but for now, ignore them
+      elsif property_name == "const"
+        puts "  - Const: #{line.split[1..-1]?.to_s}"
       # properties that start with '+' or '-' are boolean flags
-      if property_name =~ /^\s*[\+|\-]/m
+      elsif property_name =~ /^\s*[\+|\-]/m
         # there may be many flags on one line, so we need to split and process
+        # replace any '+' characters with space after them as '+' to remove the whitespace and put a leading space
+        line = line.gsub(/\+\s*/, " +")
+        # same with '-' characters
+        line = line.gsub(/\-\s*/, " -")
+        # strip the leading space, so the first character is a '+' or '-'
+        line = line.lstrip
+        puts "Flag Line (processed): #{line}"
         line.split.each do |flag|
           flag_boolean = false
           if flag.char_at(0) == '+'
@@ -1165,6 +725,7 @@ full_dir_list.each do |file_path|
           elsif flag_name == "dontoverlap"
           elsif flag_name == "randomize"
           elsif flag_name == "fixmapthingpos"
+          elsif flag_name == "fullvolactive"
           elsif flag_name == "fullvoldeath"
           elsif flag_name == "fullvolsee"
           elsif flag_name == "nowallbouncesnd"
@@ -1230,7 +791,7 @@ full_dir_list.each do |file_path|
           elsif flag_name == "nowallbouncesnd"
           elsif flag_name == "nobouncesound"
           elsif flag_name == "explodeonwater"
-          elsif flag_name == "canbounceonwater"
+          elsif flag_name == "canbouncewater"
           elsif flag_name == "mbfbouncer"
           elsif flag_name == "usebouncestate"
           elsif flag_name == "dontbounceonshootables"
@@ -1309,7 +870,7 @@ full_dir_list.each do |file_path|
           elsif flag_name == "huntplayers"
           elsif flag_name == "nohateplayers"
           elsif flag_name == "scrollmove"
-          elsif flag_name == "vfricition"
+          elsif flag_name == "vfriction"
           elsif flag_name == "bossspawned"
           elsif flag_name == "avoidingdropoff"
           elsif flag_name == "chasegoal"
@@ -1344,15 +905,15 @@ full_dir_list.each do |file_path|
           # Additional Flags
           elsif flag_name == "inventory.quiet"
           elsif flag_name == "inventory.autoactivate"
-          elsif flag_name == "inventory.undroppable"
+          elsif flag_name == "inventory.undroppable" || flag_name == "undroppable"
           elsif flag_name == "inventory.unclearable"
-          elsif flag_name == "inventory.invbar"
+          elsif flag_name == "inventory.invbar" || flag_name == "invbar"
           elsif flag_name == "inventory.hubpower"
           elsif flag_name == "inventory.persistentpower"
           elsif flag_name == "inventory.interhubstrip"
           elsif flag_name == "inventory.pickupflash"
           elsif flag_name == "inventory.alwayspickup"
-          elsif flag_name == "inventory.fancypickupsound"
+          elsif flag_name == "inventory.fancypickupsound" || flag_name == "fancypickupsound"
           elsif flag_name == "inventory.noattenpickupsound"
           elsif flag_name == "inventory.bigpowerup"
           elsif flag_name == "inventory.neverrespawn"
@@ -1381,11 +942,11 @@ full_dir_list.each do |file_path|
           elsif flag_name == "weapon.ammo_checkboth"
           elsif flag_name == "weapon.primary_uses_both"
           elsif flag_name == "weapon.alt_uses_both"
-          elsif flag_name == "weapon.wimpy_weapon"
-          elsif flag_name == "weapon.powered_up"
+          elsif flag_name == "weapon.wimpy_weapon" || flag_name == "wimpy_weapon"
+          elsif flag_name == "weapon.powered_up" || flag_name == "powered_up"
           elsif flag_name == "weapon.staff2_kickback"
           elsif flag_name == "weapon.explosive"
-          elsif flag_name == "weapon.meleeweapon"
+          elsif flag_name == "weapon.meleeweapon" || flag_name == "meleeweapon"
           elsif flag_name == "weapon.bfg"
           elsif flag_name == "weapon.cheatnotweapon"
           elsif flag_name == "weapon.noautoswitchto"
@@ -1397,10 +958,30 @@ full_dir_list.each do |file_path|
           elsif flag_name == "powerspeed.notrail"
           
           # Players
-          elsif flag_name == "playerpawn.nothrustwheninvul"
-          elsif flag_name == "playerpawn.cansupermorph"
+          elsif flag_name == "playerpawn.nothrustwheninvul" || flag_name == "nothrustwheninvul"
+          elsif flag_name == "playerpawn.cansupermorph" || flag_name == "cansupermorph"
           elsif flag_name == "playerpawn.crouchablemorph"
           elsif flag_name == "playerpawn.weaponlevel2ended"
+         
+          # Zandronum Specific Flags
+          elsif flag_name == "allowclientspawn"
+          elsif flag_name == "clientsideonly"
+          elsif flag_name == "nonetid"
+          elsif flag_name == "dontidentifytarget"
+          elsif flag_name == "scorepillar"
+          elsif flag_name == "serversideonly"
+          elsif flag_name == "inventory.forcerespawninsurvival"
+          elsif flag_name == "weapon.allow_with_respawn_invul"
+          elsif flag_name == "weapon.nolms"
+          elsif flag_name == "piercearmor"
+          elsif flag_name == "blueteam"
+          elsif flag_name == "redteam"
+          elsif flag_name == "node"
+          elsif flag_name == "basehealth"
+          elsif flag_name == "superhealth"
+          elsif flag_name == "basearmor"
+          elsif flag_name == "superarmor"
+          elsif flag_name == "explodeondeath"
           
           # Catchall for missing stuff to double check things
           else
@@ -1414,6 +995,12 @@ full_dir_list.each do |file_path|
             missing_actor_flags[flag_name].uniq!
           end
         end
+      # Variables need to be accounted for
+      elsif property_name == "var"
+        puts "  - Var: " + line.split[1..-1]?.to_s
+        var_type = line.split[1]?.to_s
+        var_name = line.split[2]?.to_s
+        new_actor.user_vars[var_name] = var_type
       elsif property_name == "game"
         puts "  - Game: " + line.split[1]?.to_s
         new_actor.game = line.split[1]?.to_s
@@ -1706,7 +1293,7 @@ full_dir_list.each do |file_path|
       elsif property_name == "meleerange"
         puts "  - MeleeRange: " + line.split[1]?.to_s
         new_actor.melee_range = line.split[1].to_i
-      elsif property_name == "max_target_range"
+      elsif property_name == "maxtargetrange"
         puts "  - MaxTargetRange: " + line.split[1]?.to_s
         new_actor.max_target_range = line.split[1].to_i
       elsif property_name == "meleedamage"
@@ -1736,9 +1323,23 @@ full_dir_list.each do |file_path|
       elsif property_name == "projectile"
         puts "  - Projectile"
         new_actor.projectile = true
-      elsif property_name == "monster"
+      # this one needs white glove treatment :-/ lines that start with "monster"
+      elsif property_name =~ /^monster/
         puts "  - Monster"
         new_actor.monster = true
+        # Sometimes "monster" gets thrown in with flags because people don't know any better
+        # And to be honest, it does set flags, so I can understand the confusion.
+        # You can put multiple flags with no regard for whitespace and the interpreter
+        # enables their bad coding behavior.
+        # So we need to parse out the rest of the line after 'monster'
+        # remove "monster" from the beginning and remove whitespace any leading whitespace after "monster"
+        # e.g. "monster +blah" --> "+blah", "monster+boss" --> "+boss"
+        remaining_line = line.lchop("monster").lstrip
+        if remaining_line != ""
+          puts "Remaining line detected: #{remaining_line}"
+          # add the line to the end of the actor so we can process it
+          actor = actor + "\n" + remaining_line
+        end
       elsif property_name == "+ismonster"
         puts "  - Monster"
         new_actor.monster = true
@@ -1820,6 +1421,106 @@ full_dir_list.each do |file_path|
       elsif property_name == "inventory.restrictedto"
         puts "  - Inventory.RestrictedTo: " + line.split[1..-1].join(' ')
         new_actor.inventory.restricted_to = line.split[1..-1].join(' ')
+
+      elsif property_name == "fakeinventory.respawns"
+
+      elsif property_name == "armor.saveamount"
+      elsif property_name == "armor.savepercent"
+      elsif property_name == "armor.maxfullabsorb"
+      elsif property_name == "armor.maxabsorb"
+      elsif property_name == "armor.maxsaveamount"
+      elsif property_name == "armor.maxbonus"
+      elsif property_name == "armor.maxbonusmax"
+
+      elsif property_name == "weapon.ammogive"
+      elsif property_name == "weapon.ammogive1"
+      elsif property_name == "weapon.ammogive2"
+      elsif property_name == "weapon.ammotype"
+      elsif property_name == "weapon.ammotype1"
+      elsif property_name == "weapon.ammotype2"
+      elsif property_name == "weapon.ammouse"
+      elsif property_name == "weapon.ammouse1"
+      elsif property_name == "weapon.ammouse2"
+      elsif property_name == "weapon.minselectionammo1"
+      elsif property_name == "weapon.minselectionammo2"
+      elsif property_name == "weapon.bobpivot3d"
+      elsif property_name == "weapon.bobrangex"
+      elsif property_name == "weapon.bobrangey"
+      elsif property_name == "weapon.bobspeed"
+      elsif property_name == "weapon.bobstyle"
+      elsif property_name == "weapon.kickback"
+      elsif property_name == "weapon.defaultkickback"
+      elsif property_name == "weapon.readysound"
+      elsif property_name == "weapon.selectionorder"
+      elsif property_name == "weapon.sisterweapon"
+      elsif property_name == "weapon.slotnumber"
+      elsif property_name == "weapon.slotpriority"
+      elsif property_name == "weapon.upsound"
+      elsif property_name == "weapon.weaponscalex"
+      elsif property_name == "weapon.weaponscaley"
+      elsif property_name == "weapon.yadjust"
+      elsif property_name == "weapon.lookscale"
+      elsif property_name == "ammo.backpackamount"
+      elsif property_name == "ammo.backpackmaxamount"
+      elsif property_name == "ammo.dropamount"
+      elsif property_name == "weaponpiece.number"
+      elsif property_name == "weaponpiece.weapon"
+      elsif property_name == "health.lowmessage"
+      elsif property_name == "puzzleitem.number"
+      elsif property_name == "puzzleitem.failmessage"
+      elsif property_name == "puzzleitem.failsound"
+      elsif property_name == "player.aircapacity"
+      elsif property_name == "player.attackzoffset"
+      elsif property_name == "player.clearcolorset"
+      elsif property_name == "player.colorrange"
+      elsif property_name == "player.colorset"
+      elsif property_name == "player.colorsetfile"
+      elsif property_name == "player.crouchsprite"
+      elsif property_name == "player.damagescreencolor"
+      elsif property_name == "player.displayname"
+      elsif property_name == "player.face"
+      elsif property_name == "player.fallingscreamspeed"
+      elsif property_name == "player.flechettetype"
+      elsif property_name == "player.flybob"
+      elsif property_name == "player.forwardmove"
+      elsif property_name == "player.gruntspeed"
+      elsif property_name == "player.healradiustype"
+      elsif property_name == "player.hexenarmor"
+      elsif property_name == "player.invulnerabilitymode"
+      elsif property_name == "player.jumpz"
+      elsif property_name == "player.maxhealth"
+      elsif property_name == "player.morphweapon"
+      elsif property_name == "player.mugshotmaxhealth"
+      elsif property_name == "player.portrait"
+      elsif property_name == "player.runhealth"
+      elsif property_name == "player.scoreicon"
+      elsif property_name == "player.sidemove"
+      elsif property_name == "player.soundclass"
+      elsif property_name == "player.spawnclass"
+      elsif property_name == "player.startitem"
+      elsif property_name == "player.teleportfreezetime"
+      elsif property_name == "player.userange"
+      elsif property_name == "player.viewbob"
+      elsif property_name == "player.viewbobspeed"
+      elsif property_name == "player.viewheight"
+      elsif property_name == "player.waterclimbspeed"
+      elsif property_name == "player.weaponslot"
+      elsif property_name == "powerup.color"
+      elsif property_name == "powerup.colormap"
+      elsif property_name == "powerup.duration"
+      elsif property_name == "powerup.mode"
+      elsif property_name == "powerup.strength"
+      elsif property_name == "powerspeed.notrail"
+      elsif property_name == "powerup.type"
+      elsif property_name == "healthpickup.autouse"
+      elsif property_name == "morphprojectile.playerclass"
+      elsif property_name == "morphprojectile.monsterclass"
+      elsif property_name == "morphprojectile.duration"
+      elsif property_name == "morphprojectile.morphstyle"
+      elsif property_name == "morphprojectile.morphflash"
+      elsif property_name == "morphprojectile.unmorphflash"
+      
+
       elsif property_name == "{" || property_name == "}" || property_name == "#include"
         # ignore these and do nothing
       else
@@ -1877,6 +1578,7 @@ missing_actor_flags.each do |key, value|
     puts actor_name
   end
 end
+
 exit(0)
 
 puts "=========================="
@@ -2228,7 +1930,6 @@ actordb.each_with_index do |actor, actor_index|
   puts "Actor: #{actor.name}"
   while inherited_actor_name != "UNDEFINED"
     puts "Inherits: #{inherited_actor_name}" 
-    sleep 20.milliseconds
     inheritance_info[inheritance_depth] = inherited_actor_name
     inheritance_depth += 1
     if name_info.fetch(inherited_actor_name, nil)
