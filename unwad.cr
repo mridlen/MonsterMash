@@ -566,423 +566,1150 @@ full_dir_list.each do |file_path|
           flag_name = flag.lchop
           puts "  - Flag: #{flag_name} = #{flag_boolean}"
 
-          # Renderer
           if flag_name == "interpolateangles"
+            puts "  - Flag: #{flag}"
+            new_actor.interpolateangles = flag_boolean
           elsif flag_name == "flatsprite"
+            puts "  - Flag: #{flag}"
+            new_actor.flatsprite = flag_boolean
           elsif flag_name == "rollsprite"
+            puts "  - Flag: #{flag}"
+            new_actor.rollsprite = flag_boolean
           elsif flag_name == "wallsprite"
+            puts "  - Flag: #{flag}"
+            new_actor.wallsprite = flag_boolean
           elsif flag_name == "rollcenter"
+            puts "  - Flag: #{flag}"
+            new_actor.rollcenter = flag_boolean
           elsif flag_name == "spriteangle"
+            puts "  - Flag: #{flag}"
+            new_actor.spriteangle = flag_boolean
           elsif flag_name == "spriteflip"
+            puts "  - Flag: #{flag}"
+            new_actor.spriteflip = flag_boolean
           elsif flag_name == "xflip"
+            puts "  - Flag: #{flag}"
+            new_actor.xflip = flag_boolean
           elsif flag_name == "yflip"
+            puts "  - Flag: #{flag}"
+            new_actor.yflip = flag_boolean
           elsif flag_name == "maskrotation"
+            puts "  - Flag: #{flag}"
+            new_actor.maskrotation = flag_boolean
           elsif flag_name == "absmaskangle"
+            puts "  - Flag: #{flag}"
+            new_actor.absmaskangle = flag_boolean
           elsif flag_name == "absmaskpitch"
+            puts "  - Flag: #{flag}"
+            new_actor.absmaskpitch = flag_boolean
           elsif flag_name == "dontinterpolate"
+            puts "  - Flag: #{flag}"
+            new_actor.dontinterpolate = flag_boolean
           elsif flag_name == "zdoomtrans"
+            puts "  - Flag: #{flag}"
+            new_actor.zdoomtrans = flag_boolean
           elsif flag_name == "absviewangles"
+            puts "  - Flag: #{flag}"
+            new_actor.absviewangles = flag_boolean
           elsif flag_name == "castspriteshadow"
+            puts "  - Flag: #{flag}"
+            new_actor.castspriteshadow = flag_boolean
           elsif flag_name == "nospriteshadow"
+            puts "  - Flag: #{flag}"
+            new_actor.nospriteshadow = flag_boolean
           elsif flag_name == "masternosee"
+            puts "  - Flag: #{flag}"
+            new_actor.masternosee = flag_boolean
           elsif flag_name == "addlightlevel"
+            puts "  - Flag: #{flag}"
+            new_actor.addlightlevel = flag_boolean
           elsif flag_name == "invisibleinmirrors"
+            puts "  - Flag: #{flag}"
+            new_actor.invisibleinmirrors = flag_boolean
           elsif flag_name == "onlyvisibleinmirrors"
-
-          # Physics
+            puts "  - Flag: #{flag}"
+            new_actor.onlyvisibleinmirrors = flag_boolean
           elsif flag_name == "solid"
+            puts "  - Flag: #{flag}"
+            new_actor.solid = flag_boolean
           elsif flag_name == "shootable"
+            puts "  - Flag: #{flag}"
+            new_actor.shootable = flag_boolean
           elsif flag_name == "float"
+            puts "  - Flag: #{flag}"
+            new_actor.float = flag_boolean
           elsif flag_name == "nogravity"
+            puts "  - Flag: #{flag}"
+            new_actor.nogravity = flag_boolean
           elsif flag_name == "windthrust"
+            puts "  - Flag: #{flag}"
+            new_actor.windthrust = flag_boolean
           elsif flag_name == "pushable"
+            puts "  - Flag: #{flag}"
+            new_actor.pushable = flag_boolean
           elsif flag_name == "dontfall"
+            puts "  - Flag: #{flag}"
+            new_actor.dontfall = flag_boolean
           elsif flag_name == "canpass"
+            puts "  - Flag: #{flag}"
+            new_actor.canpass = flag_boolean
           elsif flag_name == "actlikebridge"
+            puts "  - Flag: #{flag}"
+            new_actor.actlikebridge = flag_boolean
           elsif flag_name == "noblockmap"
+            puts "  - Flag: #{flag}"
+            new_actor.noblockmap = flag_boolean
           elsif flag_name == "movewithsector"
+            puts "  - Flag: #{flag}"
+            new_actor.movewithsector = flag_boolean
           elsif flag_name == "relativetofloor"
+            puts "  - Flag: #{flag}"
+            new_actor.relativetofloor = flag_boolean
           elsif flag_name == "noliftdrop"
+            puts "  - Flag: #{flag}"
+            new_actor.noliftdrop = flag_boolean
           elsif flag_name == "slidesonwalls"
+            puts "  - Flag: #{flag}"
+            new_actor.slidesonwalls = flag_boolean
           elsif flag_name == "nodropoff"
+            puts "  - Flag: #{flag}"
+            new_actor.nodropoff = flag_boolean
           elsif flag_name == "noforwardfall"
+            puts "  - Flag: #{flag}"
+            new_actor.noforwardfall = flag_boolean
           elsif flag_name == "notrigger"
+            puts "  - Flag: #{flag}"
+            new_actor.notrigger = flag_boolean
           elsif flag_name == "blockedbysolidactors"
+            puts "  - Flag: #{flag}"
+            new_actor.blockedbysolidactors = flag_boolean
           elsif flag_name == "blockasplayer"
+            puts "  - Flag: #{flag}"
+            new_actor.blockasplayer = flag_boolean
           elsif flag_name == "nofriction"
+            puts "  - Flag: #{flag}"
+            new_actor.nofriction = flag_boolean
           elsif flag_name == "nofrictionbounce"
+            puts "  - Flag: #{flag}"
+            new_actor.nofrictionbounce = flag_boolean
           elsif flag_name == "falldamage"
+            puts "  - Flag: #{flag}"
+            new_actor.falldamage = flag_boolean
           elsif flag_name == "allowthrubits"
+            puts "  - Flag: #{flag}"
+            new_actor.allowthrubits = flag_boolean
           elsif flag_name == "crosslinecheck"
-
-          # Behavior"
+            puts "  - Flag: #{flag}"
+            new_actor.crosslinecheck = flag_boolean
           elsif flag_name == "alwaysrespawn"
+            puts "  - Flag: #{flag}"
+            new_actor.alwaysrespawn = flag_boolean
           elsif flag_name == "ambush"
+            puts "  - Flag: #{flag}"
+            new_actor.ambush = flag_boolean
           elsif flag_name == "avoidmelee"
+            puts "  - Flag: #{flag}"
+            new_actor.avoidmelee = flag_boolean
           elsif flag_name == "boss"
+            puts "  - Flag: #{flag}"
+            new_actor.boss = flag_boolean
           elsif flag_name == "dontcorpse"
+            puts "  - Flag: #{flag}"
+            new_actor.dontcorpse = flag_boolean
           elsif flag_name == "dontfacetalker"
+            puts "  - Flag: #{flag}"
+            new_actor.dontfacetalker = flag_boolean
           elsif flag_name == "dormant"
+            puts "  - Flag: #{flag}"
+            new_actor.dormant = flag_boolean
           elsif flag_name == "friendly"
+            puts "  - Flag: #{flag}"
+            new_actor.friendly = flag_boolean
           elsif flag_name == "jumpdown"
+            puts "  - Flag: #{flag}"
+            new_actor.jumpdown = flag_boolean
           elsif flag_name == "lookallaround"
+            puts "  - Flag: #{flag}"
+            new_actor.lookallaround = flag_boolean
           elsif flag_name == "missileevenmore"
+            puts "  - Flag: #{flag}"
+            new_actor.missileevenmore = flag_boolean
           elsif flag_name == "missilemore"
+            puts "  - Flag: #{flag}"
+            new_actor.missilemore = flag_boolean
           elsif flag_name == "neverrespawn"
+            puts "  - Flag: #{flag}"
+            new_actor.neverrespawn = flag_boolean
           elsif flag_name == "nosplashalert"
+            puts "  - Flag: #{flag}"
+            new_actor.nosplashalert = flag_boolean
           elsif flag_name == "notargetswitch"
+            puts "  - Flag: #{flag}"
+            new_actor.notargetswitch = flag_boolean
           elsif flag_name == "noverticalmeleerange"
+            puts "  - Flag: #{flag}"
+            new_actor.noverticalmeleerange = flag_boolean
           elsif flag_name == "quicktoretaliate"
+            puts "  - Flag: #{flag}"
+            new_actor.quicktoretaliate = flag_boolean
           elsif flag_name == "standstill"
+            puts "  - Flag: #{flag}"
+            new_actor.standstill = flag_boolean
           elsif flag_name == "avoidhazards"
+            puts "  - Flag: #{flag}"
+            new_actor.avoidhazards = flag_boolean
           elsif flag_name == "stayonlift"
+            puts "  - Flag: #{flag}"
+            new_actor.stayonlift = flag_boolean
           elsif flag_name == "dontfollowplayers"
+            puts "  - Flag: #{flag}"
+            new_actor.dontfollowplayers = flag_boolean
           elsif flag_name == "seefriendlymonsters"
-
-          # (In)Abilities
+            puts "  - Flag: #{flag}"
+            new_actor.seefriendlymonsters = flag_boolean
           elsif flag_name == "cannotpush"
+            puts "  - Flag: #{flag}"
+            new_actor.cannotpush = flag_boolean
           elsif flag_name == "noteleport"
+            puts "  - Flag: #{flag}"
+            new_actor.noteleport = flag_boolean
           elsif flag_name == "activateimpact"
+            puts "  - Flag: #{flag}"
+            new_actor.activateimpact = flag_boolean
           elsif flag_name == "canpushwalls"
+            puts "  - Flag: #{flag}"
+            new_actor.canpushwalls = flag_boolean
           elsif flag_name == "canusewalls"
+            puts "  - Flag: #{flag}"
+            new_actor.canusewalls = flag_boolean
           elsif flag_name == "activatemcross"
+            puts "  - Flag: #{flag}"
+            new_actor.activatemcross = flag_boolean
           elsif flag_name == "activatepcross"
+            puts "  - Flag: #{flag}"
+            new_actor.activatepcross = flag_boolean
           elsif flag_name == "cantleavefloorpic"
+            puts "  - Flag: #{flag}"
+            new_actor.cantleavefloorpic = flag_boolean
           elsif flag_name == "telestomp"
+            puts "  - Flag: #{flag}"
+            new_actor.telestomp = flag_boolean
           elsif flag_name == "notelestomp"
+            puts "  - Flag: #{flag}"
+            new_actor.notelestomp = flag_boolean
           elsif flag_name == "staymorphed"
+            puts "  - Flag: #{flag}"
+            new_actor.staymorphed = flag_boolean
           elsif flag_name == "canblast"
+            puts "  - Flag: #{flag}"
+            new_actor.canblast = flag_boolean
           elsif flag_name == "noblockmonst"
+            puts "  - Flag: #{flag}"
+            new_actor.noblockmonst = flag_boolean
           elsif flag_name == "allowthruflags"
+            puts "  - Flag: #{flag}"
+            new_actor.allowthruflags = flag_boolean
           elsif flag_name == "thrughost"
+            puts "  - Flag: #{flag}"
+            new_actor.thrughost = flag_boolean
           elsif flag_name == "thruactors"
+            puts "  - Flag: #{flag}"
+            new_actor.thruactors = flag_boolean
           elsif flag_name == "thruspecies"
+            puts "  - Flag: #{flag}"
+            new_actor.thruspecies = flag_boolean
           elsif flag_name == "mthruspecies"
+            puts "  - Flag: #{flag}"
+            new_actor.mthruspecies = flag_boolean
           elsif flag_name == "spectral"
+            puts "  - Flag: #{flag}"
+            new_actor.spectral = flag_boolean
           elsif flag_name == "frightened"
+            puts "  - Flag: #{flag}"
+            new_actor.frightened = flag_boolean
           elsif flag_name == "frightening"
+            puts "  - Flag: #{flag}"
+            new_actor.frightening = flag_boolean
           elsif flag_name == "notarget"
+            puts "  - Flag: #{flag}"
+            new_actor.notarget = flag_boolean
           elsif flag_name == "nevertarget"
+            puts "  - Flag: #{flag}"
+            new_actor.nevertarget = flag_boolean
           elsif flag_name == "noinfightspecies"
+            puts "  - Flag: #{flag}"
+            new_actor.noinfightspecies = flag_boolean
           elsif flag_name == "forceinfighting"
+            puts "  - Flag: #{flag}"
+            new_actor.forceinfighting = flag_boolean
           elsif flag_name == "noinfighting"
+            puts "  - Flag: #{flag}"
+            new_actor.noinfighting = flag_boolean
           elsif flag_name == "notimefreeze"
+            puts "  - Flag: #{flag}"
+            new_actor.notimefreeze = flag_boolean
           elsif flag_name == "nofear"
+            puts "  - Flag: #{flag}"
+            new_actor.nofear = flag_boolean
           elsif flag_name == "cantseek"
+            puts "  - Flag: #{flag}"
+            new_actor.cantseek = flag_boolean
           elsif flag_name == "seeinvisible"
+            puts "  - Flag: #{flag}"
+            new_actor.seeinvisible = flag_boolean
           elsif flag_name == "dontthrust"
+            puts "  - Flag: #{flag}"
+            new_actor.dontthrust = flag_boolean
           elsif flag_name == "allowpain"
+            puts "  - Flag: #{flag}"
+            new_actor.allowpain = flag_boolean
           elsif flag_name == "usekillscripts"
+            puts "  - Flag: #{flag}"
+            new_actor.usekillscripts = flag_boolean
           elsif flag_name == "nokillscripts"
+            puts "  - Flag: #{flag}"
+            new_actor.nokillscripts = flag_boolean
           elsif flag_name == "stoprails"
+            puts "  - Flag: #{flag}"
+            new_actor.stoprails = flag_boolean
           elsif flag_name == "minvisible"
+            puts "  - Flag: #{flag}"
+            new_actor.minvisible = flag_boolean
           elsif flag_name == "mvisblocked"
+            puts "  - Flag: #{flag}"
+            new_actor.mvisblocked = flag_boolean
           elsif flag_name == "shadowaim"
+            puts "  - Flag: #{flag}"
+            new_actor.shadowaim = flag_boolean
           elsif flag_name == "doshadowblock"
+            puts "  - Flag: #{flag}"
+            new_actor.doshadowblock = flag_boolean
           elsif flag_name == "shadowaimvert"
-
-          # Defenses
+            puts "  - Flag: #{flag}"
+            new_actor.shadowaimvert = flag_boolean
           elsif flag_name == "invulnerable"
+            puts "  - Flag: #{flag}"
+            new_actor.invulnerable = flag_boolean
           elsif flag_name == "buddha"
+            puts "  - Flag: #{flag}"
+            new_actor.buddha = flag_boolean
           elsif flag_name == "reflective"
+            puts "  - Flag: #{flag}"
+            new_actor.reflective = flag_boolean
           elsif flag_name == "shieldreflect"
+            puts "  - Flag: #{flag}"
+            new_actor.shieldreflect = flag_boolean
           elsif flag_name == "deflect"
+            puts "  - Flag: #{flag}"
+            new_actor.deflect = flag_boolean
           elsif flag_name == "mirrorreflect"
+            puts "  - Flag: #{flag}"
+            new_actor.mirrorreflect = flag_boolean
           elsif flag_name == "aimreflect"
+            puts "  - Flag: #{flag}"
+            new_actor.aimreflect = flag_boolean
           elsif flag_name == "thrureflect"
+            puts "  - Flag: #{flag}"
+            new_actor.thrureflect = flag_boolean
           elsif flag_name == "noradiusdmg"
+            puts "  - Flag: #{flag}"
+            new_actor.noradiusdmg = flag_boolean
           elsif flag_name == "dontblast"
+            puts "  - Flag: #{flag}"
+            new_actor.dontblast = flag_boolean
           elsif flag_name == "shadow"
+            puts "  - Flag: #{flag}"
+            new_actor.shadow = flag_boolean
           elsif flag_name == "ghost"
+            puts "  - Flag: #{flag}"
+            new_actor.ghost = flag_boolean
           elsif flag_name == "dontmorph"
+            puts "  - Flag: #{flag}"
+            new_actor.dontmorph = flag_boolean
           elsif flag_name == "dontsquash"
+            puts "  - Flag: #{flag}"
+            new_actor.dontsquash = flag_boolean
           elsif flag_name == "noteleother"
+            puts "  - Flag: #{flag}"
+            new_actor.noteleother = flag_boolean
           elsif flag_name == "harmfriends"
+            puts "  - Flag: #{flag}"
+            new_actor.harmfriends = flag_boolean
           elsif flag_name == "doharmspecies"
+            puts "  - Flag: #{flag}"
+            new_actor.doharmspecies = flag_boolean
           elsif flag_name == "dontharmclass"
+            puts "  - Flag: #{flag}"
+            new_actor.dontharmclass = flag_boolean
           elsif flag_name == "dontharmspecies"
+            puts "  - Flag: #{flag}"
+            new_actor.dontharmspecies = flag_boolean
           elsif flag_name == "nodamage"
+            puts "  - Flag: #{flag}"
+            new_actor.nodamage = flag_boolean
           elsif flag_name == "dontrip"
+            puts "  - Flag: #{flag}"
+            new_actor.dontrip = flag_boolean
           elsif flag_name == "notelefrag"
+            puts "  - Flag: #{flag}"
+            new_actor.notelefrag = flag_boolean
           elsif flag_name == "alwaystelefrag"
+            puts "  - Flag: #{flag}"
+            new_actor.alwaystelefrag = flag_boolean
           elsif flag_name == "dontdrain"
+            puts "  - Flag: #{flag}"
+            new_actor.dontdrain = flag_boolean
           elsif flag_name == "laxtelefragdmg"
+            puts "  - Flag: #{flag}"
+            new_actor.laxtelefragdmg = flag_boolean
           elsif flag_name == "shadowblock"
-
-          # Appearance and Sound
+            puts "  - Flag: #{flag}"
+            new_actor.shadowblock = flag_boolean
           elsif flag_name == "bright"
+            puts "  - Flag: #{flag}"
+            new_actor.bright = flag_boolean
           elsif flag_name == "invisible"
+            puts "  - Flag: #{flag}"
+            new_actor.invisible = flag_boolean
           elsif flag_name == "noblood"
+            puts "  - Flag: #{flag}"
+            new_actor.noblood = flag_boolean
           elsif flag_name == "noblooddecals"
+            puts "  - Flag: #{flag}"
+            new_actor.noblooddecals = flag_boolean
           elsif flag_name == "stealth"
+            puts "  - Flag: #{flag}"
+            new_actor.stealth = flag_boolean
           elsif flag_name == "floorclip"
+            puts "  - Flag: #{flag}"
+            new_actor.floorclip = flag_boolean
           elsif flag_name == "spawnfloat"
+            puts "  - Flag: #{flag}"
+            new_actor.spawnfloat = flag_boolean
           elsif flag_name == "spawnceiling"
+            puts "  - Flag: #{flag}"
+            new_actor.spawnceiling = flag_boolean
           elsif flag_name == "floatbob"
+            puts "  - Flag: #{flag}"
+            new_actor.floatbob = flag_boolean
           elsif flag_name == "noicedeath"
+            puts "  - Flag: #{flag}"
+            new_actor.noicedeath = flag_boolean
           elsif flag_name == "dontgib"
+            puts "  - Flag: #{flag}"
+            new_actor.dontgib = flag_boolean
           elsif flag_name == "dontsplash"
+            puts "  - Flag: #{flag}"
+            new_actor.dontsplash = flag_boolean
           elsif flag_name == "dontoverlap"
+            puts "  - Flag: #{flag}"
+            new_actor.dontoverlap = flag_boolean
           elsif flag_name == "randomize"
+            puts "  - Flag: #{flag}"
+            new_actor.randomize = flag_boolean
           elsif flag_name == "fixmapthingpos"
+            puts "  - Flag: #{flag}"
+            new_actor.fixmapthingpos = flag_boolean
           elsif flag_name == "fullvolactive"
+            puts "  - Flag: #{flag}"
+            new_actor.fullvolactive = flag_boolean
           elsif flag_name == "fullvoldeath"
+            puts "  - Flag: #{flag}"
+            new_actor.fullvoldeath = flag_boolean
           elsif flag_name == "fullvolsee"
+            puts "  - Flag: #{flag}"
+            new_actor.fullvolsee = flag_boolean
           elsif flag_name == "nowallbouncesnd"
+            puts "  - Flag: #{flag}"
+            new_actor.nowallbouncesnd = flag_boolean
           elsif flag_name == "visibilitypulse"
+            puts "  - Flag: #{flag}"
+            new_actor.visibilitypulse = flag_boolean
           elsif flag_name == "rockettrail"
+            puts "  - Flag: #{flag}"
+            new_actor.rockettrail = flag_boolean
           elsif flag_name == "grenadetrail"
+            puts "  - Flag: #{flag}"
+            new_actor.grenadetrail = flag_boolean
           elsif flag_name == "nobouncesound"
+            puts "  - Flag: #{flag}"
+            new_actor.nobouncesound = flag_boolean
           elsif flag_name == "noskin"
+            puts "  - Flag: #{flag}"
+            new_actor.noskin = flag_boolean
           elsif flag_name == "donttranslate"
+            puts "  - Flag: #{flag}"
+            new_actor.donttranslate = flag_boolean
           elsif flag_name == "nopain"
+            puts "  - Flag: #{flag}"
+            new_actor.nopain = flag_boolean
           elsif flag_name == "forceybillboard"
+            puts "  - Flag: #{flag}"
+            new_actor.forceybillboard = flag_boolean
           elsif flag_name == "forcexybillboard"
-
-          # projectile flags
+            puts "  - Flag: #{flag}"
+            new_actor.forcexybillboard = flag_boolean
           elsif flag_name == "missile"
+            puts "  - Flag: #{flag}"
+            new_actor.missile = flag_boolean
           elsif flag_name == "ripper"
+            puts "  - Flag: #{flag}"
+            new_actor.ripper = flag_boolean
           elsif flag_name == "nobossrip"
+            puts "  - Flag: #{flag}"
+            new_actor.nobossrip = flag_boolean
           elsif flag_name == "nodamagethrust"
+            puts "  - Flag: #{flag}"
+            new_actor.nodamagethrust = flag_boolean
           elsif flag_name == "dontreflect"
+            puts "  - Flag: #{flag}"
+            new_actor.dontreflect = flag_boolean
           elsif flag_name == "noshieldreflect"
-          elsif flag_name == "nosheildreflect"
+            puts "  - Flag: #{flag}"
+            new_actor.noshieldreflect = flag_boolean
+          elsif flag_name == "noshieldreflect"
+            puts "  - Flag: #{flag}"
+            new_actor.noshieldreflect = flag_boolean
           elsif flag_name == "floorhugger"
+            puts "  - Flag: #{flag}"
+            new_actor.floorhugger = flag_boolean
           elsif flag_name == "ceilinghugger"
+            puts "  - Flag: #{flag}"
+            new_actor.ceilinghugger = flag_boolean
           elsif flag_name == "bloodlessimpact"
+            puts "  - Flag: #{flag}"
+            new_actor.bloodlessimpact = flag_boolean
           elsif flag_name == "bloodsplatter"
+            puts "  - Flag: #{flag}"
+            new_actor.bloodsplatter = flag_boolean
           elsif flag_name == "foilinvul"
+            puts "  - Flag: #{flag}"
+            new_actor.foilinvul = flag_boolean
           elsif flag_name == "foilbuddha"
+            puts "  - Flag: #{flag}"
+            new_actor.foilbuddha = flag_boolean
           elsif flag_name == "seekermissile"
+            puts "  - Flag: #{flag}"
+            new_actor.seekermissile = flag_boolean
           elsif flag_name == "screenseeker"
+            puts "  - Flag: #{flag}"
+            new_actor.screenseeker = flag_boolean
           elsif flag_name == "skyexplode"
+            puts "  - Flag: #{flag}"
+            new_actor.skyexplode = flag_boolean
           elsif flag_name == "noexplodefloor"
+            puts "  - Flag: #{flag}"
+            new_actor.noexplodefloor = flag_boolean
           elsif flag_name == "strifedamage"
+            puts "  - Flag: #{flag}"
+            new_actor.strifedamage = flag_boolean
           elsif flag_name == "extremedeath"
+            puts "  - Flag: #{flag}"
+            new_actor.extremedeath = flag_boolean
           elsif flag_name == "noextremedeath"
+            puts "  - Flag: #{flag}"
+            new_actor.noextremedeath = flag_boolean
           elsif flag_name == "dehexplosion"
+            puts "  - Flag: #{flag}"
+            new_actor.dehexplosion = flag_boolean
           elsif flag_name == "piercearmor"
+            puts "  - Flag: #{flag}"
+            new_actor.piercearmor = flag_boolean
           elsif flag_name == "forceradiusdmg"
+            puts "  - Flag: #{flag}"
+            new_actor.forceradiusdmg = flag_boolean
           elsif flag_name == "forcezeroradiusdmg"
+            puts "  - Flag: #{flag}"
+            new_actor.forcezeroradiusdmg = flag_boolean
           elsif flag_name == "spawnsoundsource"
+            puts "  - Flag: #{flag}"
+            new_actor.spawnsoundsource = flag_boolean
           elsif flag_name == "painless"
+            puts "  - Flag: #{flag}"
+            new_actor.painless = flag_boolean
           elsif flag_name == "forcepain"
+            puts "  - Flag: #{flag}"
+            new_actor.forcepain = flag_boolean
           elsif flag_name == "causepain"
+            puts "  - Flag: #{flag}"
+            new_actor.causepain = flag_boolean
           elsif flag_name == "dontseekinvisible"
+            puts "  - Flag: #{flag}"
+            new_actor.dontseekinvisible = flag_boolean
           elsif flag_name == "stepmissile"
+            puts "  - Flag: #{flag}"
+            new_actor.stepmissile = flag_boolean
           elsif flag_name == "additivepoisondamage"
+            puts "  - Flag: #{flag}"
+            new_actor.additivepoisondamage = flag_boolean
           elsif flag_name == "additivepoisonduration"
+            puts "  - Flag: #{flag}"
+            new_actor.additivepoisonduration = flag_boolean
           elsif flag_name == "poisonalways"
+            puts "  - Flag: #{flag}"
+            new_actor.poisonalways = flag_boolean
           elsif flag_name == "hittarget"
+            puts "  - Flag: #{flag}"
+            new_actor.hittarget = flag_boolean
           elsif flag_name == "hitmaster"
+            puts "  - Flag: #{flag}"
+            new_actor.hitmaster = flag_boolean
           elsif flag_name == "hittracer"
+            puts "  - Flag: #{flag}"
+            new_actor.hittracer = flag_boolean
           elsif flag_name == "hitowner"
-
-          # Bouncing
+            puts "  - Flag: #{flag}"
+            new_actor.hitowner = flag_boolean
           elsif flag_name == "bounceonwalls"
+            puts "  - Flag: #{flag}"
+            new_actor.bounceonwalls = flag_boolean
           elsif flag_name == "bounceonfloors"
+            puts "  - Flag: #{flag}"
+            new_actor.bounceonfloors = flag_boolean
           elsif flag_name == "bounceonceilings"
+            puts "  - Flag: #{flag}"
+            new_actor.bounceonceilings = flag_boolean
           elsif flag_name == "allowbounceonactors"
+            puts "  - Flag: #{flag}"
+            new_actor.allowbounceonactors = flag_boolean
           elsif flag_name == "bounceautooff"
+            puts "  - Flag: #{flag}"
+            new_actor.bounceautooff = flag_boolean
           elsif flag_name == "bounceautooffflooronly"
+            puts "  - Flag: #{flag}"
+            new_actor.bounceautooffflooronly = flag_boolean
           elsif flag_name == "bouncelikeheretic"
+            puts "  - Flag: #{flag}"
+            new_actor.bouncelikeheretic = flag_boolean
           elsif flag_name == "bounceonactors"
+            puts "  - Flag: #{flag}"
+            new_actor.bounceonactors = flag_boolean
           elsif flag_name == "bounceonunrippables"
+            puts "  - Flag: #{flag}"
+            new_actor.bounceonunrippables = flag_boolean
           elsif flag_name == "nowallbouncesnd"
+            puts "  - Flag: #{flag}"
+            new_actor.nowallbouncesnd = flag_boolean
           elsif flag_name == "nobouncesound"
+            puts "  - Flag: #{flag}"
+            new_actor.nobouncesound = flag_boolean
           elsif flag_name == "explodeonwater"
+            puts "  - Flag: #{flag}"
+            new_actor.explodeonwater = flag_boolean
           elsif flag_name == "canbouncewater"
+            puts "  - Flag: #{flag}"
+            new_actor.canbouncewater = flag_boolean
           elsif flag_name == "mbfbouncer"
+            puts "  - Flag: #{flag}"
+            new_actor.mbfbouncer = flag_boolean
           elsif flag_name == "usebouncestate"
+            puts "  - Flag: #{flag}"
+            new_actor.usebouncestate = flag_boolean
           elsif flag_name == "dontbounceonshootables"
+            puts "  - Flag: #{flag}"
+            new_actor.dontbounceonshootables = flag_boolean
           elsif flag_name == "dontbounceonsky"
-          
-          # Miscellaneous
+            puts "  - Flag: #{flag}"
+            new_actor.dontbounceonsky = flag_boolean
           elsif flag_name == "iceshatter"
+            puts "  - Flag: #{flag}"
+            new_actor.iceshatter = flag_boolean
           elsif flag_name == "dropped"
+            puts "  - Flag: #{flag}"
+            new_actor.dropped = flag_boolean
           elsif flag_name == "ismonster"
+            puts "  - Flag: #{flag}"
+            new_actor.ismonster = flag_boolean
           elsif flag_name == "corpse"
+            puts "  - Flag: #{flag}"
+            new_actor.corpse = flag_boolean
           elsif flag_name == "countitem"
+            puts "  - Flag: #{flag}"
+            new_actor.countitem = flag_boolean
           elsif flag_name == "countkill"
+            puts "  - Flag: #{flag}"
+            new_actor.countkill = flag_boolean
           elsif flag_name == "countsecret"
+            puts "  - Flag: #{flag}"
+            new_actor.countsecret = flag_boolean
           elsif flag_name == "notdmatch"
+            puts "  - Flag: #{flag}"
+            new_actor.notdmatch = flag_boolean
           elsif flag_name == "nonshootable"
+            puts "  - Flag: #{flag}"
+            new_actor.nonshootable = flag_boolean
           elsif flag_name == "dropoff"
+            puts "  - Flag: #{flag}"
+            new_actor.dropoff = flag_boolean
           elsif flag_name == "puffonactors"
+            puts "  - Flag: #{flag}"
+            new_actor.puffonactors = flag_boolean
           elsif flag_name == "allowparticles"
+            puts "  - Flag: #{flag}"
+            new_actor.allowparticles = flag_boolean
           elsif flag_name == "alwayspuff"
+            puts "  - Flag: #{flag}"
+            new_actor.alwayspuff = flag_boolean
           elsif flag_name == "puffgetsowner"
+            puts "  - Flag: #{flag}"
+            new_actor.puffgetsowner = flag_boolean
           elsif flag_name == "forcedecal"
+            puts "  - Flag: #{flag}"
+            new_actor.forcedecal = flag_boolean
           elsif flag_name == "nodecal"
+            puts "  - Flag: #{flag}"
+            new_actor.nodecal = flag_boolean
           elsif flag_name == "synchronized"
+            puts "  - Flag: #{flag}"
+            new_actor.synchronized = flag_boolean
           elsif flag_name == "alwaysfast"
+            puts "  - Flag: #{flag}"
+            new_actor.alwaysfast = flag_boolean
           elsif flag_name == "neverfast"
+            puts "  - Flag: #{flag}"
+            new_actor.neverfast = flag_boolean
           elsif flag_name == "oldradiusdmg"
+            puts "  - Flag: #{flag}"
+            new_actor.oldradiusdmg = flag_boolean
           elsif flag_name == "usespecial"
+            puts "  - Flag: #{flag}"
+            new_actor.usespecial = flag_boolean
           elsif flag_name == "bumpspecial"
+            puts "  - Flag: #{flag}"
+            new_actor.bumpspecial = flag_boolean
           elsif flag_name == "bossdeath"
+            puts "  - Flag: #{flag}"
+            new_actor.bossdeath = flag_boolean
           elsif flag_name == "nointeraction"
-          elsif flag_name == "notautomated"
+            puts "  - Flag: #{flag}"
+            new_actor.nointeraction = flag_boolean
+          elsif flag_name == "notautoaimed"
+            puts "  - Flag: #{flag}"
+            new_actor.notautoaimed = flag_boolean
           elsif flag_name == "nomenu"
+            puts "  - Flag: #{flag}"
+            new_actor.nomenu = flag_boolean
           elsif flag_name == "pickup"
+            puts "  - Flag: #{flag}"
+            new_actor.pickup = flag_boolean
           elsif flag_name == "touchy"
+            puts "  - Flag: #{flag}"
+            new_actor.touchy = flag_boolean
           elsif flag_name == "vulnerable"
+            puts "  - Flag: #{flag}"
+            new_actor.vulnerable = flag_boolean
           elsif flag_name == "notonautomap"
+            puts "  - Flag: #{flag}"
+            new_actor.notonautomap = flag_boolean
           elsif flag_name == "weaponspawn"
-          
-          # Limited Use
+            puts "  - Flag: #{flag}"
+            new_actor.weaponspawn = flag_boolean
           elsif flag_name == "getowner"
+            puts "  - Flag: #{flag}"
+            new_actor.getowner = flag_boolean
           elsif flag_name == "seesdaggers"
+            puts "  - Flag: #{flag}"
+            new_actor.seesdaggers = flag_boolean
           elsif flag_name == "incombat"
+            puts "  - Flag: #{flag}"
+            new_actor.incombat = flag_boolean
           elsif flag_name == "noclip"
+            puts "  - Flag: #{flag}"
+            new_actor.noclip = flag_boolean
           elsif flag_name == "nosector"
+            puts "  - Flag: #{flag}"
+            new_actor.nosector = flag_boolean
           elsif flag_name == "icecorpse"
+            puts "  - Flag: #{flag}"
+            new_actor.icecorpse = flag_boolean
           elsif flag_name == "justhit"
+            puts "  - Flag: #{flag}"
+            new_actor.justhit = flag_boolean
           elsif flag_name == "justattacked"
+            puts "  - Flag: #{flag}"
+            new_actor.justattacked = flag_boolean
           elsif flag_name == "teleport"
+            puts "  - Flag: #{flag}"
+            new_actor.teleport = flag_boolean
           elsif flag_name == "blasted"
+            puts "  - Flag: #{flag}"
+            new_actor.blasted = flag_boolean
           elsif flag_name == "explocount"
+            puts "  - Flag: #{flag}"
+            new_actor.explocount = flag_boolean
           elsif flag_name == "skullfly"
+            puts "  - Flag: #{flag}"
+            new_actor.skullfly = flag_boolean
           elsif flag_name == "retargetafterslam"
+            puts "  - Flag: #{flag}"
+            new_actor.retargetafterslam = flag_boolean
           elsif flag_name == "onlyslamsolid"
+            puts "  - Flag: #{flag}"
+            new_actor.onlyslamsolid = flag_boolean
           elsif flag_name == "specialfiredamage"
+            puts "  - Flag: #{flag}"
+            new_actor.specialfiredamage = flag_boolean
           elsif flag_name == "specialfloorclip"
+            puts "  - Flag: #{flag}"
+            new_actor.specialfloorclip = flag_boolean
           elsif flag_name == "summonedmonster"
+            puts "  - Flag: #{flag}"
+            new_actor.summonedmonster = flag_boolean
           elsif flag_name == "special"
+            puts "  - Flag: #{flag}"
+            new_actor.special = flag_boolean
           elsif flag_name == "nosavegame"
-
-          # Boss Triggers
+            puts "  - Flag: #{flag}"
+            new_actor.nosavegame = flag_boolean
           elsif flag_name == "e1m8boss"
+            puts "  - Flag: #{flag}"
+            new_actor.e1m8boss = flag_boolean
           elsif flag_name == "e2m8boss"
+            puts "  - Flag: #{flag}"
+            new_actor.e2m8boss = flag_boolean
           elsif flag_name == "e3m8boss"
+            puts "  - Flag: #{flag}"
+            new_actor.e3m8boss = flag_boolean
           elsif flag_name == "e4m6boss"
+            puts "  - Flag: #{flag}"
+            new_actor.e4m6boss = flag_boolean
           elsif flag_name == "e4m8boss"
-
-          # Internal Flags
+            puts "  - Flag: #{flag}"
+            new_actor.e4m8boss = flag_boolean
           elsif flag_name == "inchase"
+            puts "  - Flag: #{flag}"
+            new_actor.inchase = flag_boolean
           elsif flag_name == "unmorphed"
+            puts "  - Flag: #{flag}"
+            new_actor.unmorphed = flag_boolean
           elsif flag_name == "fly"
+            puts "  - Flag: #{flag}"
+            new_actor.fly = flag_boolean
           elsif flag_name == "onmobj"
+            puts "  - Flag: #{flag}"
+            new_actor.onmobj = flag_boolean
           elsif flag_name == "argsdefined"
+            puts "  - Flag: #{flag}"
+            new_actor.argsdefined = flag_boolean
           elsif flag_name == "nosightcheck"
+            puts "  - Flag: #{flag}"
+            new_actor.nosightcheck = flag_boolean
           elsif flag_name == "crashed"
+            puts "  - Flag: #{flag}"
+            new_actor.crashed = flag_boolean
           elsif flag_name == "warnbot"
+            puts "  - Flag: #{flag}"
+            new_actor.warnbot = flag_boolean
           elsif flag_name == "huntplayers"
+            puts "  - Flag: #{flag}"
+            new_actor.huntplayers = flag_boolean
           elsif flag_name == "nohateplayers"
+            puts "  - Flag: #{flag}"
+            new_actor.nohateplayers = flag_boolean
           elsif flag_name == "scrollmove"
+            puts "  - Flag: #{flag}"
+            new_actor.scrollmove = flag_boolean
           elsif flag_name == "vfriction"
+            puts "  - Flag: #{flag}"
+            new_actor.vfriction = flag_boolean
           elsif flag_name == "bossspawned"
+            puts "  - Flag: #{flag}"
+            new_actor.bossspawned = flag_boolean
           elsif flag_name == "avoidingdropoff"
+            puts "  - Flag: #{flag}"
+            new_actor.avoidingdropoff = flag_boolean
           elsif flag_name == "chasegoal"
+            puts "  - Flag: #{flag}"
+            new_actor.chasegoal = flag_boolean
           elsif flag_name == "inconversation"
+            puts "  - Flag: #{flag}"
+            new_actor.inconversation = flag_boolean
           elsif flag_name == "armed"
+            puts "  - Flag: #{flag}"
+            new_actor.armed = flag_boolean
           elsif flag_name == "falling"
+            puts "  - Flag: #{flag}"
+            new_actor.falling = flag_boolean
           elsif flag_name == "linedone"
+            puts "  - Flag: #{flag}"
+            new_actor.linedone = flag_boolean
           elsif flag_name == "shattering"
+            puts "  - Flag: #{flag}"
+            new_actor.shattering = flag_boolean
           elsif flag_name == "killed"
+            puts "  - Flag: #{flag}"
+            new_actor.killed = flag_boolean
           elsif flag_name == "bosscube"
+            puts "  - Flag: #{flag}"
+            new_actor.bosscube = flag_boolean
           elsif flag_name == "intrymove"
+            puts "  - Flag: #{flag}"
+            new_actor.intrymove = flag_boolean
           elsif flag_name == "handlenodelay"
+            puts "  - Flag: #{flag}"
+            new_actor.handlenodelay = flag_boolean
           elsif flag_name == "flycheat"
+            puts "  - Flag: #{flag}"
+            new_actor.flycheat = flag_boolean
           elsif flag_name == "respawninvul"
-          
-          # Depricated Flags
+            puts "  - Flag: #{flag}"
+            new_actor.respawninvul = flag_boolean
           elsif flag_name == "lowgravity"
+            puts "  - Flag: #{flag}"
+            new_actor.lowgravity = flag_boolean
           elsif flag_name == "quartergravity"
+            puts "  - Flag: #{flag}"
+            new_actor.quartergravity = flag_boolean
           elsif flag_name == "longmeleerange"
+            puts "  - Flag: #{flag}"
+            new_actor.longmeleerange = flag_boolean
           elsif flag_name == "shortmissilerange"
+            puts "  - Flag: #{flag}"
+            new_actor.shortmissilerange = flag_boolean
           elsif flag_name == "highermprob"
+            puts "  - Flag: #{flag}"
+            new_actor.highermprob = flag_boolean
           elsif flag_name == "fireresist"
+            puts "  - Flag: #{flag}"
+            new_actor.fireresist = flag_boolean
           elsif flag_name == "donthurtspecies"
+            puts "  - Flag: #{flag}"
+            new_actor.donthurtspecies = flag_boolean
           elsif flag_name == "firedamage"
+            puts "  - Flag: #{flag}"
+            new_actor.firedamage = flag_boolean
           elsif flag_name == "icedamage"
+            puts "  - Flag: #{flag}"
+            new_actor.icedamage = flag_boolean
           elsif flag_name == "hereticbounce"
+            puts "  - Flag: #{flag}"
+            new_actor.hereticbounce = flag_boolean
           elsif flag_name == "hexenbounce"
+            puts "  - Flag: #{flag}"
+            new_actor.hexenbounce = flag_boolean
           elsif flag_name == "doombounce"
+            puts "  - Flag: #{flag}"
+            new_actor.doombounce = flag_boolean
           elsif flag_name == "faster"
+            puts "  - Flag: #{flag}"
+            new_actor.faster = flag_boolean
           elsif flag_name == "fastmelee"
-
-          # Additional Flags
+            puts "  - Flag: #{flag}"
+            new_actor.fastmelee = flag_boolean
           elsif flag_name == "inventory.quiet"
+            puts "  - Flag: #{flag}"
+            new_actor.inventory.quiet = flag_boolean
           elsif flag_name == "inventory.autoactivate"
+            puts "  - Flag: #{flag}"
+            new_actor.inventory.autoactivate = flag_boolean
           elsif flag_name == "inventory.undroppable" || flag_name == "undroppable"
+            puts "  - Flag: #{flag}"
+            new_actor.inventory.undroppable = flag_boolean
           elsif flag_name == "inventory.unclearable"
+            puts "  - Flag: #{flag}"
+            new_actor.inventory.unclearable = flag_boolean
           elsif flag_name == "inventory.invbar" || flag_name == "invbar"
+            puts "  - Flag: #{flag}"
+            new_actor.inventory.invbar = flag_boolean
           elsif flag_name == "inventory.hubpower"
+            puts "  - Flag: #{flag}"
+            new_actor.inventory.hubpower = flag_boolean
           elsif flag_name == "inventory.persistentpower"
+            puts "  - Flag: #{flag}"
+            new_actor.inventory.persistentpower = flag_boolean
           elsif flag_name == "inventory.interhubstrip"
+            puts "  - Flag: #{flag}"
+            new_actor.inventory.interhubstrip = flag_boolean
           elsif flag_name == "inventory.pickupflash"
+            puts "  - Flag: #{flag}"
+            new_actor.inventory.pickupflash = flag_boolean
           elsif flag_name == "inventory.alwayspickup"
+            puts "  - Flag: #{flag}"
+            new_actor.inventory.alwayspickup = flag_boolean
           elsif flag_name == "inventory.fancypickupsound" || flag_name == "fancypickupsound"
+            puts "  - Flag: #{flag}"
+            new_actor.inventory.fancypickupsound = flag_boolean
           elsif flag_name == "inventory.noattenpickupsound"
+            puts "  - Flag: #{flag}"
+            new_actor.inventory.noattenpickupsound = flag_boolean
           elsif flag_name == "inventory.bigpowerup"
+            puts "  - Flag: #{flag}"
+            new_actor.inventory.bigpowerup = flag_boolean
           elsif flag_name == "inventory.neverrespawn"
+            puts "  - Flag: #{flag}"
+            new_actor.inventory.neverrespawn = flag_boolean
           elsif flag_name == "inventory.keepdepleted"
+            puts "  - Flag: #{flag}"
+            new_actor.inventory.keepdepleted = flag_boolean
           elsif flag_name == "inventory.ignoreskill"
+            puts "  - Flag: #{flag}"
+            new_actor.inventory.ignoreskill = flag_boolean
           elsif flag_name == "inventory.additivetime"
+            puts "  - Flag: #{flag}"
+            new_actor.inventory.additivetime = flag_boolean
           elsif flag_name == "inventory.untossable"
+            puts "  - Flag: #{flag}"
+            new_actor.inventory.untossable = flag_boolean
           elsif flag_name == "inventory.restrictabsolutely"
+            puts "  - Flag: #{flag}"
+            new_actor.inventory.restrictabsolutely = flag_boolean
           elsif flag_name == "inventory.noscreenflash"
+            puts "  - Flag: #{flag}"
+            new_actor.inventory.noscreenflash = flag_boolean
           elsif flag_name == "inventory.tossed"
+            puts "  - Flag: #{flag}"
+            new_actor.inventory.tossed = flag_boolean
           elsif flag_name == "inventory.alwaysrespawn"
+            puts "  - Flag: #{flag}"
+            new_actor.inventory.alwaysrespawn = flag_boolean
           elsif flag_name == "inventory.transfer"
+            puts "  - Flag: #{flag}"
+            new_actor.inventory.transfer = flag_boolean
           elsif flag_name == "inventory.noteleportfreeze"
+            puts "  - Flag: #{flag}"
+            new_actor.inventory.noteleportfreeze = flag_boolean
           elsif flag_name == "inventory.noscreenblink"
+            puts "  - Flag: #{flag}"
+            new_actor.inventory.noscreenblink = flag_boolean
           elsif flag_name == "inventory.ishealth"
+            puts "  - Flag: #{flag}"
+            new_actor.inventory.ishealth = flag_boolean
           elsif flag_name == "inventory.isarmor"
-
-          # Weapons
+            puts "  - Flag: #{flag}"
+            new_actor.inventory.isarmor = flag_boolean
           elsif flag_name == "weapon.noautofire"
+            puts "  - Flag: #{flag}"
+            new_actor.weapon.noautofire = flag_boolean
           elsif flag_name == "weapon.readysndhalf"
+            puts "  - Flag: #{flag}"
+            new_actor.weapon.readysndhalf = flag_boolean
           elsif flag_name == "weapon.dontbob"
+            puts "  - Flag: #{flag}"
+            new_actor.weapon.dontbob = flag_boolean
           elsif flag_name == "weapon.axeblood"
+            puts "  - Flag: #{flag}"
+            new_actor.weapon.axeblood = flag_boolean
           elsif flag_name == "weapon.noalert"
+            puts "  - Flag: #{flag}"
+            new_actor.weapon.noalert = flag_boolean
           elsif flag_name == "weapon.ammo_optional"
+            puts "  - Flag: #{flag}"
+            new_actor.weapon.ammo_optional = flag_boolean
           elsif flag_name == "weapon.alt_ammo_optional"
+            puts "  - Flag: #{flag}"
+            new_actor.weapon.alt_ammo_optional = flag_boolean
           elsif flag_name == "weapon.ammo_checkboth"
+            puts "  - Flag: #{flag}"
+            new_actor.weapon.ammo_checkboth = flag_boolean
           elsif flag_name == "weapon.primary_uses_both"
+            puts "  - Flag: #{flag}"
+            new_actor.weapon.primary_uses_both = flag_boolean
           elsif flag_name == "weapon.alt_uses_both"
+            puts "  - Flag: #{flag}"
+            new_actor.weapon.alt_uses_both = flag_boolean
           elsif flag_name == "weapon.wimpy_weapon" || flag_name == "wimpy_weapon"
+            puts "  - Flag: #{flag}"
+            new_actor.weapon.wimpy_weapon = flag_boolean
           elsif flag_name == "weapon.powered_up" || flag_name == "powered_up"
+            puts "  - Flag: #{flag}"
+            new_actor.weapon.powered_up = flag_boolean
           elsif flag_name == "weapon.staff2_kickback"
+            puts "  - Flag: #{flag}"
+            new_actor.weapon.staff2_kickback = flag_boolean
           elsif flag_name == "weapon.explosive"
+            puts "  - Flag: #{flag}"
+            new_actor.weapon.explosive = flag_boolean
           elsif flag_name == "weapon.meleeweapon" || flag_name == "meleeweapon"
+            puts "  - Flag: #{flag}"
+            new_actor.weapon.meleeweapon = flag_boolean
           elsif flag_name == "weapon.bfg"
+            puts "  - Flag: #{flag}"
+            new_actor.weapon.bfg = flag_boolean
           elsif flag_name == "weapon.cheatnotweapon"
+            puts "  - Flag: #{flag}"
+            new_actor.weapon.cheatnotweapon = flag_boolean
           elsif flag_name == "weapon.noautoswitchto"
+            puts "  - Flag: #{flag}"
+            new_actor.weapon.noautoswitchto = flag_boolean
           elsif flag_name == "weapon.noautoaim"
+            puts "  - Flag: #{flag}"
+            new_actor.weapon.noautoaim = flag_boolean
           elsif flag_name == "weapon.nodeathdeselect"
+            puts "  - Flag: #{flag}"
+            new_actor.weapon.nodeathdeselect = flag_boolean
           elsif flag_name == "weapon.nodeathinput"
-          
-          # PowerSpeed
+            puts "  - Flag: #{flag}"
+            new_actor.weapon.nodeathinput = flag_boolean
           elsif flag_name == "powerspeed.notrail"
-          
-          # Players
+            puts "  - Flag: #{flag}"
+            new_actor.powerspeed.notrail = flag_boolean
           elsif flag_name == "playerpawn.nothrustwheninvul" || flag_name == "nothrustwheninvul"
+            puts "  - Flag: #{flag}"
+            new_actor.playerpawn.nothrustwheninvul = flag_boolean
           elsif flag_name == "playerpawn.cansupermorph" || flag_name == "cansupermorph"
+            puts "  - Flag: #{flag}"
+            new_actor.playerpawn.cansupermorph = flag_boolean
           elsif flag_name == "playerpawn.crouchablemorph"
+            puts "  - Flag: #{flag}"
+            new_actor.playerpawn.crouchablemorph = flag_boolean
           elsif flag_name == "playerpawn.weaponlevel2ended"
-         
-          # Zandronum Specific Flags
+            puts "  - Flag: #{flag}"
+            new_actor.playerpawn.weaponlevel2ended = flag_boolean
           elsif flag_name == "allowclientspawn"
+            puts "  - Flag: #{flag}"
+            new_actor.allowclientspawn = flag_boolean
           elsif flag_name == "clientsideonly"
+            puts "  - Flag: #{flag}"
+            new_actor.clientsideonly = flag_boolean
           elsif flag_name == "nonetid"
+            puts "  - Flag: #{flag}"
+            new_actor.nonetid = flag_boolean
           elsif flag_name == "dontidentifytarget"
+            puts "  - Flag: #{flag}"
+            new_actor.dontidentifytarget = flag_boolean
           elsif flag_name == "scorepillar"
+            puts "  - Flag: #{flag}"
+            new_actor.scorepillar = flag_boolean
           elsif flag_name == "serversideonly"
+            puts "  - Flag: #{flag}"
+            new_actor.serversideonly = flag_boolean
           elsif flag_name == "inventory.forcerespawninsurvival"
+            puts "  - Flag: #{flag}"
+            new_actor.inventory.forcerespawninsurvival = flag_boolean
           elsif flag_name == "weapon.allow_with_respawn_invul"
+            puts "  - Flag: #{flag}"
+            new_actor.weapon.allow_with_respawn_invul = flag_boolean
           elsif flag_name == "weapon.nolms"
+            puts "  - Flag: #{flag}"
+            new_actor.weapon.nolms = flag_boolean
           elsif flag_name == "piercearmor"
+            puts "  - Flag: #{flag}"
+            new_actor.piercearmor = flag_boolean
           elsif flag_name == "blueteam"
+            puts "  - Flag: #{flag}"
+            new_actor.blueteam = flag_boolean
           elsif flag_name == "redteam"
+            puts "  - Flag: #{flag}"
+            new_actor.redteam = flag_boolean
           elsif flag_name == "node"
+            puts "  - Flag: #{flag}"
+            new_actor.node = flag_boolean
           elsif flag_name == "basehealth"
+            puts "  - Flag: #{flag}"
+            new_actor.basehealth = flag_boolean
           elsif flag_name == "superhealth"
+            puts "  - Flag: #{flag}"
+            new_actor.superhealth = flag_boolean
           elsif flag_name == "basearmor"
+            puts "  - Flag: #{flag}"
+            new_actor.basearmor = flag_boolean
           elsif flag_name == "superarmor"
+            puts "  - Flag: #{flag}"
+            new_actor.superarmor = flag_boolean
           elsif flag_name == "explodeondeath"
-          
+            puts "  - Flag: #{flag}"
+            new_actor.explodeondeath = flag_boolean
+
           # Catchall for missing stuff to double check things
           else
             if missing_actor_flags.fetch(flag_name, nil)
