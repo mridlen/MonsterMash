@@ -1645,16 +1645,16 @@ full_dir_list.each do |file_path|
             new_actor.powerspeed.notrail = flag_boolean
           elsif flag_name == "playerpawn.nothrustwheninvul" || flag_name == "nothrustwheninvul"
             puts "  - Flag: #{flag}"
-            new_actor.playerpawn.nothrustwheninvul = flag_boolean
+            new_actor.player.nothrustwheninvul = flag_boolean
           elsif flag_name == "playerpawn.cansupermorph" || flag_name == "cansupermorph"
             puts "  - Flag: #{flag}"
-            new_actor.playerpawn.cansupermorph = flag_boolean
+            new_actor.player.cansupermorph = flag_boolean
           elsif flag_name == "playerpawn.crouchablemorph"
             puts "  - Flag: #{flag}"
-            new_actor.playerpawn.crouchablemorph = flag_boolean
+            new_actor.player.crouchablemorph = flag_boolean
           elsif flag_name == "playerpawn.weaponlevel2ended"
             puts "  - Flag: #{flag}"
-            new_actor.playerpawn.weaponlevel2ended = flag_boolean
+            new_actor.player.weaponlevel2ended = flag_boolean
           elsif flag_name == "allowclientspawn"
             puts "  - Flag: #{flag}"
             new_actor.allowclientspawn = flag_boolean
@@ -2150,106 +2150,321 @@ full_dir_list.each do |file_path|
         new_actor.inventory.restricted_to = line.split[1..-1].join(' ')
 
       elsif property_name == "fakeinventory.respawns"
+        puts "  - FakeInventory.Respawns" 
+        new_actor.fakeinventory.respawns = true
 
       elsif property_name == "armor.saveamount"
+        puts "  - Armor.SaveAmount: " + line.split[1..-1].join(' ')
+        new_actor.armor.saveamount = line.split[1].to_i
       elsif property_name == "armor.savepercent"
+        puts "  - Armor.SavePercent: " + line.split[1..-1].join(' ')
+        new_actor.armor.savepercent = line.split[1].to_f
       elsif property_name == "armor.maxfullabsorb"
+        puts "  - Armor.MaxFullAbsorb: " + line.split[1..-1].join(' ')
+        new_actor.armor.maxfullabsorb = line.split[1].to_i
       elsif property_name == "armor.maxabsorb"
+        puts "  - Armor.MaxAbsorb: " + line.split[1..-1].join(' ')
+        new_actor.armor.maxabsorb = line.split[1].to_i
       elsif property_name == "armor.maxsaveamount"
+        puts "  - Armor.MaxSaveAmount: " + line.split[1..-1].join(' ')
+        new_actor.armor.maxsaveamount = line.split[1].to_i
       elsif property_name == "armor.maxbonus"
+        puts "  - Armor.maxbonus: " + line.split[1..-1].join(' ')
+        new_actor.armor.maxbonus = line.split[1].to_i
       elsif property_name == "armor.maxbonusmax"
+        puts "  - Armor.MaxBonusMax: " + line.split[1..-1].join(' ')
+        new_actor.armor.maxbonusmax = line.split[1].to_i
 
       elsif property_name == "weapon.ammogive"
+        puts "  - Weapon.AmmoGive: " + line.split[1..-1].join(' ')
+        new_actor.weapon.ammogive = line.split[1].to_i
       elsif property_name == "weapon.ammogive1"
+        puts "  - Weapon.AmmoGive1: " + line.split[1..-1].join(' ')
+        new_actor.weapon.ammogive1 = line.split[1].to_i
       elsif property_name == "weapon.ammogive2"
+        puts "  - Weapon.AmmoGive2: " + line.split[1..-1].join(' ')
+        new_actor.weapon.ammogive2 = line.split[1].to_i
       elsif property_name == "weapon.ammotype"
+        puts "  - Weapon.AmmoType: " + line.split[1..-1].join(' ')
+        new_actor.weapon.ammotype = line.split[1..-1]?.to_s
       elsif property_name == "weapon.ammotype1"
+        puts "  - Weapon.AmmoType1: " + line.split[1..-1].join(' ')
+        new_actor.weapon.ammotype1 = line.split[1..-1]?.to_s
       elsif property_name == "weapon.ammotype2"
+        puts "  - Weapon.AmmoType2: " + line.split[1..-1].join(' ')
+        new_actor.weapon.ammotype2 = line.split[1..-1]?.to_s
       elsif property_name == "weapon.ammouse"
+        puts "  - Weapon.AmmoUse: " + line.split[1..-1].join(' ')
+        new_actor.weapon.ammouse = line.split[1].to_i
       elsif property_name == "weapon.ammouse1"
+        puts "  - Weapon.AmmoUse1: " + line.split[1..-1].join(' ')
+        new_actor.weapon.ammouse1 = line.split[1].to_i
       elsif property_name == "weapon.ammouse2"
+        puts "  - Weapon.AmmoUse2: " + line.split[1..-1].join(' ')
+        new_actor.weapon.ammouse2 = line.split[1].to_i
       elsif property_name == "weapon.minselectionammo1"
+        puts "  - Weapon.MinSelectionAmmo1: " + line.split[1..-1].join(' ')
+        new_actor.weapon.minselectionammo1 = line.split[1].to_i
       elsif property_name == "weapon.minselectionammo2"
+        puts "  - Weapon.MinSelectionAmmo2: " + line.split[1..-1].join(' ')
+        new_actor.weapon.minselectionammo2 = line.split[1].to_i
       elsif property_name == "weapon.bobpivot3d"
+        puts "  - Weapon.BobPivot3D: " + line.split[1..-1].join(' ')
+        new_actor.weapon.bobpivot3d = line.split[1..-1]?.to_s
       elsif property_name == "weapon.bobrangex"
+        puts "  - Weapon.BobRangeX: " + line.split[1..-1].join(' ')
+        new_actor.weapon.bobrangex = line.split[1].to_f
       elsif property_name == "weapon.bobrangey"
+        puts "  - Weapon.BobRangeY: " + line.split[1..-1].join(' ')
+        new_actor.weapon.bobrangey = line.split[1].to_f
       elsif property_name == "weapon.bobspeed"
+        puts "  - Weapon.BobSpeed: " + line.split[1..-1].join(' ')
+        new_actor.weapon.bobspeed = line.split[1].to_f
       elsif property_name == "weapon.bobstyle"
+        puts "  - Weapon.BobStyle: " + line.split[1..-1].join(' ')
+        new_actor.weapon.bobstyle = line.split[1..-1]?.to_s
       elsif property_name == "weapon.kickback"
+        puts "  - Weapon.KickBack: " + line.split[1..-1].join(' ')
+        new_actor.weapon.kickback = line.split[1].to_i
       elsif property_name == "weapon.defaultkickback"
+        puts "  - Weapon.DefaultKickBack: " + line.split[1..-1].join(' ')
+        new_actor.weapon.defaultkickback = true
       elsif property_name == "weapon.readysound"
+        puts "  - Weapon.ReadySound: " + line.split[1..-1].join(' ')
+        new_actor.weapon.readysound = line.split[1..-1]?.to_s
       elsif property_name == "weapon.selectionorder"
+        puts "  - Weapon.SelectionOrder: " + line.split[1..-1].join(' ')
+        new_actor.weapon.selectionorder = line.split[1].to_i
       elsif property_name == "weapon.sisterweapon"
+        puts "  - Weapon.SisterWeapon: " + line.split[1..-1].join(' ')
+        new_actor.weapon.sisterweapon = line.split[1..-1]?.to_s
       elsif property_name == "weapon.slotnumber"
+        puts "  - Weapon.SlotNumber: " + line.split[1..-1].join(' ')
+        new_actor.weapon.slotnumber = line.split[1].to_i
       elsif property_name == "weapon.slotpriority"
+        puts "  - Weapon.SlotPriority: " + line.split[1..-1].join(' ')
+        new_actor.weapon.slotpriority = line.split[1].to_f
       elsif property_name == "weapon.upsound"
+        puts "  - Weapon.UpSound: " + line.split[1..-1].join(' ')
+        new_actor.weapon.upsound = line.split[1..-1]?.to_s
       elsif property_name == "weapon.weaponscalex"
+        puts "  - Weapon.WeaponScaleX: " + line.split[1..-1].join(' ')
+        new_actor.weapon.weaponscalex = line.split[1].to_f
       elsif property_name == "weapon.weaponscaley"
+        puts "  - Weapon.WeaponScaleY: " + line.split[1..-1].join(' ')
+        new_actor.weapon.weaponscaley = line.split[1].to_f
       elsif property_name == "weapon.yadjust"
+        puts "  - Weapon.YAdjust: " + line.split[1..-1].join(' ')
+        new_actor.weapon.yadjust = line.split[1].to_i
       elsif property_name == "weapon.lookscale"
-      elsif property_name == "ammo.backpackamount"
-      elsif property_name == "ammo.backpackmaxamount"
-      elsif property_name == "ammo.dropamount"
-      elsif property_name == "weaponpiece.number"
-      elsif property_name == "weaponpiece.weapon"
-      elsif property_name == "health.lowmessage"
-      elsif property_name == "puzzleitem.number"
-      elsif property_name == "puzzleitem.failmessage"
-      elsif property_name == "puzzleitem.failsound"
-      elsif property_name == "player.aircapacity"
-      elsif property_name == "player.attackzoffset"
-      elsif property_name == "player.clearcolorset"
-      elsif property_name == "player.colorrange"
-      elsif property_name == "player.colorset"
-      elsif property_name == "player.colorsetfile"
-      elsif property_name == "player.crouchsprite"
-      elsif property_name == "player.damagescreencolor"
-      elsif property_name == "player.displayname"
-      elsif property_name == "player.face"
-      elsif property_name == "player.fallingscreamspeed"
-      elsif property_name == "player.flechettetype"
-      elsif property_name == "player.flybob"
-      elsif property_name == "player.forwardmove"
-      elsif property_name == "player.gruntspeed"
-      elsif property_name == "player.healradiustype"
-      elsif property_name == "player.hexenarmor"
-      elsif property_name == "player.invulnerabilitymode"
-      elsif property_name == "player.jumpz"
-      elsif property_name == "player.maxhealth"
-      elsif property_name == "player.morphweapon"
-      elsif property_name == "player.mugshotmaxhealth"
-      elsif property_name == "player.portrait"
-      elsif property_name == "player.runhealth"
-      elsif property_name == "player.scoreicon"
-      elsif property_name == "player.sidemove"
-      elsif property_name == "player.soundclass"
-      elsif property_name == "player.spawnclass"
-      elsif property_name == "player.startitem"
-      elsif property_name == "player.teleportfreezetime"
-      elsif property_name == "player.userange"
-      elsif property_name == "player.viewbob"
-      elsif property_name == "player.viewbobspeed"
-      elsif property_name == "player.viewheight"
-      elsif property_name == "player.waterclimbspeed"
-      elsif property_name == "player.weaponslot"
-      elsif property_name == "powerup.color"
-      elsif property_name == "powerup.colormap"
-      elsif property_name == "powerup.duration"
-      elsif property_name == "powerup.mode"
-      elsif property_name == "powerup.strength"
-      elsif property_name == "powerspeed.notrail"
-      elsif property_name == "powerup.type"
-      elsif property_name == "healthpickup.autouse"
-      elsif property_name == "morphprojectile.playerclass"
-      elsif property_name == "morphprojectile.monsterclass"
-      elsif property_name == "morphprojectile.duration"
-      elsif property_name == "morphprojectile.morphstyle"
-      elsif property_name == "morphprojectile.morphflash"
-      elsif property_name == "morphprojectile.unmorphflash"
-      
+        puts "  - Weapon.LookScale: " + line.split[1..-1].join(' ')
+        new_actor.weapon.lookscale = line.split[1].to_f
 
+      # Ammo
+      elsif property_name == "ammo.backpackamount"
+        puts "  - Ammo.BackpackAmount: " + line.split[1..-1].join(' ')
+        new_actor.ammo.backpackamount = line.split[1].to_i
+      elsif property_name == "ammo.backpackmaxamount"
+        puts "  - Ammo.BackpackMaxAmount: " + line.split[1..-1].join(' ')
+        new_actor.ammo.backpackmaxamount = line.split[1].to_i
+      elsif property_name == "ammo.dropamount"
+        puts "  - Ammo.DropAmount: " + line.split[1..-1].join(' ')
+        new_actor.ammo.dropamount = line.split[1].to_i
+
+      # Weapon Piece
+      elsif property_name == "weaponpiece.number"
+        puts "  - WeaponPiece.Number: " + line.split[1..-1].join(' ')
+        new_actor.weaponpiece.number = line.split[1].to_i
+      elsif property_name == "weaponpiece.weapon"
+        puts "  - WeaponPiece.Weapon: " + line.split[1..-1].join(' ')
+        new_actor.weaponpiece.weapon = line.split[1..-1]?.to_s
+
+      # Health (note: health is named healthclass to differentiate from health property)
+      elsif property_name == "health.lowmessage"
+        puts "  - Health.LowMessage: " + line.split[1..-1].join(' ')
+        new_actor.healthclass.lowmessage = line.split[1..-1]?.to_s
+
+      # Puzzle Item
+      elsif property_name == "puzzleitem.number"
+        puts "  - PuzzleItem.Number: " + line.split[1..-1].join(' ')
+        new_actor.puzzleitem.number = line.split[1].to_i
+      elsif property_name == "puzzleitem.failmessage"
+        puts "  - PuzzleItem.FailMessage: " + line.split[1..-1].join(' ')
+        new_actor.puzzleitem.failmessage = line.split[1..-1]?.to_s
+      elsif property_name == "puzzleitem.failsound"
+        puts "  - PuzzleItem.FailSound: " + line.split[1..-1].join(' ')
+        new_actor.puzzleitem.failsound = line.split[1]?.to_s
+
+      # PlayerPawn
+      elsif property_name == "player.aircapacity"
+        puts "    - player.aircapacity: " + line.split[1..-1].join(' ')
+        new_actor.player.aircapacity = line.split[1].to_f
+      elsif property_name == "player.attackzoffset"
+        puts "    - player.attackzoffset: " + line.split[1..-1].join(' ')
+        new_actor.player.attackzoffset = line.split[1].to_i
+      elsif property_name == "player.clearcolorset"
+        puts "    - player.clearcolorset: " + line.split[1..-1].join(' ')
+        new_actor.player.clearcolorset = line.split[1].to_i
+      elsif property_name == "player.colorrange"
+        puts "    - player.colorrange: " + line.split[1..-1].join(' ')
+        new_actor.player.colorrange = line.split[1..-1].join(' ')
+      elsif property_name == "player.colorset"
+        puts "    - player.colorset: " + line.split[1..-1].join(' ')
+        new_actor.player.colorset = line.split[1]?.to_s
+      elsif property_name == "player.colorsetfile"
+        puts "    - player.colorsetfile: " + line.split[1..-1].join(' ')
+        new_actor.player.colorsetfile = line.split[1..-1].join(' ')
+      elsif property_name == "player.crouchsprite"
+        puts "    - player.crouchsprite: " + line.split[1..-1].join(' ')
+        new_actor.player.crouchsprite = line.split[1]?.to_s
+      elsif property_name == "player.damagescreencolor"
+        puts "    - player.damagescreencolor: " + line.split[1..-1].join(' ')
+        new_actor.player.damagescreencolor = line.split[1..-1].join(' ')
+      elsif property_name == "player.displayname"
+        puts "    - player.displayname: " + line.split[1..-1].join(' ')
+        new_actor.player.displayname = line.split[1]?.to_s
+      elsif property_name == "player.face"
+        puts "    - player.face: " + line.split[1..-1].join(' ')
+        new_actor.player.face = line.split[1]?.to_s
+      elsif property_name == "player.fallingscreamspeed"
+        puts "    - player.fallingscreamspeed: " + line.split[1..-1].join(' ')
+        new_actor.player.fallingscreamspeed = line.split[1..-1].join(' ')
+      elsif property_name == "player.flechettetype"
+        puts "    - player.flechettetype: " + line.split[1..-1].join(' ')
+        new_actor.player.flechettetype = line.split[1]?.to_s
+      elsif property_name == "player.flybob"
+        puts "    - player.flybob: " + line.split[1..-1].join(' ')
+        new_actor.player.flybob = line.split[1].to_f
+      elsif property_name == "player.forwardmove"
+        puts "    - player.forwardmove: " + line.split[1..-1].join(' ')
+        new_actor.player.forwardmove = line.split[1..-1].join(' ')
+      elsif property_name == "player.gruntspeed"
+        puts "    - player.gruntspeed: " + line.split[1..-1].join(' ')
+        new_actor.player.gruntspeed = line.split[1].to_f
+      elsif property_name == "player.healradiustype"
+        puts "    - player.healradiustype: " + line.split[1..-1].join(' ')
+        new_actor.player.healradiustype = line.split[1]?.to_s
+      elsif property_name == "player.hexenarmor"
+        puts "    - player.hexenarmor: " + line.split[1..-1].join(' ')
+        new_actor.player.hexenarmor = line.split[1]?.to_s
+      elsif property_name == "player.invulnerabilitymode"
+        puts "    - player.invulnerabilitymode: " + line.split[1..-1].join(' ')
+        new_actor.player.invulnerabilitymode = line.split[1]?.to_s
+      elsif property_name == "player.jumpz"
+        puts "    - player.jumpz: " + line.split[1..-1].join(' ')
+        new_actor.player.jumpz = line.split[1].to_f
+      elsif property_name == "player.maxhealth"
+        puts "    - player.maxhealth: " + line.split[1..-1].join(' ')
+        new_actor.player.maxhealth = line.split[1].to_i
+      elsif property_name == "player.morphweapon"
+        puts "    - player.morphweapon: " + line.split[1..-1].join(' ')
+        new_actor.player.morphweapon = line.split[1]?.to_s
+      elsif property_name == "player.mugshotmaxhealth"
+        puts "    - player.mugshotmaxhealth: " + line.split[1..-1].join(' ')
+        new_actor.player.mugshotmaxhealth = line.split[1].to_i
+      elsif property_name == "player.portrait"
+        puts "    - player.portrait: " + line.split[1..-1].join(' ')
+        new_actor.player.portrait = line.split[1]?.to_s
+      elsif property_name == "player.runhealth"
+        puts "    - player.runhealth: " + line.split[1..-1].join(' ')
+        new_actor.player.runhealth = line.split[1].to_i
+      elsif property_name == "player.scoreicon"
+        puts "    - player.scoreicon: " + line.split[1..-1].join(' ')
+        new_actor.player.scoreicon = line.split[1]?.to_s
+      elsif property_name == "player.sidemove"
+        puts "    - player.sidemove: " + line.split[1..-1].join(' ')
+        new_actor.player.sidemove = line.split[1..-1].join(' ')
+      elsif property_name == "player.soundclass"
+        puts "    - player.soundclass: " + line.split[1..-1].join(' ')
+        new_actor.player.soundclass = line.split[1]?.to_s
+      elsif property_name == "player.spawnclass"
+        puts "    - player.spawnclass: " + line.split[1..-1].join(' ')
+        new_actor.player.spawnclass = line.split[1]?.to_s
+      elsif property_name == "player.startitem"
+        puts "    - player.startitem: " + line.split[1..-1].join(' ')
+        new_actor.player.startitem = line.split[1..-1].join(' ')
+      elsif property_name == "player.teleportfreezetime"
+        puts "    - player.teleportfreezetime: " + line.split[1..-1].join(' ')
+        new_actor.player.teleportfreezetime = line.split[1].to_i
+      elsif property_name == "player.userange"
+        puts "    - player.userange: " + line.split[1..-1].join(' ')
+        new_actor.player.userange = line.split[1].to_f
+      elsif property_name == "player.viewbob"
+        puts "    - player.viewbob: " + line.split[1..-1].join(' ')
+        new_actor.player.viewbob = line.split[1].to_f
+      elsif property_name == "player.viewbobspeed"
+        puts "    - player.viewbobspeed: " + line.split[1..-1].join(' ')
+        new_actor.player.viewbobspeed = line.split[1].to_f
+      elsif property_name == "player.viewheight"
+        puts "    - player.viewheight: " + line.split[1..-1].join(' ')
+        new_actor.player.viewheight = line.split[1].to_f
+      elsif property_name == "player.waterclimbspeed"
+        puts "    - player.waterclimbspeed: " + line.split[1..-1].join(' ')
+        new_actor.player.waterclimbspeed = line.split[1].to_f
+      elsif property_name == "player.weaponslot"
+        puts "    - player.weaponslot: " + line.split[1..-1].join(' ')
+        new_actor.player.weaponslot = line.split[1..-1].join(' ')
+
+      # Powerup
+      elsif property_name == "powerup.color"
+        puts "    - powerup.color: " + line.split[1..-1].join(' ')
+        new_actor.powerup.color = line.split[1]?.to_s
+      elsif property_name == "powerup.colormap"
+        puts "    - powerup.colormap: " + line.split[1..-1].join(' ')
+        new_actor.powerup.colormap = line.split[1..-1].join(' ')
+      elsif property_name == "powerup.duration"
+        puts "    - powerup.duration: " + line.split[1..-1].join(' ')
+        new_actor.powerup.duration = line.split[1]?.to_s
+      elsif property_name == "powerup.mode"
+        puts "    - powerup.mode: " + line.split[1..-1].join(' ')
+        new_actor.powerup.mode = line.split[1]?.to_s
+      elsif property_name == "powerup.strength"
+        puts "    - powerup.strength: " + line.split[1..-1].join(' ')
+        new_actor.powerup.strength = line.split[1].to_i
+
+      # PowerSpeed
+      elsif property_name == "powerspeed.notrail"
+        puts "    - powerspeed.notrail: " + line.split[1..-1].join(' ')
+        if line.split[1].to_i == 1
+          new_actor.powerspeed.notrail = true
+        elsif line.split[1].to_i == 0
+          new_actor.powerspeed.notrail = false
+        end
+
+      # PowerupGiver
+      elsif property_name == "powerup.type"
+        puts "    - powerup.type: " + line.split[1..-1].join(' ')
+        new_actor.powerup.type = line.split[1]?.to_s
+
+      # HealthPickup
+      elsif property_name == "healthpickup.autouse"
+        puts "    - healthpickup.autouse: " + line.split[1..-1].join(' ')
+        new_actor.healthpickup.autouse = line.split[1].to_i
+
+      # MorphProjectile
+      elsif property_name == "morphprojectile.playerclass"
+        puts "    - morphprojectile.playerclass: " + line.split[1..-1].join(' ')
+        new_actor.morphprojectile.playerclass = line.split[1]?.to_s
+      elsif property_name == "morphprojectile.monsterclass"
+        puts "    - morphprojectile.monsterclass: " + line.split[1..-1].join(' ')
+        new_actor.morphprojectile.monsterclass = line.split[1]?.to_s
+      elsif property_name == "morphprojectile.duration"
+        puts "    - morphprojectile.duration: " + line.split[1..-1].join(' ')
+        new_actor.morphprojectile.duration = line.split[1].to_i
+      elsif property_name == "morphprojectile.morphstyle"
+        puts "    - morphprojectile.morphstyle: " + line.split[1..-1].join(' ')
+        new_actor.morphprojectile.morphstyle = line.split[1..-1].join(' ')
+      elsif property_name == "morphprojectile.morphflash"
+        puts "    - morphprojectile.morphflash: " + line.split[1..-1].join(' ')
+        new_actor.morphprojectile.morphflash = line.split[1..-1].join(' ')
+      elsif property_name == "morphprojectile.unmorphflash"
+        puts "    - morphprojectile.unmorphflash: " + line.split[1..-1].join(' ')
+        new_actor.morphprojectile.unmorphflash = line.split[1..-1].join(' ')
+      
+      # Exclude any rouge curly brackets or include statements
       elsif property_name == "{" || property_name == "}" || property_name == "#include"
         # ignore these and do nothing
+      # Log any missing property names so that we can address them
       else
         if missing_property_names.fetch(property_name, nil)
           list_of_actors_missing_this_property = missing_property_names[property_name]
@@ -2305,8 +2520,6 @@ missing_actor_flags.each do |key, value|
     puts actor_name
   end
 end
-
-exit(0)
 
 puts "=========================="
 puts "END FILE READING"
@@ -2369,8 +2582,6 @@ actors_by_name.each_key do |key|
   end
   puts "----------------------------------"
 end
-
-exit(0)
 
 # Check for duplicate names
 name_info = Hash(String, Tuple(Int32, Int32)).new

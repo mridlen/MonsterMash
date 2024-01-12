@@ -107,48 +107,48 @@ class FakeInventory
 end
 
 class Armor
-  property save_amount : Int32 = -1
-  property save_percent : Float64 = -1
-  property max_full_absorb : Int32 = -1
-  property max_absorb : Int32 = -1
-  property max_save_amount : Int32 = -1
-  property max_bonus : Int32 = -1
-  property max_bonus_max : Int32 = -1
+  property saveamount : Int32 = -1
+  property savepercent : Float64 = -1
+  property maxfullabsorb : Int32 = -1
+  property maxabsorb : Int32 = -1
+  property maxsaveamount : Int32 = -1
+  property maxbonus : Int32 = -1
+  property maxbonusmax : Int32 = -1
 end
 
 class Weapon
-  property ammo_give : Int32 = -1
-  property ammo_give_1 : Int32 = -1
-  property ammo_give_2 : Int32 = -1
-  property ammo_type : String = "UNDEFINED"
-  property ammo_type_1 : String = "UNDEFINED"
-  property ammo_type_2 : String = "UNDEFINED"
-  property ammo_use : Int32 = -1
-  property ammo_use_1 : Int32 = -1
-  property ammo_use_2 : Int32 = -1
-  property min_selection_ammo_1 : Int32 = -1
-  property min_selection_ammo_2 : Int32 = -1
+  property ammogive : Int32 = -1
+  property ammogive1 : Int32 = -1
+  property ammogive2 : Int32 = -1
+  property ammotype : String = "UNDEFINED"
+  property ammotype1 : String = "UNDEFINED"
+  property ammotype2 : String = "UNDEFINED"
+  property ammouse : Int32 = -1
+  property ammouse1 : Int32 = -1
+  property ammouse2 : Int32 = -1
+  property minselectionammo1 : Int32 = -1
+  property minselectionammo2 : Int32 = -1
   # this is ZScript only
-  property bob_pivot_3d : String = "UNDEFINED"
-  property bob_range_x : Float64 = 1.0
-  property bob_range_y : Float64 = 1.0
-  property bob_speed : Float64 = 1.0
-  property bob_style : String = "UNDEFINED"
-  property kick_back : Int32 = -1
-  property default_kick_back : Int32 = -1
-  property ready_sound : String = "UNDEFINED"
-  property selection_order : Int32 = -1
-  property sister_weapon : String = "UNDEFINED"
-  property slot_number : Int32 = -1
-  property slot_priority : Float64 = 0.0
-  property up_sound : String = "UNDEFINED"
-  property weapon_scale_x : Float64 = 1.0
-  property weapon_scale_y : Float64 = 1.2
+  property bobpivot3d : String = "UNDEFINED"
+  property bobrangex : Float64 = 1.0
+  property bobrangey : Float64 = 1.0
+  property bobspeed : Float64 = 1.0
+  property bobstyle : String = "UNDEFINED"
+  property kickback : Int32 = -1
+  property defaultkickback : Bool = false
+  property readysound : String = "UNDEFINED"
+  property selectionorder : Int32 = -1
+  property sisterweapon : String = "UNDEFINED"
+  property slotnumber : Int32 = -1
+  property slotpriority : Float64 = 0.0
+  property upsound : String = "UNDEFINED"
+  property weaponscalex : Float64 = 1.0
+  property weaponscaley : Float64 = 1.2
   # vertial adjustment
   # I think 0 means don't do anything, there is no "safe" undefined value
-  property y_adjust : Int32 = 0
+  property yadjust : Int32 = 0
   # I think this is float, most multipliers are float
-  property look_scale : Float64 = 0.0
+  property lookscale : Float64 = 0.0
 
   property noautofire : Bool = false
   property readysndhalf : Bool = false
@@ -167,7 +167,7 @@ class Weapon
   property meleeweapon : Bool = false
   property bfg : Bool = false
   property cheatnotweapon : Bool = false
-  property no_auto_switch : Bool = false
+  property noautoswitch : Bool = false
   property noautoswitchto : Bool = false
   property noautoaim : Bool = false
   property nodeathdeselect : Bool = false
@@ -180,9 +180,9 @@ class Weapon
 end
 
 class Ammo
-  property backpack_amount : Int32 = -1
-  property backpack_max_amount : Int32 = -1
-  property drop_amount : Int32 = -1
+  property backpackamount : Int32 = -1
+  property backpackmaxamount : Int32 = -1
+  property dropamount : Int32 = -1
 end
 
 class WeaponPiece
@@ -192,63 +192,63 @@ end
 
 class Health
   # this is in format: "value, message" so we will just grab the string
-  property low_message : String = "UNDEFINED"
+  property lowmessage : String = "UNDEFINED"
 end
 
 class PuzzleItem
   property number : Int32 = -1
-  property fail_message : String = "UNDEFINED"
-  property fail_sound : String = "UNDEFINED"
+  property failmessage : String = "UNDEFINED"
+  property failsound : String = "UNDEFINED"
 end
 
 class PlayerPawn
-  property air_capacity : Float64 = 1.0
-  property attack_z_offset : Int32 = 8
-  property clear_color_set : Int32 = -1
+  property aircapacity : Float64 = 1.0
+  property attackzoffset : Int32 = 8
+  property clearcolorset : Int32 = -1
   # this is a range like "0, 0" so we will grab as a string
-  property color_range : String = "UNDEFINED"
+  property colorrange : String = "UNDEFINED"
   # format: number, name, start, end, color [...] - we will do string
-  property color_set : String = "UNDEFINED"
+  property colorset : String = "UNDEFINED"
   # format: number, name, table, color - we will do string
-  property color_set_file : String = "UNDEFINED"
-  property crouch_sprite : String = "UNDEFINED"
+  property colorsetfile : String = "UNDEFINED"
+  property crouchsprite : String = "UNDEFINED"
   # format: color[, intensity[, damagetype]]
-  property damage_screen_color : String = "UNDEFINED"
-  property display_name : String = "UNDEFINED"
+  property damagescreencolor : String = "UNDEFINED"
+  property displayname : String = "UNDEFINED"
   property face : String = "UNDEFINED"
   # format: value min, value max
-  property failing_scream_speed : String = "UNDEFINED"
-  property flechette_type : String = "UNDEFINED"
-  property fly_type : Float64 = 1.0
+  property fallingscreamspeed : String = "UNDEFINED"
+  property flechettetype : String = "UNDEFINED"
+  property flybob : Float64 = 1.0
   # format: run, value-run. Default is: 1, 1
-  property forward_move : String = "1, 1"
-  property grunt_speed : Float64 = 12.0
-  property heal_radius_type : String = "UNDEFINED"
+  property forwardmove : String = "1, 1"
+  property gruntspeed : Float64 = 12.0
+  property healradiustype : String = "UNDEFINED"
   # format: base value, value armor, value sheild, value helm, value amulet
   # we use string
-  property hexen_armor : String = "UNDEFINED"
-  property invulnerability_mode : String = "UNDEFINED"
-  property jump_z : Float64 = 8.0
-  property max_health : Int32 = 100
-  property morph_weapon : String = "UNDEFINED"
-  property mug_shot_max_health : Int32 = -1
+  property hexenarmor : String = "UNDEFINED"
+  property invulnerabilitymode : String = "UNDEFINED"
+  property jumpz : Float64 = 8.0
+  property maxhealth : Int32 = 100
+  property morphweapon : String = "UNDEFINED"
+  property mugshotmaxhealth : Int32 = -1
   property portrait : String = "UNDEFINED"
-  property run_health : Int32 = 0
-  property score_icon : String = "UNDEFINED"
+  property runhealth : Int32 = 0
+  property scoreicon : String = "UNDEFINED"
   # format: value [value-run]
-  property side_move : String = "UNDEFINED"
-  property sound_class : String = "UNDEFINED"
-  property spawn_class : String = "UNDEFINED"
+  property sidemove : String = "UNDEFINED"
+  property soundclass : String = "UNDEFINED"
+  property spawnclass : String = "UNDEFINED"
   # format: classname [amount]
-  property start_item : String = "UNDEFINED"
-  property teleport_freeze_time : Int32 = 18
-  property use_range : Float64 = 64.0
-  property view_bob : Float64 = 1.0
-  property view_bob_speed : Float64 = 20.0
-  property view_height : Float64 = 41.0
-  property water_climb_speed : Float64 = 3.5
+  property startitem : String = "UNDEFINED"
+  property teleportfreezetime : Int32 = 18
+  property userange : Float64 = 64.0
+  property viewbob : Float64 = 1.0
+  property viewbobspeed : Float64 = 20.0
+  property viewheight : Float64 = 41.0
+  property waterclimbspeed : Float64 = 3.5
   # format: slot, weapon1[, weapon2, weapon3, ...]
-  property weapon_slot : String = "UNDEFINED"
+  property weaponslot : String = "UNDEFINED"
 
   property nothrustwheninvul : Bool = false
   property cansupermorph : Bool = false
@@ -276,17 +276,17 @@ end
 
 class HealthPickup
   # this probably doesn't pertain much to Doom
-  property auto_use : Int32 = 0
+  property autouse : Int32 = 0
 end
 
 class MorphProjectile
-  property player_class : String = "UNDEFINED"
-  property monster_class : String = "UNDEFINED"
+  property playerclass : String = "UNDEFINED"
+  property monsterclass : String = "UNDEFINED"
   property duration : Int32 = -1
   # has a list of flags, we will capture in String
-  property morph_style : String = "UNDEFINED"
-  property morph_flash : String = "UNDEFINED"
-  property un_morph_flash : String = "UNDEFINED"
+  property morphstyle : String = "UNDEFINED"
+  property morphflash : String = "UNDEFINED"
+  property unmorphflash : String = "UNDEFINED"
 end
 
 puts "Defining Actor Class..."
@@ -296,6 +296,7 @@ class Actor
 
   # these first few are defined on the actor line
   property name : String = "UNDEFINED"
+  property name_with_case : String = "UNDEFINED"
   property inherits : String = "UNDEFINED"
   property replaces : String = "UNDEFINED"
   # -1 will mean undefined
@@ -309,7 +310,7 @@ class Actor
   property healthpickup : HealthPickup
   property powerspeed : PowerSpeed
   property powerup : Powerup
-  property playerpawn : PlayerPawn
+  property player : PlayerPawn
   property puzzleitem : PuzzleItem
   property healthclass : Health
   property weaponpiece : WeaponPiece
@@ -859,7 +860,7 @@ class Actor
     @morphprojectile = MorphProjectile.new
     @healthpickup = HealthPickup.new
     @powerup = Powerup.new
-    @playerpawn = PlayerPawn.new
+    @player = PlayerPawn.new
     @puzzleitem = PuzzleItem.new
     @healthclass = Health.new
     @weaponpiece = WeaponPiece.new
