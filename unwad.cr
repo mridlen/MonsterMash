@@ -436,7 +436,8 @@ full_dir_list.each do |file_path|
     # actor blah :        oldblah replaces oldblah
     # actor blah :        oldblah replaces oldblah 1234
  
-    #actor_no_states = actor.gsub(/states\s*{[^{}]*}/mi, "") 
+    #actor_no_states = actor.gsub(/states\s*{[^{}]*}/mi, "")
+    actor_with_states = actor 
     actor_no_states = actor.gsub(/states\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi, "") 
     lines = actor_no_states.lines
     # strip leading whitespace, trailing whitespace, and downcase
@@ -482,7 +483,10 @@ full_dir_list.each do |file_path|
     new_actor.file_path = file_path
     new_actor.native = native
     new_actor.states = states
+    # actor_text is used for checking actor flags and properties
     new_actor.actor_text = actor_no_states
+    # full_actor_text is used for comparing actors with each other to find duplicates
+    new_actor.full_actor_text = actor_with_states
 
     # number of words == 3 means that word[2] == a number
     if number_of_words == 3
@@ -2696,6 +2700,32 @@ actor_counter = 0
 # DECORATE.raw is always going to be in scope, but any include file
 # is also going to be in scope
 file_list = Array(String).new
+
+# find identical actors and mark them for deletion
+
+# Find actors with identical actor_text properties
+identical_actors = actordb.group_by { |actor|
+  lines = actor.full_actor_text.lines
+  first_line = lines[0]
+  first_line = first_line.split[0..1].join(' ')
+  lines = first_line + "\n" + lines[1..-1].join("\n")
+  lines = lines.lines
+  lines.map! { |line| line.lstrip.strip.downcase }
+  lines.reject! { |line| line.empty? }
+  lines.compact!
+  formatted_actor_text = lines.join("\n")
+  formatted_actor_text }
+  .select { |_, actors| actors.size > 1 }
+  .flat_map { |_, actors| actors }
+
+# Print actors with identical actor_text properties
+identical_actors.each do |actor|
+  puts "Actor with identical actor_text: #{actor.name}"
+  puts "Wad: #{actor.source_wad_folder}"
+  puts "#{actor.full_actor_text}"
+end
+
+exit(0)
 
 # format is: filename, line number, replacement line
 itemized_line_replacements = Array(Tuple(String, Int32, String)).new

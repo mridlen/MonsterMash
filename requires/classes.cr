@@ -338,7 +338,10 @@ class Actor
   property built_in : Bool = false
 
   # Raw actor text
+  # actor_text has comments and states removed
   property actor_text : String = "UNDEFINED"
+  # full_actor_text has only comments removed
+  property full_actor_text : String = "UNDEFINED"
 
   # States will be stored in a hash
   property states : Hash(String, String) = Hash(String, String).new
