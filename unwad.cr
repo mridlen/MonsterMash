@@ -204,12 +204,12 @@ puts "Starting the copy process from Source to Processing..."
 # Only the directories are copied
 Dir.glob("./Source/*/").each do |path|
   dest_path = File.join("./Processing/", File.basename(path))
-  completed_path = File.join("./Completed/", File.basename(path))
+  #completed_path = File.join("./Completed/", File.basename(path))
   if Dir.exists?(dest_path)
     FileUtils.rm_rf(dest_path)
   end
 
-  FileUtils.cp_r(path, completed_path)
+  #FileUtils.cp_r(path, completed_path)
   FileUtils.mv(path, dest_path)
 end
 puts "Copy from Source to Processing completed."
@@ -2591,15 +2591,15 @@ end
 name_info = Hash(String, Tuple(Int32, Int32)).new
 
 actordb.each_with_index do |actor, actor_index|
-  if name_info.fetch(actor.name, nil)
+  if name_info.fetch(actor.name.downcase, nil)
     puts "Duplicate name found:"
     puts "  Name: #{actor.name}"
     puts "  Index 1: #{name_info[actor.name][0]}"
     puts "  Index 2: #{actor_index}"
-    puts "  Source: #{actordb[actor_index].source_wad_folder}"
     puts "  Source: #{actordb[name_info[actor.name][0]].source_wad_folder}"
-
-    new_dupe_name = DupedActorName.new(actor.name, actor.source_wad_folder, actordb[name_info[actor.name][0]].source_wad_folder)
+    puts "  Source: #{actor.source_wad_folder}"
+    
+    new_dupe_name = DupedActorName.new(actor.name, actor.source_wad_folder, actordb[name_info[actor.name][0]].source_wad_folder, actordb[name_info[actor.name][0]].file_path)
     duped_names_db << new_dupe_name
   else
     name_info[actor.name.downcase] = {actor_index, actor.index}
@@ -2704,10 +2704,22 @@ file_list = Array(String).new
 # find identical actors and mark them for deletion
 
 # Find actors with identical actor_text properties
+# this includes the actor line including only the actor name and inheritance
+# and the full actor text without any comments
+# e.g.
+#  actor blah [: blah2] <removed text>
+#  {
+#  <stuff here ...>
+#  }
 identical_actors = actordb.group_by { |actor|
   lines = actor.full_actor_text.lines
   first_line = lines[0]
+  inherits = first_line.partition(/\:\s+[^\s]*/)
   first_line = first_line.split[0..1].join(' ')
+  if inherits[1] != ""
+    first_line = first_line + " " + inherits[1]
+  end
+  puts "First Line: #{first_line}"
   lines = first_line + "\n" + lines[1..-1].join("\n")
   lines = lines.lines
   lines.map! { |line| line.lstrip.strip.downcase }
@@ -2715,15 +2727,79 @@ identical_actors = actordb.group_by { |actor|
   lines.compact!
   formatted_actor_text = lines.join("\n")
   formatted_actor_text }
+  # actors size > 1 means that there is a duplicate entry
   .select { |_, actors| actors.size > 1 }
   .flat_map { |_, actors| actors }
 
 # Print actors with identical actor_text properties
 identical_actors.each do |actor|
   puts "Actor with identical actor_text: #{actor.name}"
-  puts "Wad: #{actor.source_wad_folder}"
-  puts "#{actor.full_actor_text}"
+  #puts "Inherited Actor #{actor.inherits}"
+  #puts "Wad: #{actor.source_wad_folder}"
+  #puts "#{actor.full_actor_text}"
 end
+
+# Remove the offending actors from their respective wad file
+# ------------------------------------------------------------
+# Here is the logic in plain english
+# - we compare the following: actor name, full_actor_text
+# - we don't care about replaces; those will be removed
+# - we DO care about inheritance, if there are duplicate actors with the same name but inheriting different actors
+#   they will be renamed
+#
+# Once we determine which actors will need to be removed, we will need to collect the following
+# - actor.name
+# - actor.source_wad_folder
+# - actor.
+# Regex:  ^actor\s+greenpoisonball\s+[^{]*\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})
+# where "greenpoisonball" is the offending actor... we will use a variable for that
+
+identical_actor_name = "UNDEFINED"
+identical_actors.each_with_index do |actor, actor_index|
+  # if the identical_actor_name != actor.name, it means the actor changed
+  # They come into the list grouped by name like this:
+  # actor1, actor1, actor1, actor2, actor2, actor3, actor3, actor4, actor4...
+  # since we DO want one of each (we are only deleting DUPLICATES),
+  # we will go to next iteration when this occurs
+  if identical_actor_name != actor.name
+    identical_actor_name = actor.name
+    next
+  end
+
+  puts "Identical Actors Index: #{actor_index}"
+  file_text = File.read(actor.file_path)
+
+  regex = /^[\ \t]*actor\s+#{actor.name}\s+[^{]*\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi
+
+  puts "Removing Actor:"
+  puts file_text.partition(regex)[1]
+
+  file_text_post = file_text.gsub(regex, "// duplicate actor removed: #{actor.name}")
+
+  File.write(actor.file_path, file_text_post)
+
+  # remove the occurence from the database
+  deletion_index = -1
+  duped_names_db.each_with_index do |duped_actor, duped_actor_index|
+    #puts "Actor: #{duped_actor.name} #{actor.name}"
+    #puts "Wad: #{duped_actor.duped_wad_name} #{actor.source_wad_folder}"
+    #puts "File: #{duped_actor.duped_wad_file_path} #{actor.file_path}"
+    if duped_actor.duped_wad_file_path == actor.file_path
+      puts "Deletion Identified:"
+      puts "Duped Actor Name: #{duped_actor.name}, Index: #{duped_actor_index}"
+      puts "Actor Name: #{actor.name}, Actor Wad: #{actor.source_wad_folder}, Actor Source File: #{actor.source_file}"
+      puts "Duped Name: #{duped_actor.name}, Duped Wad: #{duped_actor.duped_wad_name}, Duped Source File: #{duped_actor.duped_wad_file_path}"
+      deletion_index = duped_actor_index
+    end
+  end
+  if deletion_index == -1
+    puts "Fatal Error: Duplicate Actor #{actor.name} has been flagged, but not found"
+  else
+    puts "Deleting Actor: #{actor.name}, duped_named_db actor: #{duped_names_db[deletion_index].name}, index: #{deletion_index}"
+    duped_names_db.delete_at(deletion_index)
+  end
+end
+#input_file = File.read(file_path)
 
 exit(0)
 
