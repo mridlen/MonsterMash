@@ -426,7 +426,7 @@ full_dir_list.each do |file_path|
 
     puts "======================="
     # there are a few options here and we need to account for all of them
-    # 0 1    2   3        4        5       6       7
+    # 0     1    2        3        4        5       6       7
     # actor blah
     # actor blah 1234
     # actor blah replaces oldblah
@@ -440,6 +440,15 @@ full_dir_list.each do |file_path|
     actor_with_states = actor 
     actor_no_states = actor.gsub(/states\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi, "") 
     lines = actor_no_states.lines
+
+    # get a case sensitive version
+    lines_with_case = lines.map { |line| line.lstrip.strip }
+    lines_with_case.reject! { |line| line.empty? }
+    lines_with_case.compact!
+    actor_with_case = lines_with_case.join("\n")
+    first_line_with_case = lines_with_case.first
+    name_with_case = first_line_with_case.split[1]
+
     # strip leading whitespace, trailing whitespace, and downcase
     lines.map! { |line| line.lstrip.strip.downcase }
     lines.reject! { |line| line.empty? }
@@ -478,6 +487,7 @@ full_dir_list.each do |file_path|
 
     # Create new actor object and populate the information we already collected
     new_actor = Actor.new("#{words[1]}", actor_index)
+    new_actor.name_with_case = name_with_case
     new_actor.source_wad_folder = wad_folder_name
     new_actor.source_file = decorate_source_file
     new_actor.file_path = file_path
@@ -495,9 +505,9 @@ full_dir_list.each do |file_path|
 
     # there are 2 possibilities: colon (inheritance), or replaces
     if number_of_words == 4 || number_of_words == 5
-      if words[2] =~ /^\s*:\s*/
+      if words[2] == ":"
         new_actor.inherits = words[3]
-      elsif words[2] =~ /^\s*replaces\s*/
+      elsif words[2] == "replaces"
         new_actor.replaces = words[3]
       else
         puts "Error: word: #{words[2]} is not a colon, or 'replaces'"
@@ -538,6 +548,14 @@ full_dir_list.each do |file_path|
 
       # this should give us the first word in the line, which is the property name
       property_name = line.split[0]?.to_s
+
+      if property_name =~ /^[\+|\-]/
+        line.split.each do |flag|
+          new_actor.flags_applied << flag
+        end
+      elsif property_name != "{" && property_name != "}" && property_name != "action" && property_name != "const" && property_name != "var" && property_name != "#include"
+        new_actor.properties_applied << property_name
+      end
 
       # action refers to a function definition in DECORATE or ZSCRIPT
       # we can probably just ignore these
@@ -2073,7 +2091,8 @@ full_dir_list.each do |file_path|
         end
       elsif property_name == "+ismonster"
         puts "  - Monster"
-        new_actor.monster = true
+        #new_actor.monster = true
+        new_actor.ismonster = true
       elsif property_name == "{" || property_name == "}"
       elsif property_name == "args"
         puts "  - Args: " + line.split[1..-1].join(' ')
@@ -2502,6 +2521,14 @@ full_dir_list.each do |file_path|
   end
 end
 
+actordb.each do |actor|
+  puts "Actor: #{actor.name}"
+  puts "Properties:"
+  puts actor.properties_applied
+  puts "Flags"
+  puts actor.flags_applied
+end
+
 puts "=================="
 puts "Missing Properties"
 puts "=================="
@@ -2527,6 +2554,118 @@ end
 
 puts "=========================="
 puts "END FILE READING"
+
+puts "=========================="
+puts "Removing Identical Actors"
+puts "=========================="
+# actor_counter is the UUID for renamed actors
+# before: ZombieMan
+# after: ZombieMan_MonsterMash_0
+actor_counter = 0
+# first step is evaluate the list of files that are in scope
+# DECORATE.raw is always going to be in scope, but any include file
+# is also going to be in scope
+# file_list = Array(String).new
+
+# find identical actors and mark them for deletion
+
+# Find actors with identical actor_text properties
+# this includes the actor line including only the actor name and inheritance
+# and the full actor text without any comments
+# e.g.
+#  actor blah [: blah2] <removed text>
+#  {
+#  <stuff here ...>
+#  }
+identical_actors = actordb.group_by { |actor|
+  lines = actor.full_actor_text.lines
+  first_line = lines[0]
+  inherits = first_line.partition(/\:\s+[^\s]*/)
+  first_line = first_line.split[0..1].join(' ')
+  if inherits[1] != ""
+    first_line = first_line + " " + inherits[1]
+  end
+  puts "First Line: #{first_line}"
+  lines = first_line + "\n" + lines[1..-1].join("\n")
+  lines = lines.lines
+  lines.map! { |line| line.lstrip.strip.downcase }
+  lines.reject! { |line| line.empty? }
+  lines.compact!
+  formatted_actor_text = lines.join("\n")
+  formatted_actor_text }
+  # actors size > 1 means that there is a duplicate entry
+  .select { |_, actors| actors.size > 1 }
+  .flat_map { |_, actors| actors }
+
+# Print actors with identical actor_text properties
+identical_actors.each do |actor|
+  puts "Actor with identical actor_text: #{actor.name}"
+  #puts "Inherited Actor #{actor.inherits}"
+  #puts "Wad: #{actor.source_wad_folder}"
+  #puts "#{actor.full_actor_text}"
+end
+
+# Remove the offending actors from their respective wad file
+# ------------------------------------------------------------
+# Here is the logic in plain english
+# - we compare the following: actor name, full_actor_text
+# - we don't care about replaces; those will be removed
+# - we DO care about inheritance, if there are duplicate actors with the same name but inheriting different actors
+#   they will be renamed
+#
+# Once we determine which actors will need to be removed, we will need to collect the following
+# - actor.name
+# - actor.source_wad_folder
+# - actor.
+# Regex:  ^actor\s+greenpoisonball\s+[^{]*\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})
+# where "greenpoisonball" is the offending actor... we will use a variable for that
+
+identical_actor_name = "UNDEFINED"
+identical_actors.each_with_index do |actor, actor_index|
+  # if the identical_actor_name != actor.name, it means the actor changed
+  # They come into the list grouped by name like this:
+  # actor1, actor1, actor1, actor2, actor2, actor3, actor3, actor4, actor4...
+  # since we DO want one of each (we are only deleting DUPLICATES),
+  # we will go to next iteration when this occurs
+  if identical_actor_name != actor.name
+    identical_actor_name = actor.name
+    # mark the actor as primary in actordb - this way we will not touch it later
+    actordb[actor.index].primary = true
+    next
+  end
+
+  puts "Identical Actors Index: #{actor_index}"
+  file_text = File.read(actor.file_path)
+
+  regex = /^[\ \t]*actor\s+#{actor.name}\s+[^{]*\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi
+
+  puts "Removing Actor:"
+  puts file_text.partition(regex)[1]
+
+  file_text_post = file_text.gsub(regex, "// duplicate actor removed: #{actor.name}")
+
+  File.write(actor.file_path, file_text_post)
+
+  puts "---------------------------------------------------------"
+  puts "Removing Actor Name: #{actor.name}, Index: #{actor.index}"
+  puts "---------------------------------------------------------"
+  deletion_indexes = Array(Int32).new
+  actordb.each_with_index do |actor_del, actor_del_index|
+    if actor_del.index == actor.index && actor_del.file_path == actor.file_path
+      puts "actor_del name: #{actor_del.name}, actor name: #{actor.name}"
+      deletion_indexes << actor_del_index
+    end
+  end
+  #reverse order so that it doesn't delete the wrong actors
+  # e.g. it should delete the element 12 before deleting element 10
+  # otherwise it would delete element 10 and then delete former element 13 (I think)
+  deletion_indexes.reverse!
+  deletion_indexes.each do |deletion_index|
+    puts "Deleting #{actordb[deletion_index].name}..."
+    actordb.delete_at(deletion_index)
+  end
+end
+
 puts "=========================="
 puts "CHECKING DUPLICATES"
 puts "=========================="
@@ -2535,6 +2674,7 @@ puts "=========================="
 # We are sorting by the different fields that we want to query by...
 # e.g. actors_by_name["doomimp"] will return an array of Actors that are named "doomimp"
 actors_by_name = actordb.reduce(Hash(String, Array(Actor)).new) do |acc, actor|
+  acc ||= Hash(String, Array(Actor)).new
   if acc.fetch(actor.name, nil)
     iteration_array = acc[actor.name]
   else
@@ -2546,46 +2686,326 @@ actors_by_name = actordb.reduce(Hash(String, Array(Actor)).new) do |acc, actor|
   acc
 end
 
-# the same but with inherited actors
-actors_by_inherits = actordb.reduce(Hash(String, Array(Actor)).new) do |acc, actor|
-  if acc.fetch(actor.inherits, nil)
-    iteration_array = acc[actor.inherits]
-  else
-    iteration_array = Array(Actor).new
-  end
-  iteration_array << actor
-  acc[actor.inherits] = iteration_array
 
-  acc
-end
+# this code doesn't do anything useful
+#puts "==================================="
+#puts "Actor Dupe Count"
+#puts "==================================="
+#if actors_by_name.size > 0
+#  actors_by_name.each_key do |key|
+#    puts "Actor Name: #{key}"
+#    puts "Actor Count: #{actors_by_name[key].size}"
+#    if actors_by_inherits.fetch(key, nil)
+#      puts "Inherit Count: #{actors_by_inherits[key].size}"
+#    end
+#    if actors_by_replaces.fetch(key, nil)
+#      puts "Replace Count: #{actors_by_replaces[key].size}"
+#    end
+#    puts "----------------------------------"
+#  end
+#end
 
-# the same but with replaced actors
-actors_by_replaces = actordb.reduce(Hash(String, Array(Actor)).new) do |acc, actor|
-  if acc.fetch(actor.replaces, nil)
-    iteration_array = acc[actor.replaces]
-  else
-    iteration_array = Array(Actor).new
-  end
-  iteration_array << actor
-  acc[actor.replaces] = iteration_array
-
-  acc
-end
-
-puts "==================================="
-puts "Actor Dupe Count"
-puts "==================================="
+puts "===================================="
+puts "Renaming Duplicate Actor Names"
+puts "===================================="
+# process out any built-ins out of the list because they ruin our counts
 actors_by_name.each_key do |key|
-  puts "Actor Name: #{key}"
-  puts "Actor Count: #{actors_by_name[key].size}"
-  if actors_by_inherits.fetch(key, nil)
-    puts "Inherit Count: #{actors_by_inherits[key].size}"
+  deletion_indexes = Array(Int32).new
+  actors_by_name[key].each_with_index do |actor, actor_index|
+    if actor.file_path.split("/")[1] == "Built_In_Actors"
+      puts "Actor is Built In: #{actor.name}"
+      deletion_indexes << actor_index
+    end
   end
-  if actors_by_replaces.fetch(key, nil)
-    puts "Replace Count: #{actors_by_replaces[key].size}"
+  # reverse the array so it goes largest to smallest
+  deletion_indexes.reverse!
+  deletion_indexes.each do |deletion|
+    actors_by_name[key].delete_at(deletion)
   end
-  puts "----------------------------------"
 end
+
+# do the renames
+actors_by_name.each_key do |key|
+  if actors_by_name[key].size > 1
+    puts "Actor: #{key} Count: #{actors_by_name[key].size}"
+    actor_counter = 0
+    actors_by_name[key].each_with_index do |actor, actor_index|
+      if actor_index == 0
+        puts "Primary:"
+      end
+      puts "Actor File: #{actor.file_path}"
+      
+      # do a gsub for every file in the defs folder of that wad
+      # (?<=[\s"])WyvernBall(?=[\s"])
+      # remove the last field of the file path, which is the file name
+      wad_folder = actor.file_path.split("/")[0..-2].join("/") + "/"
+      puts "Wad Folder: #{wad_folder}"
+      if actor_index == 0
+         puts "Renames:"
+         next
+      end
+      Dir.children(wad_folder).each do |file|
+        file_text = File.read(wad_folder + file)
+        #puts "@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
+        #puts "File Text Pre:"
+        #puts "@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
+        #puts file_text
+        renamed_actor = "#{actor.name_with_case}_MM#{actor_counter.to_s}"
+        file_text = file_text.gsub(/(?<=[\s"])#{actor.name_with_case}(?=[\s"])/, renamed_actor)
+        #puts "@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
+        #puts "File Text Post:"
+        #puts "@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
+        #puts file_text
+        File.write(wad_folder + file, file_text)
+      end
+      puts "------------------------------"
+    end
+    actor_counter += 1
+  end
+end
+# All duplicate names should be addressed by this point.
+
+# Update actordb and perform deletions if they are gone
+deletion_indexes = Array(Int32).new
+actordb.each_with_index do |actor, actor_index|
+  next if actor.native == true
+  #check if the actor still exists
+  regex = /^\s*actor\s+#{actor.name}/mi
+  file_text_array = Array(String).new 
+  file_text = File.read(actor.file_path)
+  file_text_array << file_text
+  success = false
+  file_text_array.each do |text|
+    lines = text.lines
+    lines.each do |line|
+      if line =~ /^\#include/i
+        include_file = actor.file_path.split("/")[0..-2].join("/") + "/" + line.lstrip.strip.split[1].split('"')[1].upcase + ".raw"
+        #puts "Include File: #{include_file}"
+        file_text = File.read(include_file)
+        file_text_array << file_text
+      end
+    end
+    if text =~ regex
+      puts "Actor found! #{actor.name} - #{actor.file_path}"
+      success = true
+    end
+  end
+  if success == false
+    puts "Removing missing actor from actordb: #{actor.name} - #{actor.file_path}"
+    deletion_indexes << actor_index
+  end
+end 
+deletion_indexes.reverse!
+if deletion_indexes.empty? == false
+  deletion_indexes.each do |deletion_index|
+    puts "Deleting #{actordb[deletion_index].name_with_case}..."
+    actordb.delete_at(deletion_index)
+  end
+end
+
+# refresh actors_by_name to the latest
+actors_by_name = actordb.reduce(Hash(String, Array(Actor)).new) do |acc, actor|
+  acc ||= Hash(String, Array(Actor)).new
+  if acc.fetch(actor.name, nil)
+    iteration_array = acc[actor.name]
+  else
+    iteration_array = Array(Actor).new
+  end
+  iteration_array << actor
+  acc[actor.name] = iteration_array
+
+  acc
+end
+
+# we need to evaluate inheritance specifically as far as monsters are concerned
+actordb.each_with_index do |actor, actor_index|
+  next if actor.built_in == true
+
+  is_monster = false
+  if actor.monster == true || actor.ismonster == true
+    puts "Actor is a confirmed monster, no need to evaluate inheritance"
+    is_monster = true
+  else
+    puts "Evaluating Inheritance For #{actor.name_with_case}"
+    inheritance = Array(String).new
+    inheritance << actor.name
+    inherits_name = actor.inherits
+    puts "Actor.inherits: #{inherits_name}"
+    while inherits_name != "UNDEFINED"
+      break if inherits_name == "UNDEFINED"
+      actordb.each_with_index do |actor_check, actor_check_index|
+        if inherits_name == actor_check.name
+          puts " - Inherits: #{inherits_name} -> #{actor_check.inherits}"
+          inheritance << actor_check.name
+          inherits_name = actor_check.inherits
+          break
+        end
+      end
+    end
+    # we go reverse order from end of the inheritance to beginning
+    # e.g. Blah : Blah2, Blah2 : Blah3, Blah3 <no inheritance on Blah3>
+    # we start with Blah3, check properties and then go to Blah2, and then Blah
+    inheritance.reverse!
+    inheritance.each do |inherited_actor|
+      actordb.each do |actor_check|
+        if actor_check.name == inherited_actor
+          puts "Inherited Actor: #{inherited_actor}"
+          #skip_super means inherit only states, not properties/flags AFAIK
+          #so we reset to false
+          if actor_check.skip_super == true
+            puts "SKIP SUPER! Reset any flags!"
+            is_monster = false
+          end
+          #Check for Monster property or +ISMONSTER flag
+          if actor_check.monster == true || actor_check.ismonster == true
+            puts "IS MONSTER! (monster: #{actor_check.monster} ismonster: #{actor_check.ismonster})"
+            is_monster = true
+          #for "false" values we also need to check flags_applied array
+          #because default value is "false" but it may override "monster" in rare cases
+          #I don't think the "monster" property can be false, it's true if present
+          else
+            actor_check.flags_applied.each do |flag|
+              if flag == "-ismonster"
+                puts "Actor: #{actor_check.name}, Flag -ismonster"
+                is_monster = false
+              elsif flag == "+ismonster"
+                puts "Actor: #{actor_check.name}, Flag +ismonster"
+                is_monster = true
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+  #after all of that, if is_monster == true, then we have us a monster
+  #we will set this property for future reference
+  if is_monster == true
+    puts "Actor #{actor.name_with_case} is a Monster!"
+    actor.ismonster = true
+  end
+end
+
+actor_count = 0
+monster_count = 0
+built_in_count = 0
+id_non_monster = 0
+actordb.each do |actor|
+  if actor.ismonster == true || actor.monster == true
+    puts "Actor #{actor.name_with_case} is a monster!"
+    monster_count += 1
+    if actor.built_in == true
+      built_in_count += 1
+    end
+  elsif actor.doomednum != -1
+    puts "Actor #{actor.name_with_case} has ID #{actor.doomednum} but is not a monster"
+    id_non_monster += 1
+  end
+  actor_count += 1
+end
+puts "Total Actors: #{actor_count}"
+puts "Total Monsters: #{monster_count}"
+puts "  - Built In: #{built_in_count}"
+puts "ID'd non-monsters: #{id_non_monster}"
+
+# wipe all doomednums from the Processing directory
+actordb.each do |actor|
+  if (actor.built_in != true) && (actor.doomednum != -1)
+    puts "-------------------------------------------------------------------"
+    puts "Actor: #{actor.name_with_case}"
+    puts "File: #{actor.file_path}"
+    file_text = File.read(actor.file_path)
+    lines = file_text.lines
+    lines.each_with_index do |line, line_index|
+      if line =~ /^\s*actor\s+/i
+        puts "actor_line: #{line}"
+
+        delete_word = -1
+
+        words = line.split
+        words.each_with_index do |word, word_index|
+          puts "  word: #{word}"
+          if word == "{" || word =~ /\//
+            puts "   Word detected that starts with { or /"
+            break
+          end
+          if word.to_i? != nil
+            puts "  Number detected"
+            delete_word = word_index
+          end
+        end
+
+        if delete_word != -1
+          puts "Deleting Word: #{words[delete_word]}"
+          words.delete_at(delete_word)
+        end
+
+        lines[line_index] = words.join(" ")
+        puts "Writing Line: #{lines[line_index]}"
+        puts "---------------------"
+      end
+    end
+    puts "Writing file: #{actor.file_path}"
+    file_text = lines.join("\n")
+    File.write(actor.file_path, file_text)
+  end
+end
+
+# wipe all doomednums from the Processing directory
+doomednum_counter = 15000
+actordb.each do |actor|
+  if (actor.built_in != true) && (actor.ismonster == true || actor.monster == true)
+    file_text = File.read(actor.file_path)
+    lines = file_text.lines
+    lines.each_with_index do |line, line_index|
+      if line =~ /^\s*actor\s+/i
+        words = line.lstrip.split
+        next if words[1].downcase != actor.name_with_case.downcase
+        puts "Monster Actor found (#{actor.name_with_case}): #{line}"
+        # set to size minus 1
+        early_end_index = (words.size - 1)
+        words.each_with_index do |word, word_index|
+          if word == "{" || word =~ /\//
+            early_end_index = word_index
+          end
+        end
+        while true
+          break if doomednum_info.fetch(doomednum_counter, nil) == nil
+          doomednum_counter += 1
+        end
+        words.insert((early_end_index + 1), doomednum_counter.to_s)
+        doomednum_info[doomednum_counter] = {-1, -1}
+        lines[line_index] = words.join(" ")
+        puts "Modified line: #{lines[line_index]}"
+      end
+    end
+    file_text = lines.join("\n")
+    File.write(actor.file_path, file_text)
+  end
+end
+
+
+exit(0)
+
+# address doomednum conflicts
+duplicate_doomednums = actordb.group_by { |actor| actor.doomednum }
+  .select { |_, actors| actors.size > 1 }
+  .flat_map { |_, actors| actors }
+
+duplicate_doomednums.each do |actor|
+  if actor.doomednum != -1
+    puts "Duplicate: #{actor.name_with_case} #{actor.doomednum}"
+  end
+end
+
+###########################
+###########################
+###########################
+exit(0)
+# OLD CODE
+###########################
+
+
 
 # Check for duplicate names
 name_info = Hash(String, Tuple(Int32, Int32)).new
@@ -2689,127 +3109,13 @@ puts duped_doomednum_db
 puts "Duped Graphics DB:"
 puts duped_graphics_db
 
-puts "=========================="
-puts "Itemized File Actions"
-puts "=========================="
-# actor_counter is the UUID for renamed actors
-# before: ZombieMan
-# after: ZombieMan_MonsterMash_0
-actor_counter = 0
-# first step is evaluate the list of files that are in scope
-# DECORATE.raw is always going to be in scope, but any include file
-# is also going to be in scope
-file_list = Array(String).new
-
-# find identical actors and mark them for deletion
-
-# Find actors with identical actor_text properties
-# this includes the actor line including only the actor name and inheritance
-# and the full actor text without any comments
-# e.g.
-#  actor blah [: blah2] <removed text>
-#  {
-#  <stuff here ...>
-#  }
-identical_actors = actordb.group_by { |actor|
-  lines = actor.full_actor_text.lines
-  first_line = lines[0]
-  inherits = first_line.partition(/\:\s+[^\s]*/)
-  first_line = first_line.split[0..1].join(' ')
-  if inherits[1] != ""
-    first_line = first_line + " " + inherits[1]
-  end
-  puts "First Line: #{first_line}"
-  lines = first_line + "\n" + lines[1..-1].join("\n")
-  lines = lines.lines
-  lines.map! { |line| line.lstrip.strip.downcase }
-  lines.reject! { |line| line.empty? }
-  lines.compact!
-  formatted_actor_text = lines.join("\n")
-  formatted_actor_text }
-  # actors size > 1 means that there is a duplicate entry
-  .select { |_, actors| actors.size > 1 }
-  .flat_map { |_, actors| actors }
-
-# Print actors with identical actor_text properties
-identical_actors.each do |actor|
-  puts "Actor with identical actor_text: #{actor.name}"
-  #puts "Inherited Actor #{actor.inherits}"
-  #puts "Wad: #{actor.source_wad_folder}"
-  #puts "#{actor.full_actor_text}"
-end
-
-# Remove the offending actors from their respective wad file
-# ------------------------------------------------------------
-# Here is the logic in plain english
-# - we compare the following: actor name, full_actor_text
-# - we don't care about replaces; those will be removed
-# - we DO care about inheritance, if there are duplicate actors with the same name but inheriting different actors
-#   they will be renamed
-#
-# Once we determine which actors will need to be removed, we will need to collect the following
-# - actor.name
-# - actor.source_wad_folder
-# - actor.
-# Regex:  ^actor\s+greenpoisonball\s+[^{]*\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})
-# where "greenpoisonball" is the offending actor... we will use a variable for that
-
-identical_actor_name = "UNDEFINED"
-identical_actors.each_with_index do |actor, actor_index|
-  # if the identical_actor_name != actor.name, it means the actor changed
-  # They come into the list grouped by name like this:
-  # actor1, actor1, actor1, actor2, actor2, actor3, actor3, actor4, actor4...
-  # since we DO want one of each (we are only deleting DUPLICATES),
-  # we will go to next iteration when this occurs
-  if identical_actor_name != actor.name
-    identical_actor_name = actor.name
-    next
-  end
-
-  puts "Identical Actors Index: #{actor_index}"
-  file_text = File.read(actor.file_path)
-
-  regex = /^[\ \t]*actor\s+#{actor.name}\s+[^{]*\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi
-
-  puts "Removing Actor:"
-  puts file_text.partition(regex)[1]
-
-  file_text_post = file_text.gsub(regex, "// duplicate actor removed: #{actor.name}")
-
-  File.write(actor.file_path, file_text_post)
-
-  # remove the occurence from the database
-  deletion_index = -1
-  duped_names_db.each_with_index do |duped_actor, duped_actor_index|
-    #puts "Actor: #{duped_actor.name} #{actor.name}"
-    #puts "Wad: #{duped_actor.duped_wad_name} #{actor.source_wad_folder}"
-    #puts "File: #{duped_actor.duped_wad_file_path} #{actor.file_path}"
-    if duped_actor.duped_wad_file_path == actor.file_path
-      puts "Deletion Identified:"
-      puts "Duped Actor Name: #{duped_actor.name}, Index: #{duped_actor_index}"
-      puts "Actor Name: #{actor.name}, Actor Wad: #{actor.source_wad_folder}, Actor Source File: #{actor.source_file}"
-      puts "Duped Name: #{duped_actor.name}, Duped Wad: #{duped_actor.duped_wad_name}, Duped Source File: #{duped_actor.duped_wad_file_path}"
-      deletion_index = duped_actor_index
-    end
-  end
-  if deletion_index == -1
-    puts "Fatal Error: Duplicate Actor #{actor.name} has been flagged, but not found"
-  else
-    puts "Deleting Actor: #{actor.name}, duped_named_db actor: #{duped_names_db[deletion_index].name}, index: #{deletion_index}"
-    duped_names_db.delete_at(deletion_index)
-  end
-end
-#input_file = File.read(file_path)
-
-exit(0)
-
 # format is: filename, line number, replacement line
 itemized_line_replacements = Array(Tuple(String, Int32, String)).new
 duped_names_db.each_with_index do |duped_actor, duped_actor_index|
   puts "-------------------------------------"
   puts "Duped Actor Name: #{duped_actor.name}"
   puts "-------------------------------------"
-  file_path = "./Completed/" + duped_actor.wad_name + "/defs/DECORATE.raw"
+  file_path = "./Processing/" + duped_actor.wad_name + "/defs/DECORATE.raw"
   puts " - File Path: #{file_path}"
 
   # this is the replacement text that we will use for the duration of this loop
@@ -2822,7 +3128,7 @@ duped_names_db.each_with_index do |duped_actor, duped_actor_index|
     file.each_line do |line|
       if line.starts_with?("#include")
         include_file_modified = line.strip.lchop("#include ").strip('"').upcase
-        file_path = "./Completed/" + duped_actor.wad_name + "/defs/" + include_file_modified + ".raw"
+        file_path = "./Processing/" + duped_actor.wad_name + "/defs/" + include_file_modified + ".raw"
         puts " - Include file: #{file_path}"
         file_list << file_path
       end
@@ -2875,7 +3181,7 @@ duped_doomednum_db.each_with_index do |duped_doomednum, doomednum_index|
   puts "-------------------------------------"
   puts "Duped Doomednum: #{duped_doomednum.doomednum}"
   puts "-------------------------------------"
-  file_path = "./Completed/" + duped_doomednum.wad_name + "/defs/DECORATE.raw"
+  file_path = "./Processing/" + duped_doomednum.wad_name + "/defs/DECORATE.raw"
   puts " - File Path: #{file_path}"
 
   # this is the replacement text that we will use for the duration of this loop
@@ -2902,7 +3208,7 @@ duped_doomednum_db.each_with_index do |duped_doomednum, doomednum_index|
     file.each_line do |line|
       if line.starts_with?("#include")
         include_file_modified = line.strip.lchop("#include ").strip('"').upcase
-        file_path = "./Completed/" + duped_doomednum.wad_name + "/defs/" + include_file_modified + ".raw"
+        file_path = "./Processing/" + duped_doomednum.wad_name + "/defs/" + include_file_modified + ".raw"
         puts " - Include file: #{file_path}"
         file_list << file_path
       end
