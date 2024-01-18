@@ -9,8 +9,9 @@ class DupedActorName
   property name : String
   property wad_name : String
   property duped_wad_name : String
+  property duped_wad_file_path : String
  
-  def initialize(@name : String, @wad_name : String, @duped_wad_name : String)
+  def initialize(@name : String, @wad_name : String, @duped_wad_name : String, @duped_wad_file_path : String)
   end
 end
 
@@ -337,6 +338,18 @@ class Actor
   # Built In == part of some actor inherent in the doom source code
   property built_in : Bool = false
 
+  # property list - for tracking which properties are set on an actor
+  property properties_applied : Array(String) = Array(String).new
+
+  # flag list - for tracking which flags are set on an actor
+  property flags_applied : Array(String) = Array(String).new
+
+  # this is used for ensuring that the base actor
+  # is not removed during duplicate checks
+  # For example, we find 3 duplicates of "ImpBomb"
+  # then we mark the first one as primary
+  property primary : Bool = false
+
   # Raw actor text
   # actor_text has comments and states removed
   property actor_text : String = "UNDEFINED"
@@ -489,6 +502,7 @@ class Actor
   property explosion_radius : Int32 = -1
   property explosion_damage : Int32 = -1
   # deprecated = -1
+
   property dont_hurt_shooter : Bool = false
   property pain_type : String = "UNDEFINED"
   property args : String = "UNDEFINED"
