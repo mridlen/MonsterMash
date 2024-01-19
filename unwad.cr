@@ -4,6 +4,7 @@ puts "Requires..."
 require "file"
 require "file_utils"
 require "regex"
+require "digest/sha256"
 
 # Other Code Specific To MonsterMash
 require "./requires/classes.cr"
@@ -172,6 +173,9 @@ puts "Creating Source directory..."
 Dir.mkdir_p("./Source/")
 puts "Creating Completed directory..."
 Dir.mkdir_p("./Completed/")
+puts "Creating IWADs directory..."
+Dir.mkdir_p("./IWADs/")
+Dir.mkdir_p("./IWADs_Extracted/")
 
 ##########################################
 # PRE RUN CLEANUP OPERATION
@@ -183,7 +187,10 @@ puts "Deleting all files under Processing directory..."
 FileUtils.rm_rf("./Processing/*")
 puts "Deleting all files under Completed directory..."
 FileUtils.rm_rf("./Completed/*")
+puts "Deleting all files under IWADs_Extracted directory..."
+FileUtils.rm_rf("./IWADs_Extracted/*")
 puts "Deletion completed."
+
 
 #########################################
 # RUN EXTRACTION PROCESS
@@ -192,6 +199,14 @@ puts "Extraction process starting..."
 # Extract each wad in Source to it's own subdirectory
 Dir.each_child("./Source") do |file_name|
   file_path = "./Source/#{file_name}"
+  if File.file?(file_path)
+    puts "Processing file: #{file_path}"
+    system "./#{jeutoolexe} extract \"#{file_path}\" -r"
+  end
+end
+# Do the same thing but for IWADs
+Dir.each_child("./IWADs") do |file_name|
+  file_path = "./IWADs/#{file_name}"
   if File.file?(file_path)
     puts "Processing file: #{file_path}"
     system "./#{jeutoolexe} extract \"#{file_path}\" -r"
@@ -212,6 +227,16 @@ Dir.glob("./Source/*/").each do |path|
   #FileUtils.cp_r(path, completed_path)
   FileUtils.mv(path, dest_path)
 end
+# Do the same thing but for IWADs
+Dir.glob("./IWADs/*/").each do |path|
+  dest_path = File.join("./IWADs_Extracted/", File.basename(path))
+  if Dir.exists?(dest_path)
+    FileUtils.rm_rf(dest_path)
+  end
+
+  FileUtils.mv(path, dest_path)
+end
+
 puts "Copy from Source to Processing completed."
 
 ##########################################
@@ -2981,6 +3006,120 @@ actordb.each do |actor|
     end
     file_text = lines.join("\n")
     File.write(actor.file_path, file_text)
+  end
+end
+
+#################################################################
+# delete duplicate sprites                                      #
+#################################################################
+# sprites must be named identically and have identical contents #
+#################################################################
+sprites_files = Dir.glob("./Processing/*/sprites/*")
+sprites_files = sprites_files + Dir.glob("./IWADs_Extracted/*/sprites/*")
+
+#sprites_by_name = sprites_files
+#  .group_by { |sprite| sprite.split("/").last }
+#  .select { |_, sprites| sprites.size > 1 }
+
+sprites_by_sha = sprites_files
+  .group_by { |sprite| Digest::SHA256.new.file(sprite).hexfinal }
+  .select { |_, sprites| sprites.size > 1 }
+  .transform_values { |sprites| sprites.sort }
+
+#sprites_by_sha.each do |key, sprite|
+#  puts "Sprite: #{key}"
+#  file_index = 0
+#  sprite[key].each do |file|
+#    next if sprite.split("/")[1] == "IWADs_Extracted"
+#    puts "Sprite: #{sprite}"
+#    file_index += 1
+#  end
+#end
+
+sprites_by_sha.each do |key, sprites|
+  unique_sprites = Hash(String, String).new
+  puts "SHA Hash: #{key}"
+  sprites.each do |sprite|
+    if unique_sprites.fetch(sprite.split("/").last, nil) == nil || sprite.split("/")[1] == "IWADs_Extracted"
+      puts "  - Original: #{sprite}"
+      unique_sprites[sprite.split("/").last] = sprite
+    elsif sprite.split("/")[1] != "IWADs_Extracted"
+      puts "  - Duplicate: #{sprite}"
+      puts "    - Deleting!"
+      File.delete(sprite)
+    else
+      # We can't really delete duplicate IWAD sprites for hopefully obvious reasons
+      puts "  - IWAD Sprite: #{sprite}"
+    end
+  end
+end
+
+exit(0)
+
+sprite_name = nil
+
+# We need to keep track of ONE original so we don't delete it
+# original_sprites["ABCDE2.raw"] = "./Processing/blah/sprites/ABCDE2.raw"
+#original_sprites = Hash(String, String).new
+#duplicate_sprites = Array(String).new
+#sprites_by_name.each do |sprites|
+#  sprites[1].each do |sprite|
+#    sprites[1].each do |sprite_inside|
+#      if sprite != sprite_inside && sprite.split("/").last == sprite_inside.split("/").last && File.same_content?(sprite, sprite_inside)
+#        if original_sprites.fetch(sprite.split("/").last, nil) != nil
+#          #First occurence of duplicate filename
+#          original_sprites[sprite.split("/").last] = sprite
+#        end
+#
+#        if original_sprites.fetch(sprite_inside.split("/").last, nil) != nil
+#          #Not a Dupe
+#        else
+#          
+#        end
+#      end
+#    end
+#  end
+#end
+
+#sprites_by_name.each_with_index do |sprite_path, sprite_index|
+#  if sprite_index == 0
+#    sprite_name = sprite_path.split("/")[4]
+#    next
+#  end
+#
+#  if sprite_path.split("/")[4] == sprite_name
+#    sprite_dupe_indexes << sprite_index
+#    puts "Duplicate: #{sprite_path}"
+#  else
+#    sprite_name = sprite_path.split("/")[4]
+#    puts "Original: #{sprite_path}"
+#  end
+#end
+
+exit(0)
+
+dupe_sprites = Hash(String, Bool).new
+
+# this section is SLOW, so we are going to try to optimize it
+# the "next if" statements should speed up a lot of the checking
+sprites_files.each do |path|
+  next if dupe_sprites.fetch(path, nil) != nil
+  sprites_files.each do |path_inside|
+    next if dupe_sprites.fetch(path_inside, nil) != nil
+    puts "Path: #{path} Path: #{path_inside}"
+    # now we have 2 values where neither one is a confirmed dupe
+    # gather the filename specifically for each
+    path_filename = path.split("/")[4]
+    path_inside_filename = path_inside.split("/")[4]
+    # meets 3 conditions:
+    # - they are not the exact same file (a file cannot be a duplicate of itself, obviously)
+    # - they have the same content (they are the same graphic)
+    # - and they have the same filename (e.g. BORKA2.raw <-> BORKA2.raw)
+    if path != path_inside && path_filename == path_inside_filename && File.same_content?(path, path_inside) == true
+      puts "Dupe Sprite: #{path} #{path_inside}"
+      dupe_sprites[path] = true
+      dupe_sprites[path_inside] = true
+    end
   end
 end
 
