@@ -3054,10 +3054,8 @@ sprites_by_sha.each do |key, sprites|
   end
 end
 
-exit(0)
 
-sprite_name = nil
-
+#sprite_name = nil
 # We need to keep track of ONE original so we don't delete it
 # original_sprites["ABCDE2.raw"] = "./Processing/blah/sprites/ABCDE2.raw"
 #original_sprites = Hash(String, String).new
@@ -3096,44 +3094,164 @@ sprite_name = nil
 #  end
 #end
 
-exit(0)
 
-dupe_sprites = Hash(String, Bool).new
-
+#dupe_sprites = Hash(String, Bool).new
+#
 # this section is SLOW, so we are going to try to optimize it
 # the "next if" statements should speed up a lot of the checking
-sprites_files.each do |path|
-  next if dupe_sprites.fetch(path, nil) != nil
-  sprites_files.each do |path_inside|
-    next if dupe_sprites.fetch(path_inside, nil) != nil
-    puts "Path: #{path} Path: #{path_inside}"
-    # now we have 2 values where neither one is a confirmed dupe
-    # gather the filename specifically for each
-    path_filename = path.split("/")[4]
-    path_inside_filename = path_inside.split("/")[4]
-    # meets 3 conditions:
-    # - they are not the exact same file (a file cannot be a duplicate of itself, obviously)
-    # - they have the same content (they are the same graphic)
-    # - and they have the same filename (e.g. BORKA2.raw <-> BORKA2.raw)
-    if path != path_inside && path_filename == path_inside_filename && File.same_content?(path, path_inside) == true
-      puts "Dupe Sprite: #{path} #{path_inside}"
-      dupe_sprites[path] = true
-      dupe_sprites[path_inside] = true
-    end
-  end
-end
+#sprites_files.each do |path|
+#  next if dupe_sprites.fetch(path, nil) != nil
+#  sprites_files.each do |path_inside|
+#    next if dupe_sprites.fetch(path_inside, nil) != nil
+#    puts "Path: #{path} Path: #{path_inside}"
+#    # now we have 2 values where neither one is a confirmed dupe
+#    # gather the filename specifically for each
+#    path_filename = path.split("/")[4]
+#    path_inside_filename = path_inside.split("/")[4]
+#    # meets 3 conditions:
+#    # - they are not the exact same file (a file cannot be a duplicate of itself, obviously)
+#    # - they have the same content (they are the same graphic)
+#    # - and they have the same filename (e.g. BORKA2.raw <-> BORKA2.raw)
+#    if path != path_inside && path_filename == path_inside_filename && File.same_content?(path, path_inside) == true
+#      puts "Dupe Sprite: #{path} #{path_inside}"
+#      dupe_sprites[path] = true
+#      dupe_sprites[path_inside] = true
+#    end
+#  end
+#end
 
 
-exit(0)
 
 # address doomednum conflicts
-duplicate_doomednums = actordb.group_by { |actor| actor.doomednum }
-  .select { |_, actors| actors.size > 1 }
-  .flat_map { |_, actors| actors }
+#duplicate_doomednums = actordb.group_by { |actor| actor.doomednum }
+#  .select { |_, actors| actors.size > 1 }
+#  .flat_map { |_, actors| actors }
+#
+#duplicate_doomednums.each do |actor|
+#  if actor.doomednum != -1
+#    puts "Duplicate: #{actor.name_with_case} #{actor.doomednum}"
+#  end
+#end
 
-duplicate_doomednums.each do |actor|
-  if actor.doomednum != -1
-    puts "Duplicate: #{actor.name_with_case} #{actor.doomednum}"
+# wad1 -> BLAH, BORK, FOOD
+# wad2 -> BLAH, BLA3, BOOP
+# sprite_prefix["BOOP"] = [{"./Processing/monsters/sprites/BOOPA1.raw", "sha_hash_text..."}]
+sprite_prefix = Hash(String, Array(Tuple(String, String))).new
+
+sprite_files = Dir.glob("./Processing/*/sprites/*")
+sprite_files = sprite_files + Dir.glob("./IWADs_Extracted/*/sprites/*")
+sprite_files.each do |directory|
+  # hash key is the first 4 characters
+  # grab filename (last field in split), grab filename without extension, take first 4 chars, and ensure upper case
+  key = directory.split("/").last.split(".").first[0..3].upcase
+
+  # grab the filename sha
+  sha = Digest::SHA256.new.file(directory).hexfinal
+
+  # initialize if nil
+  if sprite_prefix.fetch(key, nil) == nil
+    sprite_prefix[key] = Array(Tuple(String, String)).new
+  end
+  sprite_prefix[key] << {directory, sha}
+end
+
+# This function should safely increment to the next available prefix
+def increment_prefix(original_string : String, sprite_prefix : Hash(String, Array(Tuple(String, String)))) : String
+  puts "Increment Prefix: #{original_string}"
+  original_string_modified = original_string.succ
+  puts "Modified Prefix: #{original_string_modified}"
+  while sprite_prefix.has_key?(original_string_modified)
+    puts "Modified Prefix #{original_string_modified} is taken by #{sprite_prefix[original_string_modified][0]}, trying next..."
+    original_string_modified = original_string_modified.succ
+    #error protection, check for numbers or 5 char prefixes
+    if original_string_modified =~ /^[0-9]/ || original_string_modified.size > 4
+      puts "Fatal Error: prefix \"#{original_string_modified}\" starts with digit or is larger than 4 characters"
+      exit(0)
+    end
+  end
+  puts "Found Available Prefix: #{original_string_modified}"
+  return original_string_modified
+end
+
+sprite_prefix.each do |key, prefix|
+  puts "Prefix: #{key}"
+
+  # Determine if a dupe prefix even exists
+  dupe_exists = false
+  dupe_name = "UNDEFINED"
+  prefix.each_with_index do |pfix, pfix_index|
+    if pfix_index == 0
+      dupe_name = pfix[0].split("/")[2]
+      next
+    end
+    if dupe_name != pfix[0].split("/")[2]
+      dupe_exists = true
+      break
+    end
+  end
+  
+  # stop burning CPU for this prefix if no dupes
+  if dupe_exists == false
+    puts "NO DUPES"
+    next
+  else
+    puts "DUPE EXISTS"
+  end
+
+  # Create the array to hold the list of wads that use this prefix
+  # this is necessary, because there may be more than one wad in conflict
+  # format is: wad name, prefix name
+  # e.g. NewCacodemon, HEAD
+  wads_with_prefix = Hash(String, String).new
+
+  # Step 1) determine if an IWAD file has the prefix
+  iwad_has_prefix = false
+  original_wad_prefix = "UNDEFINED"
+  prefix.each do |pfix|
+    if pfix[0].split("/")[1] == "IWADs_Extracted"
+      puts "IWAD Matched: #{pfix[0]}"
+      iwad_has_prefix = true
+      original_wad_prefix = pfix[0].split("/")[2]
+      wads_with_prefix[original_wad_prefix] = key
+      break
+    end
+  end
+
+  # Set wad prefix to first in list if undefined
+  if original_wad_prefix == "UNDEFINED"
+    original_wad_prefix = prefix[0][0].split("/")[2]
+    wads_with_prefix[original_wad_prefix] = key
+  end
+
+  # Increment the string to next value
+  prefix_counter = increment_prefix(key, sprite_prefix)
+
+  # Step 2) build list of wads_with_prefix and assign new prefixes as needed
+  prefix.each do |pfix|
+    if wads_with_prefix.fetch(pfix[0].split("/")[2], nil) == nil
+      wads_with_prefix[pfix[0].split("/")[2]] = prefix_counter
+      sprite_prefix[prefix_counter] = Array(Tuple(String, String)).new
+      sprite_prefix[prefix_counter] << pfix
+    end
+  end
+
+  puts "wads_with_prefix:"
+  puts wads_with_prefix.inspect
+
+  wads_with_prefix.each_with_index do |prefix, index|
+    # skip the first entry which is the original
+    next if index == 0
+    list_of_sprites = Dir.glob("./Processing/#{prefix[0]}/sprites/#{key}*")
+    puts "Sprites in #{prefix[0]}:"
+    puts list_of_sprites.inspect
+    puts "Renaming..."
+    list_of_sprites.each do |sprite|
+      # prefix[1] should hold the new prefix which we will rename with
+      # regex looks for /BLAH and replaces with /BLA2
+      new_path = sprite.gsub(/\/#{key}/, "/#{prefix[1]}")
+      puts "Renaming: #{sprite} -> #{new_path}"
+      File.rename(sprite, new_path)
+    end
   end
 end
 
