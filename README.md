@@ -36,7 +36,14 @@ If you want to do it anyway: try it and see if it works. If it does, great! If n
 
 ## Usage
 
-Download code and put in Obsidian/addons/MonsterMash/MonsterMash/(this code) (I need to fix this directory structure)
+Download code and put the folder in Obsidian/addons/
+
+It should look like this
+```Obsidian/addons/MonsterMash$ ls -1
+modules
+MonsterMash
+README.md
+```
 
 Tested on v7.x or higher Obsidian and new "unstable" v21. Both seem to work ok.
 
