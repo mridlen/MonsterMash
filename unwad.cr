@@ -2978,7 +2978,7 @@ end
 
 # wipe all doomednums from the Processing directory
 doomednum_counter = 15000
-actordb.each do |actor|
+actordb.each_with_index do |actor, actor_index|
   if (actor.built_in != true) && (actor.ismonster == true || actor.monster == true)
     file_text = File.read(actor.file_path)
     lines = file_text.lines
@@ -3000,12 +3000,16 @@ actordb.each do |actor|
         end
         words.insert((early_end_index + 1), doomednum_counter.to_s)
         doomednum_info[doomednum_counter] = {-1, -1}
+        actordb[actor_index].doomednum = doomednum_counter
         lines[line_index] = words.join(" ")
         puts "Modified line: #{lines[line_index]}"
       end
     end
     file_text = lines.join("\n")
     File.write(actor.file_path, file_text)
+  else
+    #the actor is not a monster, so it will not be assigned a doomednum, and we will wipe it to -1 in the database
+    actordb[actor_index].doomednum = -1
   end
 end
 
@@ -3303,6 +3307,72 @@ wad_directories.each do |wad_directory|
   wad_destination = "./Completed/#{wad_directory.split("/")[2]}.wad"
   system "./#{jeutoolexe} build \"#{wad_destination}\" \"#{wad_directory}\""
 end
+
+# Generate the Lua
+lua_file  = "------------------------------------------------\n"
+lua_file += "--        Monster Mash                        --\n"
+lua_file += "------------------------------------------------\n"
+lua_file += "\n"
+lua_file += "MONSTER_MASH = { }\n"
+lua_file += "\n"
+lua_file += "MONSTER_MASH.MONSTERS =\n"
+lua_file += "{\n"
+
+actordb.each do |actor|
+  next if actor.ismonster == false && actor.monster == false
+  lua_file += "  #{actor.name} =\n"
+  lua_file += "  {\n"
+  lua_file += "    id = #{actor.doomednum},\n"
+  lua_file += "    r = #{actor.radius},\n"
+  lua_file += "    h = #{actor.height},\n"
+  lua_file += "    prob = 30,\n"
+  lua_file += "    health = #{actor.health},\n"
+  lua_file += "    damage = 10,\n"
+  lua_file += "    attack = \"missile\",\n"
+  lua_file += "    density = 0.9\n"
+  lua_file += "  }\n"
+end
+# Close out the section
+lua_file += "}\n"
+
+lua_file += "OB_MODULES[\"monster_mash\"] =\n"
+lua_file += "{\n"
+lua_file += "  name = \"monster_mash_control,\"\n"
+lua_file += "  label = _(\"Monster Mash\"),\n"
+lua_file += "  game = \"doomish\",\n"
+lua_file += "  port = \"zdoom\",\n"
+lua_file += "  tables =\n"
+lua_file += "  {\n"
+lua_file += "    MONSTER_MASH\n"
+lua_file += "  },\n"
+lua_file += "  hooks =\n"
+lua_file += "  {\n"
+lua_file += "    setup = MONSTER_MASH.control_setup\n"
+lua_file += "  },\n"
+lua_file += "  options =\n"
+lua_file += "  {\n"
+
+actordb.each do |actor|
+  next if actor.ismonster == false && actor.monster == false
+  lua_file += "    {\n"
+  lua_file += "      name = \"float_#{actor.name}\",\n"
+  lua_file += "      label = _(\"#{actor.name_with_case}\"),\n"
+  lua_file += "      valuator = \"slider\",\n"
+  lua_file += "      min = 0,\n"
+  lua_file += "      max = 20,\n"
+  lua_file += "      increment = .02,\n"
+  lua_file += "      default = _(\"Default\"),\n"
+  lua_file += "      nan = _(\"Default\"),\n"
+  lua_file += "      tooltip = _(\"Control the amount of #{actor.name_with_case}\"),\n"
+  lua_file += "      presets = _(\"0:0 (None at all,.02:0.02 (Scarce),.14:0.14 (Less),.5:0.5 (Plenty),1.2:1.2 (More),3:3 (Heaps),20:20 (INSANE)\"),\n"
+  lua_file += "      randomize_group = \"monsters\",\n"
+  lua_file += "    },\n"
+end
+
+lua_file += "  },\n"
+lua_file += "}\n"
+
+puts lua_file
 ###########################
 ###########################
 ###########################
