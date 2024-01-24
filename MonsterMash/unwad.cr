@@ -8,7 +8,11 @@ require "digest/sha256"
 
 # Other Code Specific To MonsterMash
 require "./requires/classes.cr"
+
+# Import DoomEdNums from module
+#doomednum_info = Hash(Int32, Tuple(Int32, Int32)).new
 require "./requires/doomednums.cr"
+doomednum_info = DoomEdNums.id_numbers
 
 jeutoolexe = ""
 
