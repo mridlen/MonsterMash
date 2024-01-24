@@ -46,6 +46,11 @@ MonsterMash
 README.md
 ```
 
+Then run it
+```
+cd MonsterMash
+crystal unwad.cr
+```
 Tested on v7.x or higher Obsidian and new "unstable" v21. Both seem to work ok.
 
 ## Prerequisites
@@ -61,8 +66,3 @@ Install OpenSSL Development:
 - Linux (Fedora):
 ```sudo dnf install openssl-devel```
 
-## Run it
-
-I'll be building executable binaries for each OS once the bugs get resolved but for now:
-
-```crystal unwad.cr```
