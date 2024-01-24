@@ -3319,11 +3319,11 @@ lua_file += "MONSTER_MASH.MONSTERS =\n"
 lua_file += "{\n"
 
 actordb.each do |actor|
-  next if actor.ismonster == false && actor.monster == false
+  next if (actor.ismonster == false && actor.monster == false) || actor.doomednum == -1
   lua_file += "  #{actor.name} =\n"
   lua_file += "  {\n"
   lua_file += "    id = #{actor.doomednum},\n"
-  lua_file += "    r = #{actor.radius},\n"
+  lua_file += "    r = #{actor.radius.to_i},\n"
   lua_file += "    h = #{actor.height},\n"
   lua_file += "    prob = 30,\n"
   lua_file += "    health = #{actor.health},\n"
@@ -3337,7 +3337,7 @@ lua_file += "}\n"
 
 lua_file += "OB_MODULES[\"monster_mash\"] =\n"
 lua_file += "{\n"
-lua_file += "  name = \"monster_mash_control,\"\n"
+lua_file += "  name = \"monster_mash_control\",\n"
 lua_file += "  label = _(\"Monster Mash\"),\n"
 lua_file += "  game = \"doomish\",\n"
 lua_file += "  port = \"zdoom\",\n"
@@ -3353,7 +3353,7 @@ lua_file += "  options =\n"
 lua_file += "  {\n"
 
 actordb.each do |actor|
-  next if actor.ismonster == false && actor.monster == false
+  next if (actor.ismonster == false && actor.monster == false) || actor.doomednum == -1
   lua_file += "    {\n"
   lua_file += "      name = \"float_#{actor.name}\",\n"
   lua_file += "      label = _(\"#{actor.name_with_case}\"),\n"
@@ -3373,6 +3373,8 @@ lua_file += "  },\n"
 lua_file += "}\n"
 
 puts lua_file
+
+File.write("../modules/monster_mash.lua", lua_file)
 ###########################
 ###########################
 ###########################
