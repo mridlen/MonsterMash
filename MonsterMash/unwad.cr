@@ -8,6 +8,7 @@ require "digest/sha256"
 
 # Other Code Specific To MonsterMash
 require "./requires/classes.cr"
+require "./requires/doomednums.cr"
 
 jeutoolexe = ""
 
@@ -41,127 +42,6 @@ actordb = Array(Actor).new
 duped_names_db = Array(DupedActorName).new
 duped_graphics_db = Array(DupedGraphics).new
 duped_doomednum_db = Array(DupedDoomednums).new
-
-##########################################
-# Obsidian Reserved Doomednums
-##########################################
-# It is necessary to define these doomednums since we will be handing out unique IDs to all
-# monsters that have conflicting IDs, as well as assigning new IDs to monsters that don't have one
-##########################################
-
-# Hash definition
-doomednum_info = Hash(Int32, Tuple(Int32, Int32)).new
-
-#992 - WADFAB_REACHABLE - this force Obsidian to generate enclosed or closed sectors.
-doomednum_info[992] = {-1, -1}
-# 995 - this marks this sector as a MOVER (lift), and forces bottoms of sidedefs to be unpegged. (The lines composing the affected sector need the 991 action. It can also be used to force the generator into unpegging some surface the genny refuse to do itself!)
-doomednum_info[995] = {-1, -1}
-# 996 - this marks this sector as a DOOR, and forces the tops of sidedefs to be unpegged. (The lines composing the affected sector need the 991 action. It can also be used to force the generator into unpegging some surface the genny refuse to do itself!)
-doomednum_info[996] = {-1, -1}
-# 997 - WADFAB_DELTA - this combined with delta = X, in the prefab's lua will allow obsidian to lower sectors by the defined number under floor height 0 (otherwise sectors under height of 0 simply get booted back up to 0 and cleaned up).
-doomednum_info[997] = {-1, -1}
-# 987 - WADFAB_LIGHT_BRUSH - even if this sector is marked _NOTHING on the floor and ceiling, Obsidian will adopt the sector's brightness setting
-doomednum_info[987] = {-1, -1}
-
-# Reserved Thing IDs
-# 8166 - spot for a big item to pickup (Weapon, Key, Armor, Power-up). Can be influenced with item_kind field to limit what item this should be.
-doomednum_info[8166] = {-1, -1}
-# 8151 - spot for small pickups like armor and health bonus or small ammo drops.
-doomednum_info[8151] = {-1, -1}
-
-# Regular Monsters
-# 8102 - spot for a monster with a radius of 20 or less(Imps, Zombies, Revenants, Lost Souls, Archviles)
-doomednum_info[8102] = {-1, -1}
-# 8103 - same as above, but for monsters below a maximum radius of 32 or less(Pinkies, Cacodemons, Hell Knights, Barons, Pain Elementals)
-doomednum_info[8102] = {-1, -1}
-# 8104 - same as above, but for monsters below a maximum radius of 48 or less(Mancubi, Cyberdemons)
-doomednum_info[8104] = {-1, -1}
-# 8106 - same as above, but for monsters below a maximum radius of 64 or less(Arachnotrons)
-doomednum_info[8106] = {-1, -1}
-# 8108 - same as above, but for monsters below a maximum radius of 128 or less (Masterminds)
-doomednum_info[8108] = {-1, -1}
-
-# Flying Monsters
-# 8112,8113,8114,8116,8118 - same template pattern as regular monsters, but capable of flight
-doomednum_info[8112] = {-1, -1}
-doomednum_info[8113] = {-1, -1}
-doomednum_info[8114] = {-1, -1}
-doomednum_info[8116] = {-1, -1}
-doomednum_info[8118] = {-1, -1}
-
-# Caged Monsters
-# 8122,8123,8124,8126,8128 - same template pattern as regular monsters, but spawn in cages and have projectile/missile attacks
-doomednum_info[8122] = {-1, -1}
-doomednum_info[8123] = {-1, -1}
-doomednum_info[8124] = {-1, -1}
-doomednum_info[8126] = {-1, -1}
-doomednum_info[8128] = {-1, -1}
-
-# Closet / Trap Monsters
-# 8132,8133,8134,8136,8138 - same template pattern as regular monsters, but spawn in monster closets or traps
-doomednum_info[8132] = {-1, -1}
-doomednum_info[8133] = {-1, -1}
-doomednum_info[8134] = {-1, -1}
-doomednum_info[8136] = {-1, -1}
-doomednum_info[8138] = {-1, -1}
-
-# Lights
-# 14999 White
-doomednum_info[14999] = {-1, -1}
-# 14998 Red
-doomednum_info[14998] = {-1, -1}
-# 14997 Orange
-doomednum_info[14997] = {-1, -1}
-# 14996 Yellow
-doomednum_info[14996] = {-1, -1}
-# 14995 Blue
-doomednum_info[14995] = {-1, -1}
-# 14994 Green
-doomednum_info[14994] = {-1, -1}
-# 14993 Beige
-doomednum_info[14993] = {-1, -1}
-# 14992 Purple
-doomednum_info[14992] = {-1, -1}
-
-# Custom decorations
-# 27000 Hospital blood pack
-doomednum_info[27000] = {-1, -1}
-# 27001 Fire
-doomednum_info[27001] = {-1, -1}
-# 27002 Fire with debris
-doomednum_info[27002] = {-1, -1}
-
-# Reserved Linedefs
-# 888 - this linedef will be used as a switch for quest generation in Obsidian e.g. this switch can open some other switched door in the level.
-doomednum_info[888] = {-1, -1}
-
-# Fauna Module
-# ScurryRat
-doomednum_info[30100] = {-1, -1}
-# SpringyFly
-doomednum_info[30000] = {-1, -1}
-
-# Ranges for Frozsoul's Ambient Sounds
-# We don't technically need to avoid all of them, there are only 26 sounds.
-# But since we are only losing 26 IDs per 2000, there are plenty of IDs to be had.
-# 20000-20025, 22000-22025, 24000-24025, 26000-26025, 28000-28025, 30000-30025
-ranges = [
-  20000..20025,
-  22000..22025,
-  24000..24025,
-  26000..26025,
-  28000..28025,
-  30000..30025
-]
-
-ranges.each do |range|
-  range.each do |id|
-    doomednum_info[id] = {-1, -1}
-  end
-end
-
-puts "Reserved Doomednums Loaded:"
-puts doomednum_info
 
 ##########################################
 # CREATE DIRECTORIES
@@ -288,7 +168,7 @@ full_dir_list.each do |file_path|
     #puts "Output file 1 (comment removal): #{dest_path_one}"
     #dest_path_two = File.dirname(file_path) + "/" + File.basename(file_path) + ".nocomments2"
     #puts "Output file 2 (comment removal): #{dest_path_two}"
-      
+
     # Remove block quotes - globally to the entire file
     # puts "Removing block quotes..."
     # input_string = File.read(file_path)
@@ -297,7 +177,7 @@ full_dir_list.each do |file_path|
 
     input_file = File.read(file_path)
     #output_file = File.open(dest_path_two, "w")
-    
+
     # Per line processing
     puts "Per line processing..."
     input_file.each_line do |line|
@@ -316,12 +196,12 @@ full_dir_list.each do |file_path|
           full_dir_list << new_directory
           no_touchy[new_directory] = false
         end
-        
+
         # put curly braces on their own line
         #line = line.gsub(/.+(\{|\})/) do |match|
         #  "\n#{match}"
         #end
-        
+
         #output_file.puts(line)
         # This block is deprecated but I might need to refer to this code later
         # if line =~ /^\s*actor/i # insert a line break prior to the first
@@ -329,7 +209,7 @@ full_dir_list.each do |file_path|
         # actor (the part before the first line break) #puts "Actor: " +
         # line.gsub(/\n.+$/, "")
         #end
-        
+
       end
     end
 
@@ -376,7 +256,7 @@ full_dir_list.each do |file_path|
   # split on "actor" preserving the word "actor" in the text
   input_text = input_text.gsub(/^actor\s+/im, "SPECIALDELIMITERactor ")
   actors = input_text.split("SPECIALDELIMITER")
- 
+
   # I might revisit this method later, but for now this is not quite working... :-/
   # actors = input_text.split(/^actor\s+([^\{]*\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi, remove_empty: true)
 
@@ -388,12 +268,12 @@ full_dir_list.each do |file_path|
 
   # Remove empty strings from the resulting array
   actors.reject! { |actor| actor.strip.empty? }
-  
+
   #actors.compact!
 
   puts "File Path: #{file_path}"
   puts "Actors:"
- 
+
   actors.each_with_index do |actor, actor_index|
     puts "Actor (#{actor_index}):"
     puts "-----------"
@@ -406,7 +286,7 @@ full_dir_list.each do |file_path|
     puts actor_no_states
     puts "==========="
   end
- 
+
   actors.each_with_index do |actor, actor_index|
     # parse the actor's states, if any
     states_raw = actor.gsub(/^states\n/im, "SPECIALDELIMITERstates\n")
@@ -417,7 +297,7 @@ full_dir_list.each do |file_path|
     states_array = nil
     if states_raw_split.size > 1
       states_unformatted = states_raw_split[1]
-      
+
       unless states_unformatted.nil?
         states_unformatted = states_unformatted.split("{")[1]
         states_unformatted = states_unformatted.split("}")[0]
@@ -443,7 +323,7 @@ full_dir_list.each do |file_path|
         states[key] = value
       end
     end
-    
+
     puts "States before:"
     puts states_text
     puts "States after:"
@@ -460,10 +340,10 @@ full_dir_list.each do |file_path|
     # actor blah :        oldblah 1234
     # actor blah :        oldblah replaces oldblah
     # actor blah :        oldblah replaces oldblah 1234
- 
+
     #actor_no_states = actor.gsub(/states\s*{[^{}]*}/mi, "")
-    actor_with_states = actor 
-    actor_no_states = actor.gsub(/states\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi, "") 
+    actor_with_states = actor
+    actor_no_states = actor.gsub(/states\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi, "")
     lines = actor_no_states.lines
 
     # get a case sensitive version
@@ -1763,7 +1643,7 @@ full_dir_list.each do |file_path|
               missing_flag = missing_actor_flags[flag_name]
             else
               missing_flag = Array(String).new
-            end 
+            end
             missing_flag << new_actor.source_wad_folder
             missing_actor_flags[flag_name] = missing_flag
             missing_actor_flags[flag_name].uniq!
@@ -2198,7 +2078,7 @@ full_dir_list.each do |file_path|
         new_actor.inventory.restricted_to = line.split[1..-1].join(' ')
 
       elsif property_name == "fakeinventory.respawns"
-        puts "  - FakeInventory.Respawns" 
+        puts "  - FakeInventory.Respawns"
         new_actor.fakeinventory.respawns = true
 
       elsif property_name == "armor.saveamount"
@@ -2508,7 +2388,7 @@ full_dir_list.each do |file_path|
       elsif property_name == "morphprojectile.unmorphflash"
         puts "    - morphprojectile.unmorphflash: " + line.split[1..-1].join(' ')
         new_actor.morphprojectile.unmorphflash = line.split[1..-1].join(' ')
-      
+
       # Exclude any rouge curly brackets or include statements
       elsif property_name == "{" || property_name == "}" || property_name == "#include"
         # ignore these and do nothing
@@ -2759,7 +2639,7 @@ actors_by_name.each_key do |key|
         puts "Primary:"
       end
       puts "Actor File: #{actor.file_path}"
-      
+
       # do a gsub for every file in the defs folder of that wad
       # (?<=[\s"])WyvernBall(?=[\s"])
       # remove the last field of the file path, which is the file name
@@ -2796,7 +2676,7 @@ actordb.each_with_index do |actor, actor_index|
   next if actor.native == true
   #check if the actor still exists
   regex = /^\s*actor\s+#{actor.name}/mi
-  file_text_array = Array(String).new 
+  file_text_array = Array(String).new
   file_text = File.read(actor.file_path)
   file_text_array << file_text
   success = false
@@ -2819,7 +2699,7 @@ actordb.each_with_index do |actor, actor_index|
     puts "Removing missing actor from actordb: #{actor.name} - #{actor.file_path}"
     deletion_indexes << actor_index
   end
-end 
+end
 deletion_indexes.reverse!
 if deletion_indexes.empty? == false
   deletion_indexes.each do |deletion_index|
@@ -3076,7 +2956,7 @@ end
 #        if original_sprites.fetch(sprite_inside.split("/").last, nil) != nil
 #          #Not a Dupe
 #        else
-#          
+#
 #        end
 #      end
 #    end
@@ -3193,7 +3073,7 @@ sprite_prefix.each do |key, prefix|
       break
     end
   end
-  
+
   # stop burning CPU for this prefix if no dupes
   if dupe_exists == false
     puts "NO DUPES"
@@ -3395,7 +3275,7 @@ actordb.each_with_index do |actor, actor_index|
     puts "  Index 2: #{actor_index}"
     puts "  Source: #{actordb[name_info[actor.name][0]].source_wad_folder}"
     puts "  Source: #{actor.source_wad_folder}"
-    
+
     new_dupe_name = DupedActorName.new(actor.name, actor.source_wad_folder, actordb[name_info[actor.name][0]].source_wad_folder, actordb[name_info[actor.name][0]].file_path)
     duped_names_db << new_dupe_name
   else
@@ -3532,7 +3412,7 @@ duped_names_db.each_with_index do |duped_actor, duped_actor_index|
         elsif line.downcase.includes?("\"#{duped_actor.name.downcase}\"")
           puts "Line (#{line_number}) matches: #{line}"
           actor_regex = "#{duped_actor.name}"
-          replacement_line = line.gsub(/#{actor_regex}/i, substitute_actor) 
+          replacement_line = line.gsub(/#{actor_regex}/i, substitute_actor)
           puts "Replacement Line: #{replacement_line}"
           itemized_line_replacement = {file, line_number + 1, replacement_line}
           itemized_line_replacements << itemized_line_replacement
@@ -3656,7 +3536,7 @@ actordb.each_with_index do |actor, actor_index|
   puts "-----------------"
   puts "Actor: #{actor.name}"
   while inherited_actor_name != "UNDEFINED"
-    puts "Inherits: #{inherited_actor_name}" 
+    puts "Inherits: #{inherited_actor_name}"
     inheritance_info[inheritance_depth] = inherited_actor_name
     inheritance_depth += 1
     if name_info.fetch(inherited_actor_name, nil)
@@ -3680,7 +3560,7 @@ actordb.each_with_index do |actor, actor_index|
     else
       puts "Error: inherited actor #{inherited_actor_name} is not present in source wads"
       break
-    end    
+    end
   end
 end
 
@@ -3708,7 +3588,7 @@ actordb.each_with_index do |actor, actor_index|
         end
       end
     end
-    
+
     file_list = file_list.uniq
 
     puts "File list: #{file_list}"
@@ -3723,7 +3603,7 @@ actordb.each_with_index do |actor, actor_index|
             puts "ACTOR DETECTED: #{line}"
             parts = line.strip.split(/\s+/)
             puts "ACTOR: #{parts[1]}"
-             
+
 
             # doomednum goes at the end, so we just need to evaluate if there is
             # any comments
