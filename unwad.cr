@@ -3330,7 +3330,7 @@ actordb.each do |actor|
   lua_file += "    damage = 10,\n"
   lua_file += "    attack = \"missile\",\n"
   lua_file += "    density = 0.9\n"
-  lua_file += "  }\n"
+  lua_file += "  },\n"
 end
 # Close out the section
 lua_file += "}\n"
