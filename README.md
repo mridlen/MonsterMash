@@ -39,7 +39,8 @@ If you want to do it anyway: try it and see if it works. If it does, great! If n
 Download code and put the folder in Obsidian/addons/
 
 It should look like this
-```Obsidian/addons/MonsterMash$ ls -1
+```
+Obsidian/addons/MonsterMash$ ls -1
 modules
 MonsterMash
 README.md
