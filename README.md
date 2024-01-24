@@ -1,3 +1,19 @@
 # MonsterMash
 
-This code is a work in progress, and is not working yet or ready for public consumption (although feel free to publicly consume it, should the code be useful to you)
+## Usage
+
+Download code and put in Obsidian/addons/MonsterMash/MonsterMash/<git contents> (I need to fix this directory structure)
+
+## Prerequisites
+
+Install Crystal:
+
+- Windows: install WSL and Crystal WSL
+
+- Linux: install Crystal
+
+Install OpenSSL Development:
+
+- Linux (Fedora):
+```sudo dnf install openssl-devel```
+
