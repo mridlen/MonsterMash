@@ -3238,6 +3238,7 @@ sprite_prefix.each do |key, prefix|
   puts "wads_with_prefix:"
   puts wads_with_prefix.inspect
 
+  # rename the files
   wads_with_prefix.each_with_index do |prefix, index|
     # skip the first entry which is the original
     next if index == 0
@@ -3253,8 +3254,55 @@ sprite_prefix.each do |key, prefix|
       File.rename(sprite, new_path)
     end
   end
+
+  # rename the animations in decorate
+  wads_with_prefix.each_with_index do |prefix, index|
+    # skip the first entry which is the original
+    next if index == 0
+    list_of_decorate = Dir.glob("./Processing/#{prefix[0]}/defs/DECORATE.raw")
+    # populate includes
+    list_of_decorate.each do |decorate|
+      decorate_text = File.read(decorate)
+      decorate_text.each_line do |decorate_line|
+        if decorate_line =~ /^\s*\#include\s+/i
+          list_of_decorate << "./Processing/#{prefix[0]}/defs/#{decorate_line.split("\"")[1].upcase}.raw"
+        end
+      end
+    end
+    list_of_decorate.each do |decorate|
+      puts "Checking file #{decorate}..."
+      decorate_text = File.read(decorate)
+      decorate_text_lines = decorate_text.lines
+      decorate_text_lines.each_with_index do |decorate_line, decorate_line_index|
+        if decorate_line =~ /^\s*#{key}\s+/i
+          puts "Matched line..: #{decorate_line}"
+          decorate_text_lines[decorate_line_index] = decorate_line.sub(key, prefix[1])
+          puts "Corrected line: #{decorate_text_lines[decorate_line_index]}"
+        end
+      end
+      decorate_text = decorate_text_lines.join("\n")
+      File.write(decorate, decorate_text)
+    end
+  end
 end
 
+# Delete "maps" folders - we are not merging maps, those will be generated with Obsidian
+map_folders = Dir.glob("./Processing/*/maps/")
+map_folders.each do |folder|
+  FileUtils.rm_r(folder)
+end
+
+# Compile the folders back into wads
+puts "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
+puts "@ CREATING WADS AGAIN               @"
+puts "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
+wad_directories = Dir.glob("./Processing/*/")
+puts wad_directories.sort.inspect
+# ./jeutool-linux build ./Completed/Reaper.wad ./Processing/Reaper/
+wad_directories.each do |wad_directory|
+  wad_destination = "./Completed/#{wad_directory.split("/")[2]}.wad"
+  system "./#{jeutoolexe} build \"#{wad_destination}\" \"#{wad_directory}\""
+end
 ###########################
 ###########################
 ###########################
