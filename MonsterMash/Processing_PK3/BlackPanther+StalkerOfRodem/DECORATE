@@ -1,0 +1,148 @@
+#include "./Scripts/Blackpanther"
+
+ACTOR BlackPanther
+{
+  Health 300
+  PainChance 200
+  Speed 10
+  Radius 20
+  Height 32
+  Mass 75
+  Meleedamage 3
+  Meleerange 40
+  Meleesound "BlackPanther/attack"
+  Maxtargetrange 192
+  Meleethreshold 96
+  GibHealth 8
+  Monster
+  +FLOORCLIP
+  +FASTER
+  +FASTMELEE
+  SeeSound "BlackPanther/sight"
+  PainSound "BlackPanther/pain"
+  DeathSound "BlackPanther/death"
+  ActiveSound "BlackPanther/active"
+  AttackSound "BlackPanther/attack"
+  Obituary "%o was mauled by a Black Panther."
+  States
+  {
+  Spawn:
+    BPNT A 10 A_Look
+    Loop
+  See:
+    BPNT BBCCDDEEFF 2 A_Chase
+    Loop
+  Missile:
+    BPNT A 2 A_FaceTarget
+    BPNT A 0 A_PlaySound ("BlackPanther/attack")
+    BPNT A 0 ThrustThingZ (0, 24, 0, 0)
+    BPNT A 0 ThrustThing (angle*256/360, 12, 0, 0)
+  JumpUp:
+    BPNT G 8
+    BPNT H 2
+  JumpDown:
+    BPNT I 2 
+    BPNT I 1 A_CheckFloor ("Land")
+    loop
+  Land:
+    BPNT A 2 A_Stop
+    goto See
+  Melee:
+    BPNT GH 4 A_FaceTarget
+    BPNT I 4 A_MeleeAttack
+    BPNT HA 4 A_FaceTarget
+    Goto See
+  Pain:
+    BPNT H 2
+    BPNT H 2 A_Pain
+    Goto See
+  Death:
+    BPNT J 4 A_Scream
+    BPNT K 4 A_NoBlocking
+    BPNT L 4
+    BPNT M 4
+    BPNT N 140
+    BPNT O 4 A_PlaySound ("misc/gibbed")
+    BPNT A 4 
+    BPNT P 4 A_PlaySound ("BlackPanther/Morph")
+    BPNT Q 4
+    BPNT R 4 A_SpawnItemEX("StalkerOfRodem",0,0,0,0,0,0,0,SXF_NOCHECKPOSITION|SXF_SETMASTER)
+	Stop
+  XDeath:
+    BPNT S 4 A_XScream
+    BPNT T 4 A_NoBlocking
+    BPNT U 4
+    BPNT V 4
+    BPNT W 4
+    BPNT X -1
+	Stop
+  Raise:
+    BPNT MLKJ 4
+    Goto See
+  }
+}
+
+ACTOR StalkerOfRodem : HellKnight
+{
+	Health 600
+	Speed 10
+	-BOSSDEATH
+	SeeSound "Rodem/Sight"
+	ActiveSound "Rodem/Active"
+	PainSound "Rodem/Pain"
+	DeathSound "knight/death"
+	HitObituary "%o was shred to pieces by a Stalker of Rodem."
+	Obituary "%o was torn apart by a Stalker of Rodem"
+	States
+	{
+	Spawn:
+		RDEM AB 10 A_Look 
+		Loop
+	See:
+		RDEM AABBCCDD 3 A_Chase
+		Loop
+	Melee:
+	Missile:
+		RDEM EF 8 A_FaceTarget
+		RDEM G 8 A_CustomComboAttack("RodemBall", 32, 8 * random(1, 8), "baron/melee")
+		Goto See
+	Pain:
+		RDEM H  2
+		RDEM H  2 A_Pain
+		Goto See
+	Death:
+		RDEM I  8
+		RDEM J  8 A_Scream
+		RDEM K  8
+		RDEM L  8 A_NoBlocking
+		RDEM MN 8
+		RDEM O -1
+		Stop
+	Raise:
+		RDEM O 8
+		RDEM NMLKJI  8
+		Goto See
+	}
+}
+
+ACTOR RodemBall : BaronBall
+{
+	Damage 8
+	Projectile 
+	+RANDOMIZE
+	RenderStyle Add
+	Alpha 1
+	SeeSound "baron/attack"
+	DeathSound "baron/shotx"
+	Decal "BaronScorch"
+	States
+	{
+	Spawn:
+		BPBL AB 4 BRIGHT
+		Loop
+	Death:
+		BPBL CDE 6 BRIGHT
+		Stop
+	}
+}
+

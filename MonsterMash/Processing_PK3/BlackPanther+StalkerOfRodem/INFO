@@ -1,0 +1,22 @@
+Info:
+Name: Black Panther
+Difficulty: Easy
+Connection: Stalker of Rodem
+Summon: BlackPanther
+Melee: Yes
+Distance: Leap
+Type: Animal, Demon
+
+Name: Stalker of Rodem
+Difficulty: Medium
+Connection: Black Panther
+Summon: StalkerOfRodem
+Melee: Yes
+Distance: Yes, Baron Ball
+Type: Animal, Demon
+GLDEFs: Yes
+Actor modification: None
+ACS: None
+
+Description:
+A spirit entity that takes the shape of a black panther, which chases you until it finds its delicious meal. Make sure it dies in a blast, otherwise, it will revive and transform into its true form, known as the Stalker of Rodem, where it will be more pissed than before.
