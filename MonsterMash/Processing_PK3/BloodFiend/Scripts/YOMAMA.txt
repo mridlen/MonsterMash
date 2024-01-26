@@ -1,3 +1,0 @@
-#include "./YODADDY.txt"
-#include "../YODADDY.txt"
-Class YoOtherMama : DoomImp { }

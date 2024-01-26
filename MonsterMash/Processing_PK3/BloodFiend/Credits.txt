@@ -1,6 +1,0 @@
-Code: Amuscaria (Original, Hell-Forged), Ghastly (ZScript conversion), PGE (Grandfathered in Hell-Forged sprites)
-Sounds: Id Software, Raven Software, Midway
-GLDefs: Gothic (Brightmaps)
-Sprites: Id Software
-Sprite Edit: Amuscaria
-Idea Base: Doom Demon
