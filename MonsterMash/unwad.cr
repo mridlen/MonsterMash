@@ -401,7 +401,6 @@ full_dir_list = built_in_actors + zscript_processing_files + zscript_files_pk3 +
 puts full_dir_list
 puts "-----"
 puts script_type.inspect
-exit(0)
 
 missing_property_names = Hash(String, Array(String)).new
 missing_actor_flags = Hash(String, Array(String)).new
@@ -414,7 +413,7 @@ full_dir_list.each do |file_path|
     # grabbing the wad file source folder name - split on "/" and grab element 2
     # which is essentially the wad name without ".wad" at the end
 
-    decorate_source_file = file_path.split(/\//)[4]
+    decorate_source_file = file_path.split("/").last
     puts "#{wad_folder_name}"
 
     # Per line processing
@@ -431,7 +430,8 @@ full_dir_list.each do |file_path|
     input_text = input_text.gsub(/^\s*/, "")
     # file paths are a little different...
     # We want to set the "decorate_source_file" as
-    decorate_source_file = file_path.split(/\//)[3]
+    puts "file_path: #{file_path}"
+    decorate_source_file = file_path.split("/").last
   end
 
   # remove "//" comments
@@ -478,6 +478,9 @@ full_dir_list.each do |file_path|
     actors = input_text.scan(/^\h*actor\N*\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi)
   end
 
+  # transform regex match to strings
+  actors = actors.nil? ? [] of String : actors.map {|match| match.to_s }
+
   puts "Actors:"
   actors.each do |actor|
    puts actor
@@ -494,7 +497,8 @@ full_dir_list.each do |file_path|
     ## states_raw = actor.gsub(/^states\n/im, "SPECIALDELIMITERstates\n")
     ## states_raw_split = states_raw.split("SPECIALDELIMITER")
 
-    states_raw_split = actor.match(/^\h*states\N*\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi).to_s
+    states_raw_split = actor.scan(/^\h*states\N*\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi)
+    states_raw_split = states_raw_split.nil? ? [] of String : states_raw_split.map {|match| match.to_s }
 
     # THIS BLOCK I AM CONSIDERING REFACTORING AS I THINK WE CAN DO BETTER
     # AND I DON'T THINK THERE IS ANYTHING DEPENDENT ON IT
@@ -549,27 +553,38 @@ full_dir_list.each do |file_path|
     # actor blah :        oldblah replaces oldblah
     # actor blah :        oldblah replaces oldblah 1234
     #
-    # ZSCRIPT
+    # ZSCRIPT does not assign doomednums, which simplifies things
     # 0     1    2        3        4        5       6       7
+    # class blah
     # class blah :        actor
+    # class blah replaces oldblah
     # class blah :        actor    replaces oldblah
-    # class blah replaces oldblah  1234
-    # class blah :        oldblah
-    # class blah :        oldblah  1234
-    # class blah :        oldblah  replaces oldblah
-    # class blah :        oldblah  replaces oldblah 1234
+    #
+    # either type can have "native" at the end, but that gets ignored
+    # so I think the sorting logic should work for both DECORATE and ZSCRIPT
 
     #this has the full actor text in case we need to search it later
     actor_with_states = actor
 
     if script_type[file_path] == "DECORATE"
-      actor_no_states = actor.gsub(/states\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi, "")
+      actor_no_states = actor.to_s.gsub(/states\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi, "")
     elsif script_type[file_path] == "BUILT_IN" || script_type[file_path] == "ZSCRIPT"
       # we need to grab the match which will return the results with curly braces included
       # we also need the first line of the actor so that we can evaluate
       # actor name, inheritance, replaces
-      actor_no_states = actor.lines.first + "\n" actor.match(/^\h*default\N*\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi)[1]
+      actor_no_states_match = actor.match(/^\h*default\N*\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi)
+      if actor_no_states_match
+        actor_no_states = actor.to_s.lines.first + "\n" + actor_no_states_match[1].to_s
+      else
+        actor_no_states = actor.to_s.lines.first
+      end
     end
+
+    break if actor_no_states.nil?
+
+    # remove any semicolons, and add a line break in case there are multiple
+    # directives on one line... empty lines get removed anyway
+    actor_no_states = actor_no_states.gsub(";", "\n")
 
     # split the actor_without_states into separate lines
     lines = actor_no_states.lines
@@ -1897,7 +1912,8 @@ full_dir_list.each do |file_path|
         new_actor.tag = line.split[1..-1].join(' ')
       elsif property_name == "health" && new_actor.name.downcase.strip != "health"
         puts "  - Health: " + line.split[1]?.to_s
-        new_actor.health = line.split[1].to_i
+        # adding {0} default value as hacky solution to enums for health value
+        new_actor.health = line.split[1].to_i {0}
       elsif property_name == "gibhealth"
         puts "  - GibHealth: " + line.split[1]?.to_s
         new_actor.gib_health = line.split[1].to_i
@@ -2576,7 +2592,7 @@ full_dir_list.each do |file_path|
         new_actor.powerup.mode = line.split[1]?.to_s
       elsif property_name == "powerup.strength"
         puts "    - powerup.strength: " + line.split[1..-1].join(' ')
-        new_actor.powerup.strength = line.split[1].to_i
+        new_actor.powerup.strength = line.split[1].to_f
 
       # PowerSpeed
       elsif property_name == "powerspeed.notrail"
@@ -2721,6 +2737,8 @@ identical_actors.each do |actor|
   #puts "#{actor.full_actor_text}"
 end
 
+exit(0)
+
 # Remove the offending actors from their respective wad file
 # ------------------------------------------------------------
 # Here is the logic in plain english
@@ -2753,7 +2771,15 @@ identical_actors.each_with_index do |actor, actor_index|
   puts "Identical Actors Index: #{actor_index}"
   file_text = File.read(actor.file_path)
 
-  regex = /^[\ \t]*actor\s+#{actor.name}\s+[^{]*\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi
+  if script_type[actor.file_path] == "ZSCRIPT"
+    regex = /^[\ \t]*class\s+#{actor.name}\s+[^{]*\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi
+  elsif script_type[actor.file_path] == "DECORATE"
+    regex = /^[\ \t]*actor\s+#{actor.name}\s+[^{]*\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi
+  elsif script_type[actor.file_path] == "BUILT_IN"
+    #take no action, since this is a built in actor
+    puts "Built In Actor: #{actor.name_with_case}. Skipping..."
+    next
+  end
 
   puts "Removing Actor:"
   puts file_text.partition(regex)[1]
@@ -3182,7 +3208,7 @@ def increment_prefix(original_string : String, sprite_prefix : Hash(String, Arra
     #error protection, check for numbers or 5 char prefixes
     if original_string_modified =~ /^[0-9]/ || original_string_modified.size > 4
       puts "Fatal Error: prefix \"#{original_string_modified}\" starts with digit or is larger than 4 characters"
-      exit(0)
+      exit(1)
     end
   end
   puts "Found Available Prefix: #{original_string_modified}"

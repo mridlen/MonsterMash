@@ -10,7 +10,7 @@ class DupedActorName
   property wad_name : String
   property duped_wad_name : String
   property duped_wad_file_path : String
- 
+
   def initialize(@name : String, @wad_name : String, @duped_wad_name : String, @duped_wad_file_path : String)
   end
 end
@@ -265,8 +265,8 @@ class Powerup
   # format: probably usually int value but could be hex like 0x7FFFFFFD
   property duration : String = "UNDEFINED"
   property mode : String = "UNDEFINED"
-  property strength : Int32 = 0
-  
+  property strength : Float64 = 0
+
   # technically from PowerupGiver class, which only addes this property
   property type : String = "UNDEFINED"
 end
@@ -358,7 +358,7 @@ class Actor
 
   # States will be stored in a hash
   property states : Hash(String, String) = Hash(String, String).new
-  
+
   # and here we go with the properties inside the DECORATE...
   property game : String = "Doom"
   property spawn_id : Int32 = 0
