@@ -2893,6 +2893,11 @@ actors_by_name.each_key do |key|
         #puts "@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
         #puts file_text
         renamed_actor = "#{actor.name_with_case}_MM#{actor_counter.to_s}"
+        # the actor name should either be surrounded by spaces
+        # ' actorname '
+        # or by quotes
+        # '"actorname"'
+        # which is what [\s"] accomplishes in the regex
         file_text = file_text.gsub(/(?<=[\s"])#{actor.name_with_case}(?=[\s"])/, renamed_actor)
         #puts "@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
         #puts "File Text Post:"
@@ -2912,7 +2917,13 @@ deletion_indexes = Array(Int32).new
 actordb.each_with_index do |actor, actor_index|
   next if actor.native == true
   #check if the actor still exists
-  regex = /^\s*actor\s+#{actor.name}/mi
+  if script_type[actor.file_path] == "DECORATE"
+    regex = /^\h*actor\s+#{actor.name}/mi
+  elsif script_type[actor.file_path] == "ZSCRIPT"
+    regex = /^\h*class\s+#{actor.name}/mi
+  elsif script_type[actor.file_path] == "BUILT_IN"
+    next
+  end
   file_text_array = Array(String).new
   file_text = File.read(actor.file_path)
   file_text_array << file_text
@@ -2921,7 +2932,14 @@ actordb.each_with_index do |actor, actor_index|
     lines = text.lines
     lines.each do |line|
       if line =~ /^\#include/i
-        include_file = actor.file_path.split("/")[0..-2].join("/") + "/" + line.lstrip.strip.split[1].split('"')[1].upcase + ".raw"
+        if actor.file_path.split("/")[1] == "Processing"
+          include_file = actor.file_path.split("/")[0..-2].join("/") + "/" + line.lstrip.strip.split[1].split('"')[1].upcase + ".raw"
+        elsif actor.file_path.split("/")[1] == "Processing_PK3"
+          # an out of bounds include file should have already thrown a fatal error, so I think this is safe to do
+          include_file = "./" + Path[actor.file_path.split("/")[0..-2].join("/") + "/" + line.split('"')[1]].normalize.to_s
+        else
+          next
+        end
         #puts "Include File: #{include_file}"
         file_text = File.read(include_file)
         file_text_array << file_text
@@ -3059,7 +3077,7 @@ actordb.each do |actor|
     file_text = File.read(actor.file_path)
     lines = file_text.lines
     lines.each_with_index do |line, line_index|
-      if line =~ /^\s*actor\s+/i
+      if line =~ /^\h*actor\s+/i
         puts "actor_line: #{line}"
 
         delete_word = -1
@@ -3092,6 +3110,9 @@ actordb.each do |actor|
     File.write(actor.file_path, file_text)
   end
 end
+
+# Wipe any DoomEdNums from the MAPINFO files
+exit(0)
 
 # assign doomednums to all monster actors
 doomednum_counter = 15000
