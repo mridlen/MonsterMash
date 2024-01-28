@@ -3112,42 +3112,97 @@ actordb.each do |actor|
 end
 
 # Wipe any DoomEdNums from the MAPINFO files
+# looks for any 'doomednums {<code_here>}' section in MAPINFO and deletes it
+# case insensitive (i)
+mapinfo_files_pk3 = Dir.glob("./Processing_PK3/*/MAPINFO*")
+mapinfo_files_wad = Dir.glob("./Processing/*/MAPINFO")
+mapinfo_files_pk3.each do |mapinfo_file|
+  mapinfo_file_text = File.read(mapinfo_file)
+  mapinfo_file_text = mapinfo_file_text.gsub(/doomednums\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi, "")
+  File.write(mapinfo_file, mapinfo_file_text)
+end
+mapinfo_files_wad.each do |mapinfo_file|
+  mapinfo_file_text = File.read(mapinfo_file)
+  mapinfo_file_text = mapinfo_file_text.gsub(/doomednums\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi, "")
+  File.write(mapinfo_file, mapinfo_file_text)
+end
+# gsub(/doomednums\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi, "")
 exit(0)
 
 # assign doomednums to all monster actors
 doomednum_counter = 15000
 actordb.each_with_index do |actor, actor_index|
-  if (actor.built_in != true) && (actor.ismonster == true || actor.monster == true)
-    file_text = File.read(actor.file_path)
-    lines = file_text.lines
-    lines.each_with_index do |line, line_index|
-      if line =~ /^\s*actor\s+/i
-        words = line.lstrip.split
-        next if words[1].downcase != actor.name_with_case.downcase
-        puts "Monster Actor found (#{actor.name_with_case}): #{line}"
-        # set to size minus 1
-        early_end_index = (words.size - 1)
-        words.each_with_index do |word, word_index|
-          if word == "{" || word =~ /\//
-            early_end_index = word_index
+  if script_type[actor.file_path] == "DECORATE"
+    if (actor.built_in != true) && (actor.ismonster == true || actor.monster == true)
+      file_text = File.read(actor.file_path)
+      lines = file_text.lines
+      lines.each_with_index do |line, line_index|
+        if line =~ /^\s*actor\s+/i
+          words = line.lstrip.split
+          next if words[1].downcase != actor.name_with_case.downcase
+          puts "Monster Actor found (#{actor.name_with_case}): #{line}"
+          # set to size minus 1
+          early_end_index = (words.size - 1)
+          words.each_with_index do |word, word_index|
+            if word == "{" || word =~ /\//
+              early_end_index = word_index
+            end
           end
+          while true
+            break if doomednum_info.fetch(doomednum_counter, nil) == nil
+            doomednum_counter += 1
+          end
+          words.insert((early_end_index + 1), doomednum_counter.to_s)
+          doomednum_info[doomednum_counter] = {-1, -1}
+          actordb[actor_index].doomednum = doomednum_counter
+          lines[line_index] = words.join(" ")
+          puts "Modified line: #{lines[line_index]}"
         end
-        while true
-          break if doomednum_info.fetch(doomednum_counter, nil) == nil
-          doomednum_counter += 1
-        end
-        words.insert((early_end_index + 1), doomednum_counter.to_s)
-        doomednum_info[doomednum_counter] = {-1, -1}
-        actordb[actor_index].doomednum = doomednum_counter
-        lines[line_index] = words.join(" ")
-        puts "Modified line: #{lines[line_index]}"
       end
+      file_text = lines.join("\n")
+      File.write(actor.file_path, file_text)
+    else
+      #the actor is not a monster, so it will not be assigned a doomednum, and we will wipe it to -1 in the database
+      actordb[actor_index].doomednum = -1
     end
-    file_text = lines.join("\n")
-    File.write(actor.file_path, file_text)
-  else
-    #the actor is not a monster, so it will not be assigned a doomednum, and we will wipe it to -1 in the database
-    actordb[actor_index].doomednum = -1
+  elsif script_type[actor.file_path] == "ZSCRIPT"
+    # determine if a MAPINFO file exists, and create if not
+    mapinfo_file = actor.file_path.split("/")[0..2].join("/") + "/MAPINFO"
+    File.open(mapinfo_file, "w") do |file|
+      # just write a blank file and do nothing else
+    end
+
+    # determine if a DoomEdNums section exits, and create if not
+    mapinfo_file_text = File.read(mapinfo_file)
+    if mapinfo_file_text.match(/doomednums\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi) == nil
+      mapinfo_file_text = mapinfo_file_text + "\nDoomEdNums\n{\n\n}"
+    end
+
+    # Increment DoomEdNums counter to next available
+    while true
+      break if doomednum_info.fetch(doomednum_counter, nil) == nil
+      doomednum_counter += 1
+    end
+    doomednum_info[doomednum_counter] = {-1, -1}
+
+    # add doomednum to actordb
+    actordb[actor_index].doomednum = doomednum_counter
+
+    # insert new doomednum by replacing..
+    # before:
+    # DoomEdNums
+    # {
+    #
+    # after:
+    # DoomEdNums
+    # {
+    #   <id> = <actor_name>
+    mapinfo_file_text = mapinfo_file_text.gsub(/^\h*doomednums\s*\{/mi, "DoomEdNums\n{\n  #{doomednum_counter} = #{actor.name_with_case}\n")
+
+    # write file
+    File.write(mapinfo_file, mapinfo_file_text)
+  elsif script_type[actor.file_path] == "BUILT_IN"
+    next
   end
 end
 
@@ -3157,6 +3212,8 @@ end
 # sprites must be named identically and have identical contents #
 #################################################################
 sprites_files = Dir.glob("./Processing/*/sprites/*")
+sprites_pk3 = Dir.glob("./Processing_PK3/**/*").select { |entry| entry =~ /sprites/i }
+sprites_files = sprites_files + sprites_pk3
 sprites_files = sprites_files + Dir.glob("./IWADs_Extracted/*/sprites/*")
 
 #sprites_by_name = sprites_files
@@ -3199,10 +3256,14 @@ end
 # wad1 -> BLAH, BORK, FOOD
 # wad2 -> BLAH, BLA3, BOOP
 # sprite_prefix["BOOP"] = [{"./Processing/monsters/sprites/BOOPA1.raw", "sha_hash_text..."}]
-sprite_prefix = Hash(String, Array(Tuple(String, String))).new
 
-sprite_files = Dir.glob("./Processing/*/sprites/*")
-sprite_files = sprite_files + Dir.glob("./IWADs_Extracted/*/sprites/*")
+# after deleting the dupes, we need to rebuild the list
+sprite_prefix = Hash(String, Array(Tuple(String, String))).new
+sprites_files = Dir.glob("./Processing/*/sprites/*")
+sprites_pk3 = Dir.glob("./Processing_PK3/**/*").select { |entry| entry =~ /sprites/i }
+sprites_files = sprites_files + sprites_pk3
+sprites_files = sprites_files + Dir.glob("./IWADs_Extracted/*/sprites/*")
+
 sprite_files.each do |directory|
   # hash key is the first 4 characters
   # grab filename (last field in split), grab filename without extension, take first 4 chars, and ensure upper case
