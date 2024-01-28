@@ -3335,7 +3335,10 @@ sprite_prefix.each do |key, prefix|
     if pfix[0].split("/")[1] == "IWADs_Extracted"
       puts "IWAD Matched: #{pfix[0]}"
       iwad_has_prefix = true
-      original_wad_prefix = pfix[0].split("/")[2]
+      # we are going to take the first 3 fields
+      # ./Processing/<wadname>
+      # ./Processing_PK3/<pk3name>
+      original_wad_prefix = pfix[0].split("/")[0..2].join("/")
       wads_with_prefix[original_wad_prefix] = key
       break
     end
@@ -3343,7 +3346,7 @@ sprite_prefix.each do |key, prefix|
 
   # Set wad prefix to first in list if undefined
   if original_wad_prefix == "UNDEFINED"
-    original_wad_prefix = prefix[0][0].split("/")[2]
+    original_wad_prefix = prefix[0][0].split("/")[0..2].join("/")
     wads_with_prefix[original_wad_prefix] = key
   end
 
@@ -3352,8 +3355,8 @@ sprite_prefix.each do |key, prefix|
 
   # Step 2) build list of wads_with_prefix and assign new prefixes as needed
   prefix.each do |pfix|
-    if wads_with_prefix.fetch(pfix[0].split("/")[2], nil) == nil
-      wads_with_prefix[pfix[0].split("/")[2]] = prefix_counter
+    if wads_with_prefix.fetch(pfix[0].split("/")[0..2].join("/"), nil) == nil
+      wads_with_prefix[pfix[0].split("/")[0..2].join("/")] = prefix_counter
       sprite_prefix[prefix_counter] = Array(Tuple(String, String)).new
       sprite_prefix[prefix_counter] << pfix
     end
@@ -3366,7 +3369,12 @@ sprite_prefix.each do |key, prefix|
   wads_with_prefix.each_with_index do |prefix, index|
     # skip the first entry which is the original
     next if index == 0
-    list_of_sprites = Dir.glob("./Processing/#{prefix[0]}/sprites/#{key}*")
+    if prefix[0].split("/")[1] == "Processing"
+      list_of_sprites = Dir.glob("#{prefix[0]}/sprites/#{key}*")
+    elsif prefix[0].split("/")[1] == "Processing_PK3"
+      list_of_sprites = Dir.glob("#{prefix[0]}/**/*/*").select { |entry| entry =~ /sprites/i && entry =~ /#{key}/ }
+      list_of_sprites = Dir.glob("#{prefix[0]}/sprites/")
+    end
     puts "Sprites in #{prefix[0]}:"
     puts list_of_sprites.inspect
     puts "Renaming..."
@@ -3379,17 +3387,30 @@ sprite_prefix.each do |key, prefix|
     end
   end
 
-  # rename the animations in decorate
+  # rename the animations in decorate or zscript
   wads_with_prefix.each_with_index do |prefix, index|
     # skip the first entry which is the original
     next if index == 0
-    list_of_decorate = Dir.glob("./Processing/#{prefix[0]}/defs/DECORATE.raw")
+    # build list of wad file DECORATE and ZSCRIPT, and then pk3 version
+    if prefix[0].split("/")[1] == "Processing"
+      list_of_decorate = Dir.glob("#{prefix[0]}/defs/DECORATE.raw")
+      list_of_zscript = Dir.glob("#{prefix[0]}/defs/ZSCRIPT.raw")
+    elsif prefix[0].split("/")[1] == "Processing_PK3"
+      list_of_decorate = Dir.glob("#{prefix[0]}/DECORATE*")
+      list_of_zscript = Dir.glob("#{prefix[0]}/ZSCRIPT*")
+    end
     # populate includes
     list_of_decorate.each do |decorate|
       decorate_text = File.read(decorate)
       decorate_text.each_line do |decorate_line|
         if decorate_line =~ /^\s*\#include\s+/i
-          list_of_decorate << "./Processing/#{prefix[0]}/defs/#{decorate_line.split("\"")[1].upcase}.raw"
+          if prefix[0].split("/")[1] == "Processing"
+            list_of_decorate << "#{prefix[0]}/defs/#{decorate_line.split("\"")[1].upcase}.raw"
+          elsif prefix[0].split("/")[1] == "Processing_PK3"
+            # normalize path
+            decorate_path_normalized = Path["#{prefix[0]}/#{decorate_line.split("\"")[1]}"].normalize.to_s
+            list_of_decorate << "#{decorate_path_normalized}"
+          end
         end
       end
     end
@@ -3407,6 +3428,9 @@ sprite_prefix.each do |key, prefix|
       decorate_text = decorate_text_lines.join("\n")
       File.write(decorate, decorate_text)
     end
+
+    # next we need to do zscript files
+
   end
 end
 
