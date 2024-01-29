@@ -327,7 +327,7 @@ zscript_processing_files.each do |zscript_file|
   lines = file_text.lines
   lines.each do |line|
     if line =~ /^\s*\#include/i
-      include_file = file_path + "/" + line.split('"')[1].upcase + ".raw"
+      include_file = File.dirname(zscript_file) + "/" + line.split('"')[1].upcase + ".raw"
       zscript_processing_files << include_file
     end
   end
@@ -2925,25 +2925,31 @@ actordb.each_with_index do |actor, actor_index|
   elsif script_type[actor.file_path] == "BUILT_IN"
     next
   end
-  file_text_array = Array(String).new
-  file_text = File.read(actor.file_path)
-  file_text_array << file_text
+  file_paths_array = Array(String).new
+  #file_text_array = Array(String).new
+  #file_text = File.read(actor.file_path)
+  #file_text_array << file_text
   success = false
-  file_text_array.each do |text|
+  file_paths_array << actor.file_path
+  file_paths_array.each do |file_path|
+    text = File.read(file_path)
     lines = text.lines
     lines.each do |line|
       if line =~ /^\#include/i
         if actor.file_path.split("/")[1] == "Processing"
-          include_file = actor.file_path.split("/")[0..-2].join("/") + "/" + line.lstrip.strip.split[1].split('"')[1].upcase + ".raw"
+          include_file = file_path.split("/")[0..-2].join("/") + "/" + line.lstrip.strip.split[1].split('"')[1].upcase + ".raw"
         elsif actor.file_path.split("/")[1] == "Processing_PK3"
           # an out of bounds include file should have already thrown a fatal error, so I think this is safe to do
-          include_file = "./" + Path[actor.file_path.split("/")[0..-2].join("/") + "/" + line.split('"')[1]].normalize.to_s
+          puts "Scanning source file: #{file_path}"
+          puts "Include Line: #{line}"
+          puts "Actor.source_file: #{actor.source_file}"
+          include_file = "./" + Path[file_path.split("/")[0..-2].join("/") + "/" + line.split('"')[1]].normalize.to_s
+
         else
           next
         end
         #puts "Include File: #{include_file}"
-        file_text = File.read(include_file)
-        file_text_array << file_text
+        file_paths_array << include_file
       end
     end
     if text =~ regex
@@ -3145,7 +3151,7 @@ actordb.each_with_index do |actor, actor_index|
           next if words[1].downcase != actor.name_with_case.downcase
           puts "Monster Actor found (#{actor.name_with_case}): #{line}"
           # set to size minus 1
-          early_end_index = (words.size - 1)
+          early_end_index = words.size
           words.each_with_index do |word, word_index|
             if word == "{" || word =~ /\//
               early_end_index = word_index
@@ -3155,7 +3161,7 @@ actordb.each_with_index do |actor, actor_index|
             break if doomednum_info.fetch(doomednum_counter, nil) == nil
             doomednum_counter += 1
           end
-          words.insert((early_end_index + 1), doomednum_counter.to_s)
+          words.insert((early_end_index), doomednum_counter.to_s)
           doomednum_info[doomednum_counter] = {-1, -1}
           actordb[actor_index].doomednum = doomednum_counter
           lines[line_index] = words.join(" ")
@@ -3171,8 +3177,10 @@ actordb.each_with_index do |actor, actor_index|
   elsif script_type[actor.file_path] == "ZSCRIPT"
     # determine if a MAPINFO file exists, and create if not
     mapinfo_file = actor.file_path.split("/")[0..2].join("/") + "/MAPINFO"
-    File.open(mapinfo_file, "w") do |file|
-      # just write a blank file and do nothing else
+    if File.file?(mapinfo_file) == false
+      File.open(mapinfo_file, "w") do |file|
+        # just write a blank file and do nothing else
+      end
     end
 
     # determine if a DoomEdNums section exits, and create if not
@@ -3200,7 +3208,7 @@ actordb.each_with_index do |actor, actor_index|
     # DoomEdNums
     # {
     #   <id> = <actor_name>
-    mapinfo_file_text = mapinfo_file_text.gsub(/^\h*doomednums\s*\{/mi, "DoomEdNums\n{\n  #{doomednum_counter} = #{actor.name_with_case}\n")
+    mapinfo_file_text = mapinfo_file_text.gsub(/^\h*doomednums\s*\{/mi, "DoomEdNums\n{\n  #{doomednum_counter} = #{actor.name_with_case}")
 
     # write file
     File.write(mapinfo_file, mapinfo_file_text)
