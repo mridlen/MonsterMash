@@ -2737,7 +2737,6 @@ identical_actors.each do |actor|
   #puts "#{actor.full_actor_text}"
 end
 
-exit(0)
 
 # Remove the offending actors from their respective wad file
 # ------------------------------------------------------------
@@ -2772,12 +2771,14 @@ identical_actors.each_with_index do |actor, actor_index|
   file_text = File.read(actor.file_path)
 
   if script_type[actor.file_path] == "ZSCRIPT"
-    regex = /^[\ \t]*class\s+#{actor.name}\s+[^{]*\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi
+    regex = /^\h*class\s+#{actor.name}\s+[^{]*\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi
   elsif script_type[actor.file_path] == "DECORATE"
-    regex = /^[\ \t]*actor\s+#{actor.name}\s+[^{]*\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi
+    regex = /^\h*actor\s+#{actor.name}\s+[^{]*\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi
   elsif script_type[actor.file_path] == "BUILT_IN"
     #take no action, since this is a built in actor
     puts "Built In Actor: #{actor.name_with_case}. Skipping..."
+    next
+  else
     next
   end
 
@@ -2993,6 +2994,9 @@ actordb.each_with_index do |actor, actor_index|
     puts "Actor.inherits: #{inherits_name}"
     while inherits_name != "UNDEFINED"
       break if inherits_name == "UNDEFINED"
+      break if inherits_name == "actor"
+      break if inherits_name == "object"
+      break if inherits_name == "thinker"
       actordb.each_with_index do |actor_check, actor_check_index|
         if inherits_name == actor_check.name
           puts " - Inherits: #{inherits_name} -> #{actor_check.inherits}"
@@ -3127,7 +3131,6 @@ mapinfo_files_wad.each do |mapinfo_file|
   File.write(mapinfo_file, mapinfo_file_text)
 end
 # gsub(/doomednums\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi, "")
-exit(0)
 
 # assign doomednums to all monster actors
 doomednum_counter = 15000
@@ -3221,6 +3224,7 @@ sprites_files = sprites_files + Dir.glob("./IWADs_Extracted/*/sprites/*")
 #  .select { |_, sprites| sprites.size > 1 }
 
 sprites_by_sha = sprites_files
+  .select { |sprite| File.file?(sprite) }
   .group_by { |sprite| Digest::SHA256.new.file(sprite).hexfinal }
   .select { |_, sprites| sprites.size > 1 }
   .transform_values { |sprites| sprites.sort }
@@ -3264,7 +3268,9 @@ sprites_pk3 = Dir.glob("./Processing_PK3/**/*").select { |entry| entry =~ /sprit
 sprites_files = sprites_files + sprites_pk3
 sprites_files = sprites_files + Dir.glob("./IWADs_Extracted/*/sprites/*")
 
-sprite_files.each do |directory|
+# this is a bad "each" name, I'll have to fix it later...
+sprites_files.each do |directory|
+  next if File.file?(directory) == false
   # hash key is the first 4 characters
   # grab filename (last field in split), grab filename without extension, take first 4 chars, and ensure upper case
   key = directory.split("/").last.split(".").first[0..3].upcase
@@ -3374,6 +3380,9 @@ sprite_prefix.each do |key, prefix|
     elsif prefix[0].split("/")[1] == "Processing_PK3"
       list_of_sprites = Dir.glob("#{prefix[0]}/**/*/*").select { |entry| entry =~ /sprites/i && entry =~ /#{key}/ }
       list_of_sprites = Dir.glob("#{prefix[0]}/sprites/")
+    else
+      # compiler necessitates this "else" I think
+      next
     end
     puts "Sprites in #{prefix[0]}:"
     puts list_of_sprites.inspect
@@ -3398,65 +3407,75 @@ sprite_prefix.each do |key, prefix|
     elsif prefix[0].split("/")[1] == "Processing_PK3"
       list_of_decorate = Dir.glob("#{prefix[0]}/DECORATE*")
       list_of_zscript = Dir.glob("#{prefix[0]}/ZSCRIPT*")
+    else
+      # compiler necessitates this "else" I think
     end
     # populate includes
-    list_of_decorate.each do |decorate|
-      decorate_text = File.read(decorate)
-      decorate_text.each_line do |decorate_line|
-        if decorate_line =~ /^\s*\#include\s+/i
-          if prefix[0].split("/")[1] == "Processing"
-            list_of_decorate << "#{prefix[0]}/defs/#{decorate_line.split("\"")[1].upcase}.raw"
-          elsif prefix[0].split("/")[1] == "Processing_PK3"
-            # normalize path
-            decorate_path_normalized = Path["#{prefix[0]}/#{decorate_line.split("\"")[1]}"].normalize.to_s
-            list_of_decorate << "#{decorate_path_normalized}"
+    if list_of_decorate.nil?
+      puts "list_of_decorate is nil"
+    else
+      list_of_decorate.each do |decorate|
+        decorate_text = File.read(decorate)
+        decorate_text.each_line do |decorate_line|
+          if decorate_line =~ /^\s*\#include\s+/i
+            if prefix[0].split("/")[1] == "Processing"
+              list_of_decorate << "#{prefix[0]}/defs/#{decorate_line.split("\"")[1].upcase}.raw"
+            elsif prefix[0].split("/")[1] == "Processing_PK3"
+              # normalize path
+              decorate_path_normalized = Path["#{prefix[0]}/#{decorate_line.split("\"")[1]}"].normalize.to_s
+              list_of_decorate << "#{decorate_path_normalized}"
+            end
           end
         end
       end
-    end
-    list_of_decorate.each do |decorate|
-      puts "Checking file #{decorate}..."
-      decorate_text = File.read(decorate)
-      decorate_text_lines = decorate_text.lines
-      decorate_text_lines.each_with_index do |decorate_line, decorate_line_index|
-        if decorate_line =~ /^\s*#{key}\s+/i
-          puts "Matched line..: #{decorate_line}"
-          decorate_text_lines[decorate_line_index] = decorate_line.sub(key, prefix[1])
-          puts "Corrected line: #{decorate_text_lines[decorate_line_index]}"
+      list_of_decorate.each do |decorate|
+        puts "Checking file #{decorate}..."
+        decorate_text = File.read(decorate)
+        decorate_text_lines = decorate_text.lines
+        decorate_text_lines.each_with_index do |decorate_line, decorate_line_index|
+          if decorate_line =~ /^\s*#{key}\s+/i
+            puts "Matched line..: #{decorate_line}"
+            decorate_text_lines[decorate_line_index] = decorate_line.sub(key, prefix[1])
+            puts "Corrected line: #{decorate_text_lines[decorate_line_index]}"
+          end
         end
+        decorate_text = decorate_text_lines.join("\n")
+        File.write(decorate, decorate_text)
       end
-      decorate_text = decorate_text_lines.join("\n")
-      File.write(decorate, decorate_text)
     end
 
     # next we need to do the exact same thing with zscript files
-    list_of_zscript.each do |zscript|
-      zscript_text = File.read(zscript)
-      zscript_text.each_line do |zcript_line|
-        if zscript_line =~ /^\s*\#include\s+/i
-          if prefix[0].split("/")[1] == "Processing"
-            list_of_zscript << "#{prefix[0]}/defs/#{zscript_line.split("\"")[1].upcase}.raw"
-          elsif prefix[0].split("/")[1] == "Processing_PK3"
-            # normalize path
-            zscript_path_normalized = Path["#{prefix[0]}/#{zscript_line.split("\"")[1]}"].normalize.to_s
-            list_of_zscript << "#{zscript_path_normalized}"
+    if list_of_zscript.nil?
+      puts "list_of_zscript is nil"
+    else
+      list_of_zscript.each do |zscript|
+        zscript_text = File.read(zscript)
+        zscript_text.each_line do |zscript_line|
+          if zscript_line =~ /^\s*\#include\s+/i
+            if prefix[0].split("/")[1] == "Processing"
+              list_of_zscript << "#{prefix[0]}/defs/#{zscript_line.split("\"")[1].upcase}.raw"
+            elsif prefix[0].split("/")[1] == "Processing_PK3"
+              # normalize path
+              zscript_path_normalized = Path["#{prefix[0]}/#{zscript_line.split("\"")[1]}"].normalize.to_s
+              list_of_zscript << "#{zscript_path_normalized}"
+            end
           end
         end
       end
-    end
-    list_of_zscript.each do |zscript|
-      puts "Checking file #{zscript}..."
-      zscript_text = File.read(zscript)
-      zscript_text_lines = zscript_text.lines
-      zscript_text_Lines.each_with_index do |zscript_line, zscript_line_index|
-        if zscript_line =~ /^\s*#{key}\s+/i
-          puts "Matched line..: #{zscript_line}"
-          zscript_text_lines[zscript_line_index] = zscript_line.sub(key, prefix[1])
-          puts "Corrected line: #{zscript_text_lines[zscript_line_index]}"
+      list_of_zscript.each do |zscript|
+        puts "Checking file #{zscript}..."
+        zscript_text = File.read(zscript)
+        zscript_text_lines = zscript_text.lines
+        zscript_text_lines.each_with_index do |zscript_line, zscript_line_index|
+          if zscript_line =~ /^\s*#{key}\s+/i
+            puts "Matched line..: #{zscript_line}"
+            zscript_text_lines[zscript_line_index] = zscript_line.sub(key, prefix[1])
+            puts "Corrected line: #{zscript_text_lines[zscript_line_index]}"
+          end
         end
+        zscript_text = zscript_text_lines.join("\n")
+        File.write(zscript, zscript_text)
       end
-      zscript_text = zscript_text_lines.join("\n")
-      File.write(zscript, zscript_text)
     end
 
   end
