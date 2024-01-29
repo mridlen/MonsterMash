@@ -31,7 +31,6 @@ If you want to do it anyway: try it and see if it works. If it does, great! If n
 ## Known Issues
 
 - Dropbox may cause issues if you install this to Obsidian living in Dropbox
-- Only DECORATE code is resolved at the present time, so if your monster uses ZSCRIPT, too bad.
 - Only Monster actors are resloved, Weapons/Ammo is not handled yet
 
 ## Usage
