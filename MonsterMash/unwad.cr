@@ -3429,13 +3429,44 @@ sprite_prefix.each do |key, prefix|
       File.write(decorate, decorate_text)
     end
 
-    # next we need to do zscript files
+    # next we need to do the exact same thing with zscript files
+    list_of_zscript.each do |zscript|
+      zscript_text = File.read(zscript)
+      zscript_text.each_line do |zcript_line|
+        if zscript_line =~ /^\s*\#include\s+/i
+          if prefix[0].split("/")[1] == "Processing"
+            list_of_zscript << "#{prefix[0]}/defs/#{zscript_line.split("\"")[1].upcase}.raw"
+          elsif prefix[0].split("/")[1] == "Processing_PK3"
+            # normalize path
+            zscript_path_normalized = Path["#{prefix[0]}/#{zscript_line.split("\"")[1]}"].normalize.to_s
+            list_of_zscript << "#{zscript_path_normalized}"
+          end
+        end
+      end
+    end
+    list_of_zscript.each do |zscript|
+      puts "Checking file #{zscript}..."
+      zscript_text = File.read(zscript)
+      zscript_text_lines = zscript_text.lines
+      zscript_text_Lines.each_with_index do |zscript_line, zscript_line_index|
+        if zscript_line =~ /^\s*#{key}\s+/i
+          puts "Matched line..: #{zscript_line}"
+          zscript_text_lines[zscript_line_index] = zscript_line.sub(key, prefix[1])
+          puts "Corrected line: #{zscript_text_lines[zscript_line_index]}"
+        end
+      end
+      zscript_text = zscript_text_lines.join("\n")
+      File.write(zscript, zscript_text)
+    end
 
   end
 end
 
 # Delete "maps" folders - we are not merging maps, those will be generated with Obsidian
 map_folders = Dir.glob("./Processing/*/maps/")
+# we are looking for "maps" in case insensitive
+map_folders_pk3 = Dir.glob("./Processing_PK3/*/*/").select { |entry| entry.split("/")[3] =~ /maps/i }
+map_folders = map_folders + map_folders_pk3
 map_folders.each do |folder|
   FileUtils.rm_r(folder)
 end
@@ -3450,6 +3481,32 @@ puts wad_directories.sort.inspect
 wad_directories.each do |wad_directory|
   wad_destination = "./Completed/#{wad_directory.split("/")[2]}.wad"
   system "./#{jeutoolexe} build \"#{wad_destination}\" \"#{wad_directory}\""
+end
+
+# Compile the pk3 folders back into pk3s
+def add_files_to_zip(zip : Compress::Zip::Writer, base_directory : String, directory : String)
+  Dir.each_child(directory) do |entry|
+    entry_path = File.join(directory, entry)
+    relative_path = entry_path.sub(base_directory, "").strip
+
+    if File.directory?(entry_path)
+      # Recursively add files from subdirectories
+      add_files_to_zip(zip, base_directory, entry_path)
+    else
+      # Read the file contents and add them to the zip archive
+      file_contents = File.read(entry_path)
+      zip.add(relative_path, file_contents)
+    end
+  end
+end
+directories_to_compress = Dir.glob("./Processing_PK3/*")
+directories_to_compress.each do |directory|
+  puts "Directory: #{directory}"
+  zip_file = "./Completed/" + directory.split("/").last + ".pk3"
+  puts "Zip File: #{zip_file}"
+  Compress::Zip::Writer.open(zip_file) do |zip|
+    add_files_to_zip(zip, directory, directory)
+  end
 end
 
 # Generate the Lua
