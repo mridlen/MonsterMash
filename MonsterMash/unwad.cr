@@ -7,7 +7,12 @@ require "regex"
 require "digest/sha256"
 require "compress/zip"
 
+# To make this OS agnostic we need to use fs in place of slashes
+# this way Windows will use "\\" and Linux/Mac can use "/"
+fs = File::SEPARATOR
+
 # Other Code Specific To MonsterMash
+# require statements use forward slashes regardless of OS
 require "./requires/classes.cr"
 
 # Import DoomEdNums from module
@@ -54,17 +59,17 @@ duped_doomednum_db = Array(DupedDoomednums).new
 
 # We need to keep the WADs and PK3s separate during processing
 puts "Creating WAD Source directory..."
-Dir.mkdir_p("./Source/")
+Dir.mkdir_p(".#{fs}Source#{fs}")
 puts "Creating WAD Processing directory..."
-Dir.mkdir_p("./Processing/")
+Dir.mkdir_p(".#{fs}Processing#{fs}")
 puts "Creating PK3 Processing directory..."
-Dir.mkdir_p("./Processing_PK3/")
+Dir.mkdir_p(".#{fs}Processing_PK3#{fs}")
 puts "Creating Completed (WAD and PK3) directory..."
-Dir.mkdir_p("./Completed/")
+Dir.mkdir_p(".#{fs}Completed#{fs}")
 puts "Creating IWADs directory..."
-Dir.mkdir_p("./IWADs/")
+Dir.mkdir_p(".#{fs}IWADs#{fs}")
 puts "Creating IWADs_Extracted directory..."
-Dir.mkdir_p("./IWADs_Extracted/")
+Dir.mkdir_p(".#{fs}IWADs_Extracted#{fs}")
 
 ##########################################
 # PRE RUN CLEANUP OPERATION
@@ -73,13 +78,13 @@ Dir.mkdir_p("./IWADs_Extracted/")
 # Clear out the Processing folder prior to copying in the files
 # Anything in Processing is fair game for deletion at any time
 puts "Deleting all files under Processing directory..."
-FileUtils.rm_rf("./Processing/*")
+FileUtils.rm_rf(".#{fs}Processing#{fs}*")
 puts "Deleting all files under Processing_PK3 directory..."
-FileUtils.rm_rf("./Processing_PK3/*")
+FileUtils.rm_rf(".#{fs}Processing_PK3#{fs}*")
 puts "Deleting all files under Completed directory..."
-FileUtils.rm_rf("./Completed/*")
+FileUtils.rm_rf(".#{fs}Completed#{fs}*")
 puts "Deleting all files under IWADs_Extracted directory..."
-FileUtils.rm_rf("./IWADs_Extracted/*")
+FileUtils.rm_rf(".#{fs}IWADs_Extracted#{fs}*")
 puts "Deletion completed."
 
 
@@ -91,7 +96,7 @@ puts "Extraction process starting..."
 # Wads will go into Processing, PK3s will go into
 
 # build list of wad files
-wad_file_list = Dir.glob("./Source/*")
+wad_file_list = Dir.glob(".#{fs}Source#{fs}*")
 index_deletes = Array(Int32).new
 wad_file_list.each_with_index do |file, file_index|
   # check if the extension is wad
@@ -106,7 +111,7 @@ index_deletes.each do |deletion|
 end
 
 # build list of pk3 files
-pk3_file_list = Dir.glob("./Source/*")
+pk3_file_list = Dir.glob(".#{fs}Source#{fs}*")
 index_deletes = Array(Int32).new
 pk3_file_list.each_with_index do |file, file_index|
   # check if the extension is pk3
@@ -129,8 +134,8 @@ puts pk3_file_list
 pk3_file_list.each do |file|
   Compress::Zip::Reader.open(file) do |zip|
     # Specify the target directory
-    dir_name = file.split("/").last.split(".").first
-    target_directory = "./Processing_PK3/#{dir_name}"
+    dir_name = file.split("#{fs}").last.split(".").first
+    target_directory = ".#{fs}Processing_PK3#{fs}#{dir_name}"
 
     # Create the target directory if it doesn't exist
     Dir.mkdir(target_directory) unless Dir.exists?(target_directory)
@@ -156,16 +161,16 @@ end
 wad_file_list.each do |file_path|
   if File.file?(file_path)
     puts "Processing file: #{file_path}"
-    system "./#{jeutoolexe} extract \"#{file_path}\" -r"
+    system ".#{fs}#{jeutoolexe} extract \"#{file_path}\" -r"
   end
 end
 
 # Do the same thing but for IWADs
-Dir.each_child("./IWADs") do |file_name|
-  file_path = "./IWADs/#{file_name}"
+Dir.each_child(".#{fs}IWADs") do |file_name|
+  file_path = ".#{fs}IWADs#{fs}#{file_name}"
   if File.file?(file_path)
     puts "Processing file: #{file_path}"
-    system "./#{jeutoolexe} extract \"#{file_path}\" -r"
+    system ".#{fs}#{jeutoolexe} extract \"#{file_path}\" -r"
   end
 end
 puts "Extraction process complete."
@@ -173,9 +178,9 @@ puts "Extraction process complete."
 puts "Starting the copy process from Source to Processing..."
 # Copy the directories in Source to Processing for processing
 # Only the directories are copied
-Dir.glob("./Source/*/").each do |path|
-  dest_path = File.join("./Processing/", File.basename(path))
-  #completed_path = File.join("./Completed/", File.basename(path))
+Dir.glob(".#{fs}Source#{fs}*#{fs}").each do |path|
+  dest_path = File.join(".#{fs}Processing#{fs}", File.basename(path))
+  #completed_path = File.join(".#{fs}Completed#{fs}", File.basename(path))
   if Dir.exists?(dest_path)
     FileUtils.rm_rf(dest_path)
   end
@@ -184,8 +189,8 @@ Dir.glob("./Source/*/").each do |path|
   FileUtils.mv(path, dest_path)
 end
 # Do the same thing but for IWADs
-Dir.glob("./IWADs/*/").each do |path|
-  dest_path = File.join("./IWADs_Extracted/", File.basename(path))
+Dir.glob(".#{fs}IWADs#{fs}*#{fs}").each do |path|
+  dest_path = File.join(".#{fs}IWADs_Extracted#{fs}", File.basename(path))
   if Dir.exists?(dest_path)
     FileUtils.rm_rf(dest_path)
   end
@@ -206,7 +211,7 @@ puts "Starting Processing procedure..."
 
 # Build a list of files and put them into a hash that tells if they are ZSCRIPT
 # or a DECORATE. We need to know this because ZSCRIPT works a little differently
-zscript_files_pk3 = Dir.glob("./Processing_PK3/*/ZSCRIPT*")
+zscript_files_pk3 = Dir.glob(".#{fs}Processing_PK3#{fs}*#{fs}ZSCRIPT*")
 
 puts zscript_files_pk3
 
@@ -223,9 +228,9 @@ zscript_files_pk3.each_with_index do |file, file_index|
       puts "line: #{line}"
 
       # determine the folder path - we need this to determine relative path
-      folder_path = file.split("/")[0..-2].join("/")
+      folder_path = file.split("#{fs}")[0..-2].join("#{fs}")
       # root folder is useful for absolute paths
-      root_folder = file.split("/")[0..2].join("/")
+      root_folder = file.split("#{fs}")[0..2].join("#{fs}")
       puts "Folder path: #{folder_path}"
       puts "Root path: #{root_folder}"
       # Example: #include "<stuff here>"
@@ -235,9 +240,9 @@ zscript_files_pk3.each_with_index do |file, file_index|
       # join the path and verify that it isn't too long
       puts "Normalized path:"
       if include_file.chars.first == '.'
-        include_file_normalized = "./" + Path[folder_path + "/" + include_file].normalize.to_s
+        include_file_normalized = ".#{fs}" + Path[folder_path + "#{fs}" + include_file].normalize.to_s
       else
-        include_file_normalized = "./" + Path[root_folder + "/" + include_file].normalize.to_s
+        include_file_normalized = ".#{fs}" + Path[root_folder + "#{fs}" + include_file].normalize.to_s
       end
       puts include_file_normalized
 
@@ -245,7 +250,7 @@ zscript_files_pk3.each_with_index do |file, file_index|
       #  1  2              3     4
       # "./Processing_PK3/<dir>/ZSCRIPT"
       # less than that means it goes out of bounds
-      if include_file_normalized.split("/").size < 4
+      if include_file_normalized.split("#{fs}").size < 4
         puts "Fatal Error: relative path goes outside the bounds of the pk3"
         puts "File: #{file} Line: #{line}"
         exit(1)
@@ -264,7 +269,7 @@ end
 
 puts "zscript_files_pk3: #{zscript_files_pk3}"
 
-decorate_files_pk3 = Dir.glob("./Processing_PK3/*/DECORATE*")
+decorate_files_pk3 = Dir.glob(".#{fs}Processing_PK3#{fs}*#{fs}DECORATE*")
 
 deletion_indexes = Array(Int32).new
 decorate_files_pk3.each_with_index do |file, file_index|
@@ -279,9 +284,9 @@ decorate_files_pk3.each_with_index do |file, file_index|
       puts "line: #{line}"
 
       # determine the folder path - we need this to determine relative path
-      folder_path = file.split("/")[0..-2].join("/")
+      folder_path = file.split("#{fs}")[0..-2].join("#{fs}")
       # root folder is useful for absolute paths
-      root_folder = file.split("/")[0..2].join("/")
+      root_folder = file.split("#{fs}")[0..2].join("#{fs}")
       puts "Folder path: #{folder_path}"
       puts "Root path: #{root_folder}"
       # Example: #include "<stuff here>"
@@ -291,9 +296,9 @@ decorate_files_pk3.each_with_index do |file, file_index|
       # join the path and verify that it isn't too long
       puts "Normalized path:"
       if include_file.chars.first == '.'
-        include_file_normalized = "./" + Path[folder_path + "/" + include_file].normalize.to_s
+        include_file_normalized = ".#{fs}" + Path[folder_path + "#{fs}" + include_file].normalize.to_s
       else
-        include_file_normalized = "./" + Path[root_folder + "/" + include_file].normalize.to_s
+        include_file_normalized = ".#{fs}" + Path[root_folder + "#{fs}" + include_file].normalize.to_s
       end
       puts include_file_normalized
 
@@ -301,7 +306,7 @@ decorate_files_pk3.each_with_index do |file, file_index|
       #  1  2              3     4
       # "./Processing_PK3/<dir>/ZSCRIPT"
       # less than that means it goes out of bounds
-      if include_file_normalized.split("/").size < 4
+      if include_file_normalized.split("#{fs}").size < 4
         puts "Fatal Error: relative path goes outside the bounds of the pk3"
         puts "File: #{file} Line: #{line}"
         exit(1)
@@ -320,14 +325,14 @@ end
 
 puts decorate_files_pk3
 
-zscript_processing_files = Dir.glob("./Processing/*/defs/ZSCRIPT.raw")
+zscript_processing_files = Dir.glob(".#{fs}Processing#{fs}*#{fs}defs#{fs}ZSCRIPT.raw")
 zscript_processing_files.each do |zscript_file|
   file_text = File.read(zscript_file)
-  file_path = zscript_file.split("/")[0..-2].join("/")
+  file_path = zscript_file.split("#{fs}")[0..-2].join("#{fs}")
   lines = file_text.lines
   lines.each do |line|
     if line =~ /^\s*\#include/i
-      include_file = File.dirname(zscript_file) + "/" + line.split('"')[1].upcase + ".raw"
+      include_file = File.dirname(zscript_file) + "#{fs}" + line.split('"')[1].upcase + ".raw"
       zscript_processing_files << include_file
     end
   end
@@ -338,10 +343,10 @@ puts zscript_processing_files
 
 # Build a list of Processing and Built_In_Actors, and a flag to tell it
 # not to touch the built in actors
-processing_files = Dir.glob("./Processing/*/defs/DECORATE.raw")
+processing_files = Dir.glob(".#{fs}Processing#{fs}*#{fs}defs#{fs}DECORATE.raw")
 
 # I think this might work to grab all the zs files
-built_in_actors = Dir.glob("./Built_In_Actors/*/*.zs") + Dir.glob("./Built_In_Actors/*.zs")
+built_in_actors = Dir.glob(".#{fs}Built_In_Actors#{fs}*#{fs}*.zs") + Dir.glob(".#{fs}Built_In_Actors#{fs}*.zs")
 
 processing_files.each do |file|
   file_text = File.read(file)
@@ -354,7 +359,7 @@ processing_files.each do |file|
 	      # add the include file to the list of files full_dir_list
 	      include_file = line.split('"')[1].upcase
         # line = File.read(File.dirname(file_path) + "/" + include_file + ".raw")
-        new_directory = File.dirname(file) + "/" + include_file + ".raw"
+        new_directory = File.dirname(file) + "#{fs}" + include_file + ".raw"
         processing_files << new_directory
       end
     end
@@ -413,7 +418,7 @@ full_dir_list.each do |file_path|
     # grabbing the wad file source folder name - split on "/" and grab element 2
     # which is essentially the wad name without ".wad" at the end
 
-    decorate_source_file = file_path.split("/").last
+    decorate_source_file = file_path.split("#{fs}").last
     puts "#{wad_folder_name}"
 
     # Per line processing
@@ -431,7 +436,7 @@ full_dir_list.each do |file_path|
     # file paths are a little different...
     # We want to set the "decorate_source_file" as
     puts "file_path: #{file_path}"
-    decorate_source_file = file_path.split("/").last
+    decorate_source_file = file_path.split("#{fs}").last
   end
 
   # remove "//" comments
@@ -2855,7 +2860,7 @@ puts "===================================="
 actors_by_name.each_key do |key|
   deletion_indexes = Array(Int32).new
   actors_by_name[key].each_with_index do |actor, actor_index|
-    if actor.file_path.split("/")[1] == "Built_In_Actors"
+    if actor.file_path.split("#{fs}")[1] == "Built_In_Actors"
       puts "Actor is Built In: #{actor.name}"
       deletion_indexes << actor_index
     end
@@ -2881,7 +2886,7 @@ actors_by_name.each_key do |key|
       # do a gsub for every file in the defs folder of that wad
       # (?<=[\s"])WyvernBall(?=[\s"])
       # remove the last field of the file path, which is the file name
-      wad_folder = actor.file_path.split("/")[0..-2].join("/") + "/"
+      wad_folder = actor.file_path.split("#{fs}")[0..-2].join("#{fs}") + "#{fs}"
       puts "Wad Folder: #{wad_folder}"
       if actor_index == 0
          puts "Renames:"
@@ -2936,14 +2941,14 @@ actordb.each_with_index do |actor, actor_index|
     lines = text.lines
     lines.each do |line|
       if line =~ /^\#include/i
-        if actor.file_path.split("/")[1] == "Processing"
-          include_file = file_path.split("/")[0..-2].join("/") + "/" + line.lstrip.strip.split[1].split('"')[1].upcase + ".raw"
-        elsif actor.file_path.split("/")[1] == "Processing_PK3"
+        if actor.file_path.split("#{fs}")[1] == "Processing"
+          include_file = file_path.split("#{fs}")[0..-2].join("#{fs}") + "#{fs}" + line.lstrip.strip.split[1].split('"')[1].upcase + ".raw"
+        elsif actor.file_path.split("#{fs}")[1] == "Processing_PK3"
           # an out of bounds include file should have already thrown a fatal error, so I think this is safe to do
           puts "Scanning source file: #{file_path}"
           puts "Include Line: #{line}"
           puts "Actor.source_file: #{actor.source_file}"
-          include_file = "./" + Path[file_path.split("/")[0..-2].join("/") + "/" + line.split('"')[1]].normalize.to_s
+          include_file = ".#{fs}" + Path[file_path.split("#{fs}")[0..-2].join("#{fs}") + "#{fs}" + line.split('"')[1]].normalize.to_s
 
         else
           next
@@ -3124,8 +3129,8 @@ end
 # Wipe any DoomEdNums from the MAPINFO files
 # looks for any 'doomednums {<code_here>}' section in MAPINFO and deletes it
 # case insensitive (i)
-mapinfo_files_pk3 = Dir.glob("./Processing_PK3/*/MAPINFO*")
-mapinfo_files_wad = Dir.glob("./Processing/*/MAPINFO")
+mapinfo_files_pk3 = Dir.glob(".#{fs}Processing_PK3#{fs}*#{fs}MAPINFO*")
+mapinfo_files_wad = Dir.glob(".#{fs}Processing#{fs}*#{fs}MAPINFO")
 mapinfo_files_pk3.each do |mapinfo_file|
   mapinfo_file_text = File.read(mapinfo_file)
   mapinfo_file_text = mapinfo_file_text.gsub(/doomednums\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi, "")
@@ -3176,7 +3181,7 @@ actordb.each_with_index do |actor, actor_index|
     end
   elsif script_type[actor.file_path] == "ZSCRIPT"
     # determine if a MAPINFO file exists, and create if not
-    mapinfo_file = actor.file_path.split("/")[0..2].join("/") + "/MAPINFO"
+    mapinfo_file = actor.file_path.split("#{fs}")[0..2].join("#{fs}") + "#{fs}MAPINFO"
     if File.file?(mapinfo_file) == false
       File.open(mapinfo_file, "w") do |file|
         # just write a blank file and do nothing else
@@ -3222,10 +3227,10 @@ end
 #################################################################
 # sprites must be named identically and have identical contents #
 #################################################################
-sprites_files = Dir.glob("./Processing/*/sprites/*")
-sprites_pk3 = Dir.glob("./Processing_PK3/**/*").select { |entry| entry =~ /sprites/i }
+sprites_files = Dir.glob(".#{fs}Processing#{fs}*#{fs}sprites#{fs}*")
+sprites_pk3 = Dir.glob(".#{fs}Processing_PK3#{fs}**#{fs}*").select { |entry| entry =~ /sprites/i }
 sprites_files = sprites_files + sprites_pk3
-sprites_files = sprites_files + Dir.glob("./IWADs_Extracted/*/sprites/*")
+sprites_files = sprites_files + Dir.glob(".#{fs}IWADs_Extracted#{fs}*#{fs}sprites#{fs}*")
 
 #sprites_by_name = sprites_files
 #  .group_by { |sprite| sprite.split("/").last }
@@ -3251,10 +3256,10 @@ sprites_by_sha.each do |key, sprites|
   unique_sprites = Hash(String, String).new
   puts "SHA Hash: #{key}"
   sprites.each do |sprite|
-    if unique_sprites.fetch(sprite.split("/").last, nil) == nil || sprite.split("/")[1] == "IWADs_Extracted"
+    if unique_sprites.fetch(sprite.split("#{fs}").last, nil) == nil || sprite.split("#{fs}")[1] == "IWADs_Extracted"
       puts "  - Original: #{sprite}"
-      unique_sprites[sprite.split("/").last] = sprite
-    elsif sprite.split("/")[1] != "IWADs_Extracted"
+      unique_sprites[sprite.split("#{fs}").last] = sprite
+    elsif sprite.split("#{fs}")[1] != "IWADs_Extracted"
       puts "  - Duplicate: #{sprite}"
       puts "    - Deleting!"
       File.delete(sprite)
@@ -3271,17 +3276,17 @@ end
 
 # after deleting the dupes, we need to rebuild the list
 sprite_prefix = Hash(String, Array(Tuple(String, String))).new
-sprites_files = Dir.glob("./Processing/*/sprites/*")
-sprites_pk3 = Dir.glob("./Processing_PK3/**/*").select { |entry| entry =~ /sprites/i }
+sprites_files = Dir.glob(".#{fs}Processing#{fs}*#{fs}sprites#{fs}*")
+sprites_pk3 = Dir.glob(".#{fs}Processing_PK3#{fs}**#{fs}*").select { |entry| entry =~ /sprites/i }
 sprites_files = sprites_files + sprites_pk3
-sprites_files = sprites_files + Dir.glob("./IWADs_Extracted/*/sprites/*")
+sprites_files = sprites_files + Dir.glob(".#{fs}IWADs_Extracted#{fs}*#{fs}sprites#{fs}*")
 
 # this is a bad "each" name, I'll have to fix it later...
 sprites_files.each do |directory|
   next if File.file?(directory) == false
   # hash key is the first 4 characters
   # grab filename (last field in split), grab filename without extension, take first 4 chars, and ensure upper case
-  key = directory.split("/").last.split(".").first[0..3].upcase
+  key = directory.split("#{fs}").last.split(".").first[0..3].upcase
 
   # grab the filename sha
   sha = Digest::SHA256.new.file(directory).hexfinal
@@ -3319,10 +3324,10 @@ sprite_prefix.each do |key, prefix|
   dupe_name = "UNDEFINED"
   prefix.each_with_index do |pfix, pfix_index|
     if pfix_index == 0
-      dupe_name = pfix[0].split("/")[2]
+      dupe_name = pfix[0].split("#{fs}")[2]
       next
     end
-    if dupe_name != pfix[0].split("/")[2]
+    if dupe_name != pfix[0].split("#{fs}")[2]
       dupe_exists = true
       break
     end
@@ -3346,13 +3351,13 @@ sprite_prefix.each do |key, prefix|
   iwad_has_prefix = false
   original_wad_prefix = "UNDEFINED"
   prefix.each do |pfix|
-    if pfix[0].split("/")[1] == "IWADs_Extracted"
+    if pfix[0].split("#{fs}")[1] == "IWADs_Extracted"
       puts "IWAD Matched: #{pfix[0]}"
       iwad_has_prefix = true
       # we are going to take the first 3 fields
       # ./Processing/<wadname>
       # ./Processing_PK3/<pk3name>
-      original_wad_prefix = pfix[0].split("/")[0..2].join("/")
+      original_wad_prefix = pfix[0].split("#{fs}")[0..2].join("#{fs}")
       wads_with_prefix[original_wad_prefix] = key
       break
     end
@@ -3360,7 +3365,7 @@ sprite_prefix.each do |key, prefix|
 
   # Set wad prefix to first in list if undefined
   if original_wad_prefix == "UNDEFINED"
-    original_wad_prefix = prefix[0][0].split("/")[0..2].join("/")
+    original_wad_prefix = prefix[0][0].split("#{fs}")[0..2].join("#{fs}")
     wads_with_prefix[original_wad_prefix] = key
   end
 
@@ -3369,8 +3374,8 @@ sprite_prefix.each do |key, prefix|
 
   # Step 2) build list of wads_with_prefix and assign new prefixes as needed
   prefix.each do |pfix|
-    if wads_with_prefix.fetch(pfix[0].split("/")[0..2].join("/"), nil) == nil
-      wads_with_prefix[pfix[0].split("/")[0..2].join("/")] = prefix_counter
+    if wads_with_prefix.fetch(pfix[0].split("#{fs}")[0..2].join("#{fs}"), nil) == nil
+      wads_with_prefix[pfix[0].split("#{fs}")[0..2].join("#{fs}")] = prefix_counter
       sprite_prefix[prefix_counter] = Array(Tuple(String, String)).new
       sprite_prefix[prefix_counter] << pfix
     end
@@ -3383,10 +3388,10 @@ sprite_prefix.each do |key, prefix|
   wads_with_prefix.each_with_index do |prefix, index|
     # skip the first entry which is the original
     next if index == 0
-    if prefix[0].split("/")[1] == "Processing"
-      list_of_sprites = Dir.glob("#{prefix[0]}/sprites/#{key}*")
-    elsif prefix[0].split("/")[1] == "Processing_PK3"
-      list_of_sprites = Dir.glob("#{prefix[0]}/**/*/*").select { |entry| entry =~ /sprites/i && entry =~ /#{key}/ }
+    if prefix[0].split("#{fs}")[1] == "Processing"
+      list_of_sprites = Dir.glob("#{prefix[0]}#{fs}sprites#{fs}#{key}*")
+    elsif prefix[0].split("#{fs}")[1] == "Processing_PK3"
+      list_of_sprites = Dir.glob("#{prefix[0]}#{fs}**#{fs}*#{fs}*").select { |entry| entry =~ /sprites/i && entry =~ /#{key}/ }
       list_of_sprites = Dir.glob("#{prefix[0]}/sprites/")
     else
       # compiler necessitates this "else" I think
@@ -3398,7 +3403,7 @@ sprite_prefix.each do |key, prefix|
     list_of_sprites.each do |sprite|
       # prefix[1] should hold the new prefix which we will rename with
       # regex looks for /BLAH and replaces with /BLA2
-      new_path = sprite.gsub(/\/#{key}/, "/#{prefix[1]}")
+      new_path = sprite.gsub(/#{fs}#{key}/, "/#{prefix[1]}")
       puts "Renaming: #{sprite} -> #{new_path}"
       File.rename(sprite, new_path)
     end
@@ -3409,12 +3414,12 @@ sprite_prefix.each do |key, prefix|
     # skip the first entry which is the original
     next if index == 0
     # build list of wad file DECORATE and ZSCRIPT, and then pk3 version
-    if prefix[0].split("/")[1] == "Processing"
-      list_of_decorate = Dir.glob("#{prefix[0]}/defs/DECORATE.raw")
-      list_of_zscript = Dir.glob("#{prefix[0]}/defs/ZSCRIPT.raw")
-    elsif prefix[0].split("/")[1] == "Processing_PK3"
-      list_of_decorate = Dir.glob("#{prefix[0]}/DECORATE*")
-      list_of_zscript = Dir.glob("#{prefix[0]}/ZSCRIPT*")
+    if prefix[0].split("#{fs}")[1] == "Processing"
+      list_of_decorate = Dir.glob("#{prefix[0]}#{fs}defs#{fs}DECORATE.raw")
+      list_of_zscript = Dir.glob("#{prefix[0]}#{fs}defs#{fs}ZSCRIPT.raw")
+    elsif prefix[0].split("#{fs}")[1] == "Processing_PK3"
+      list_of_decorate = Dir.glob("#{prefix[0]}#{fs}DECORATE*")
+      list_of_zscript = Dir.glob("#{prefix[0]}#{fs}ZSCRIPT*")
     else
       # compiler necessitates this "else" I think
     end
@@ -3426,11 +3431,11 @@ sprite_prefix.each do |key, prefix|
         decorate_text = File.read(decorate)
         decorate_text.each_line do |decorate_line|
           if decorate_line =~ /^\s*\#include\s+/i
-            if prefix[0].split("/")[1] == "Processing"
-              list_of_decorate << "#{prefix[0]}/defs/#{decorate_line.split("\"")[1].upcase}.raw"
-            elsif prefix[0].split("/")[1] == "Processing_PK3"
+            if prefix[0].split("#{fs}")[1] == "Processing"
+              list_of_decorate << "#{prefix[0]}#{fs}defs#{fs}#{decorate_line.split("\"")[1].upcase}.raw"
+            elsif prefix[0].split("#{fs}")[1] == "Processing_PK3"
               # normalize path
-              decorate_path_normalized = Path["#{prefix[0]}/#{decorate_line.split("\"")[1]}"].normalize.to_s
+              decorate_path_normalized = Path["#{prefix[0]}#{fs}#{decorate_line.split("\"")[1]}"].normalize.to_s
               list_of_decorate << "#{decorate_path_normalized}"
             end
           end
@@ -3460,11 +3465,11 @@ sprite_prefix.each do |key, prefix|
         zscript_text = File.read(zscript)
         zscript_text.each_line do |zscript_line|
           if zscript_line =~ /^\s*\#include\s+/i
-            if prefix[0].split("/")[1] == "Processing"
-              list_of_zscript << "#{prefix[0]}/defs/#{zscript_line.split("\"")[1].upcase}.raw"
-            elsif prefix[0].split("/")[1] == "Processing_PK3"
+            if prefix[0].split("#{fs}")[1] == "Processing"
+              list_of_zscript << "#{prefix[0]}#{fs}defs#{fs}#{zscript_line.split("\"")[1].upcase}.raw"
+            elsif prefix[0].split("#{fs}")[1] == "Processing_PK3"
               # normalize path
-              zscript_path_normalized = Path["#{prefix[0]}/#{zscript_line.split("\"")[1]}"].normalize.to_s
+              zscript_path_normalized = Path["#{prefix[0]}#{fs}#{zscript_line.split("\"")[1]}"].normalize.to_s
               list_of_zscript << "#{zscript_path_normalized}"
             end
           end
@@ -3490,9 +3495,9 @@ sprite_prefix.each do |key, prefix|
 end
 
 # Delete "maps" folders - we are not merging maps, those will be generated with Obsidian
-map_folders = Dir.glob("./Processing/*/maps/")
+map_folders = Dir.glob(".#{fs}Processing#{fs}*#{fs}maps#{fs}")
 # we are looking for "maps" in case insensitive
-map_folders_pk3 = Dir.glob("./Processing_PK3/*/*/").select { |entry| entry.split("/")[3] =~ /maps/i }
+map_folders_pk3 = Dir.glob(".#{fs}Processing_PK3#{fs}*#{fs}*#{fs}").select { |entry| entry.split("#{fs}")[3] =~ /maps/i }
 map_folders = map_folders + map_folders_pk3
 map_folders.each do |folder|
   FileUtils.rm_r(folder)
@@ -3502,12 +3507,12 @@ end
 puts "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
 puts "@ CREATING WADS AGAIN               @"
 puts "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
-wad_directories = Dir.glob("./Processing/*/")
+wad_directories = Dir.glob(".#{fs}Processing#{fs}*#{fs}")
 puts wad_directories.sort.inspect
 # ./jeutool-linux build ./Completed/Reaper.wad ./Processing/Reaper/
 wad_directories.each do |wad_directory|
-  wad_destination = "./Completed/#{wad_directory.split("/")[2]}.wad"
-  system "./#{jeutoolexe} build \"#{wad_destination}\" \"#{wad_directory}\""
+  wad_destination = ".#{fs}Completed#{fs}#{wad_directory.split("#{fs}")[2]}.wad"
+  system ".#{fs}#{jeutoolexe} build \"#{wad_destination}\" \"#{wad_directory}\""
 end
 
 # Compile the pk3 folders back into pk3s
@@ -3526,10 +3531,10 @@ def add_files_to_zip(zip : Compress::Zip::Writer, base_directory : String, direc
     end
   end
 end
-directories_to_compress = Dir.glob("./Processing_PK3/*")
+directories_to_compress = Dir.glob(".#{fs}Processing_PK3#{fs}*")
 directories_to_compress.each do |directory|
   puts "Directory: #{directory}"
-  zip_file = "./Completed/" + directory.split("/").last + ".pk3"
+  zip_file = ".#{fs}Completed#{fs}" + directory.split("#{fs}").last + ".pk3"
   puts "Zip File: #{zip_file}"
   Compress::Zip::Writer.open(zip_file) do |zip|
     add_files_to_zip(zip, directory, directory)
@@ -3602,7 +3607,7 @@ lua_file += "}\n"
 
 puts lua_file
 
-File.write("../modules/monster_mash.lua", lua_file)
+File.write("..#{fs}modules#{fs}monster_mash.lua", lua_file)
 ###########################
 ###########################
 ###########################
@@ -3655,7 +3660,7 @@ end
 graphics_info = Hash(String, String).new
 
 # Specify the directory path
-directory_path = "./Processing"
+directory_path = ".#{fs}Processing"
 
 # Get a list of entries in the directory (files and subdirectories)
 entries = Dir.entries(directory_path)
@@ -3669,7 +3674,7 @@ puts folders
 folders.each_with_index do |folder, folder_index|
   puts "Processing folder: #{folder}"
 
-  graphics_dir = folder + "/sprites"
+  graphics_dir = folder + "#{fs}sprites"
 
   # this should skip this entry if the folder does not exist - it only exists
   # if there are graphics
@@ -3720,7 +3725,7 @@ duped_names_db.each_with_index do |duped_actor, duped_actor_index|
   puts "-------------------------------------"
   puts "Duped Actor Name: #{duped_actor.name}"
   puts "-------------------------------------"
-  file_path = "./Processing/" + duped_actor.wad_name + "/defs/DECORATE.raw"
+  file_path = ".#{fs}Processing#{fs}" + duped_actor.wad_name + "#{fs}defs#{fs}DECORATE.raw"
   puts " - File Path: #{file_path}"
 
   # this is the replacement text that we will use for the duration of this loop
@@ -3733,7 +3738,7 @@ duped_names_db.each_with_index do |duped_actor, duped_actor_index|
     file.each_line do |line|
       if line.starts_with?("#include")
         include_file_modified = line.strip.lchop("#include ").strip('"').upcase
-        file_path = "./Processing/" + duped_actor.wad_name + "/defs/" + include_file_modified + ".raw"
+        file_path = ".#{fs}Processing#{fs}" + duped_actor.wad_name + "#{fs}defs#{fs}" + include_file_modified + ".raw"
         puts " - Include file: #{file_path}"
         file_list << file_path
       end
@@ -3786,7 +3791,7 @@ duped_doomednum_db.each_with_index do |duped_doomednum, doomednum_index|
   puts "-------------------------------------"
   puts "Duped Doomednum: #{duped_doomednum.doomednum}"
   puts "-------------------------------------"
-  file_path = "./Processing/" + duped_doomednum.wad_name + "/defs/DECORATE.raw"
+  file_path = ".#{fs}Processing#{fs}" + duped_doomednum.wad_name + "#{fs}defs#{fs}DECORATE.raw"
   puts " - File Path: #{file_path}"
 
   # this is the replacement text that we will use for the duration of this loop
@@ -3813,7 +3818,7 @@ duped_doomednum_db.each_with_index do |duped_doomednum, doomednum_index|
     file.each_line do |line|
       if line.starts_with?("#include")
         include_file_modified = line.strip.lchop("#include ").strip('"').upcase
-        file_path = "./Processing/" + duped_doomednum.wad_name + "/defs/" + include_file_modified + ".raw"
+        file_path = ".#{fs}Processing#{fs}" + duped_doomednum.wad_name + "#{fs}defs#{fs}" + include_file_modified + ".raw"
         puts " - Include file: #{file_path}"
         file_list << file_path
       end
@@ -3924,14 +3929,14 @@ actordb.each_with_index do |actor, actor_index|
     puts "Wad: #{actor.source_wad_folder}"
 
     # evaluate includes
-    file_path = "./Completed/" + actor.source_wad_folder + "/defs/DECORATE.raw"
+    file_path = ".#{fs}Completed#{fs}" + actor.source_wad_folder + "#{fs}defs#{fs}DECORATE.raw"
     file_list = Array(String).new
     file_list << file_path
     File.open(file_path) do |file|
       file.each_line do |line|
         if line.starts_with?("#include")
           include_file_modified = line.strip.lchop("#include ").strip('"').upcase
-          file_path = "./Completed/" + actor.source_wad_folder + "/defs/" + include_file_modified + ".raw"
+          file_path = ".#{fs}Completed#{fs}" + actor.source_wad_folder + "#{fs}defs#{fs}" + include_file_modified + ".raw"
           file_list << file_path
         end
       end
