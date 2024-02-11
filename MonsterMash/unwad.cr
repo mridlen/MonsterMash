@@ -27,6 +27,40 @@ require "./requires/classes.cr"
 require "./requires/doomednums.cr"
 doomednum_info = DoomEdNums.id_numbers
 
+# Code to determine if a file is text or binary - more complicated than it sounds
+def int2byte_range(start : Int32, stop : Int32)
+  (start..stop).map(&.to_u8)
+end
+TEXT_CHARACTERS = int2byte_range(32, 126) + ['\n'.ord.to_u8, '\r'.ord.to_u8, '\t'.ord.to_u8, '\f'.ord.to_u8, '\b'.ord.to_u8]
+def binary_file?(file_path : String | Path) : Bool
+  file_is_binary = false
+  bytes = File.read(file_path).to_slice
+  bytes.each do |byte|
+    if TEXT_CHARACTERS.includes?(byte)
+      puts "byte: #{byte.to_s}"
+    else
+      puts "binary file detected"
+      file_is_binary = true
+      break
+    end
+  end
+
+  #File.open file_path do |file|
+  #  break if file_is_binary == true
+  #  file.each_char.all? do |char|
+  #    if TEXT_CHARACTERS.includes?(char) == false
+  #      file_is_binary = true
+  #      break
+  #    end
+  #  end
+  #end
+
+  file_is_binary
+rescue
+  # assume it's binary by default and return "true"
+  true
+end
+
 jeutoolexe = ""
 
 puts "Assigning jeutool..."
@@ -64,36 +98,32 @@ duped_doomednum_db = Array(DupedDoomednums).new
 # CREATE DIRECTORIES
 ##########################################
 
-# We need to keep the WADs and PK3s separate during processing
+# Source and IWADs directories need to not be autodeleted
 puts "Creating WAD Source directory..."
 Dir.mkdir_p(".#{fs}Source#{fs}")
-puts "Creating WAD Processing directory..."
-Dir.mkdir_p(".#{fs}Processing#{fs}")
-puts "Creating PK3 Processing directory..."
-Dir.mkdir_p(".#{fs}Processing_PK3#{fs}")
-puts "Creating Completed (WAD and PK3) directory..."
-Dir.mkdir_p(".#{fs}Completed#{fs}")
 puts "Creating IWADs directory..."
 Dir.mkdir_p(".#{fs}IWADs#{fs}")
+
+# The rest of the directories should be deleted
+puts "Deleting WAD Processing directory..."
+FileUtils.rm_r(".#{fs}Processing")
+puts "Creating WAD Processing directory..."
+Dir.mkdir_p(".#{fs}Processing#{fs}")
+
+puts "Deleting PK3 Processing directory..."
+FileUtils.rm_r(".#{fs}Processing_PK3")
+puts "Creating PK3 Processing directory..."
+Dir.mkdir_p(".#{fs}Processing_PK3#{fs}")
+
+puts "Deleting Completed directory..."
+FileUtils.rm_r(".#{fs}Completed")
+puts "Creating Completed (WAD and PK3) directory..."
+Dir.mkdir_p(".#{fs}Completed#{fs}")
+
+puts "Deleting IWADs_Extracted directory..."
+FileUtils.rm_r(".#{fs}IWADs_Extracted")
 puts "Creating IWADs_Extracted directory..."
 Dir.mkdir_p(".#{fs}IWADs_Extracted#{fs}")
-
-##########################################
-# PRE RUN CLEANUP OPERATION
-##########################################
-
-# Clear out the Processing folder prior to copying in the files
-# Anything in Processing is fair game for deletion at any time
-puts "Deleting all files under Processing directory..."
-FileUtils.rm_rf(".#{fs}Processing#{fs}*")
-puts "Deleting all files under Processing_PK3 directory..."
-FileUtils.rm_rf(".#{fs}Processing_PK3#{fs}*")
-puts "Deleting all files under Completed directory..."
-FileUtils.rm_rf(".#{fs}Completed#{fs}*")
-puts "Deleting all files under IWADs_Extracted directory..."
-FileUtils.rm_rf(".#{fs}IWADs_Extracted#{fs}*")
-puts "Deletion completed."
-
 
 #########################################
 # RUN EXTRACTION PROCESS
@@ -288,7 +318,24 @@ decorate_files_pk3.each_with_index do |file, file_index|
   if File.file?(file) == false
     deletion_indexes << file_index
   end
-  file_text = File.read(file)
+  # since Doom DECORATE is CASE INSENSITIVE we have to search and compare to find the actual file name
+  file_search_term = "#{file.split("/")[0..2].join("/")}/**/*"
+  puts "file_search_term: #{file_search_term}"
+  file_search = Dir.glob("#{file_search_term}")
+  file_match = "UNDEFINED"
+  file_search.each do |searchfile|
+    # this takes up a lot of time to display the text, but useful for troubleshooting...
+    #puts "searching: #{file.downcase} == #{searchfile.downcase}"
+    if file.downcase == searchfile.downcase
+      file_match = searchfile
+      break
+    end
+  end
+  if file_match == "UNDEFINED"
+    puts "Fatal Error: file not found: #{file}"
+    exit(1)
+  end
+  file_text = File.read(file_match)
   lines = file_text.lines
   lines.each do |line|
     if line =~ /^\s*\#include/i
@@ -300,10 +347,15 @@ decorate_files_pk3.each_with_index do |file, file_index|
       root_folder = file.split("#{fs}")[0..2].join("#{fs}")
       puts "Folder path: #{folder_path}"
       puts "Root path: #{root_folder}"
-      # Example: #include "<stuff here>"
+      # Example: #include "blah"
       # this will get the content inside the quotation marks:
-      include_file = line.split('"')[1]
-
+      if line.split(" ")[1] =~ /\"/
+        include_file = line.split('"')[1]
+      else
+        # if there are no quotation marks do a traditional split
+        # Example: #include blah
+        include_file = line.split[1]
+      end
       # join the path and verify that it isn't too long
       puts "Normalized path:"
       if include_file.chars.first == '.'
@@ -627,6 +679,8 @@ full_dir_list.each do |file_path|
     actor = lines.join("\n")
 
     first_line = lines.first
+    # ensure colons are not connected to any character so that we can parse it easier
+    first_line = first_line.gsub(":", " : ")
     words = first_line.split
     # parse partial comments on the actor line and remove
     partial_comment = -1
@@ -671,11 +725,13 @@ full_dir_list.each do |file_path|
 
     # number of words == 3 means that word[2] == a number
     if number_of_words == 3
+      puts "Words(#{number_of_words}): #{words}"
       new_actor.doomednum = words[2].to_i
     end
 
     # there are 2 possibilities: colon (inheritance), or replaces
     if number_of_words == 4 || number_of_words == 5
+      puts "Words(#{number_of_words}): #{words}"
       if words[2] == ":"
         new_actor.inherits = words[3]
       elsif words[2] == "replaces"
@@ -693,10 +749,11 @@ full_dir_list.each do |file_path|
 
     # if there are 5-6 words, it means inherit and replace, and 6 is doomednum
     if number_of_words == 6 || number_of_words == 7
-      new_actor.inherits = words[4]
-      new_actor.replaces = words[6]
+      puts "Words(#{number_of_words}): #{words}"
+      new_actor.inherits = words[3]
+      new_actor.replaces = words[5]
       if number_of_words == 7
-        new_actor.doomednum = words[7].to_i
+        new_actor.doomednum = words[6].to_i
       end
     end
 
@@ -2168,7 +2225,7 @@ full_dir_list.each do |file_path|
         new_actor.float_bob_phase = line.split[1].to_i
       elsif property_name == "floatbobstrength"
         puts "  - FloatBobStrength: " + line.split[1]?.to_s
-        new_actor.float_bob_strength = line.split[1].to_i
+        new_actor.float_bob_strength = line.split[1].to_f
       elsif property_name == "distancecheck"
         puts "  - DistanceCheck: " + line.split[1]?.to_s
         new_actor.distance_check = line.split[1]?.to_s
@@ -2904,30 +2961,52 @@ actors_by_name.each_key do |key|
       # do a gsub for every file in the defs folder of that wad
       # (?<=[\s"])WyvernBall(?=[\s"])
       # remove the last field of the file path, which is the file name
-      wad_folder = actor.file_path.split("#{fs}")[0..-2].join("#{fs}") + "#{fs}"
+      wad_folder = actor.file_path.split("#{fs}")[0..-2].join("#{fs}") + "#{fs}**#{fs}*"
       puts "Wad Folder: #{wad_folder}"
       if actor_index == 0
          puts "Renames:"
          next
       end
-      Dir.children(wad_folder).each do |file|
-        file_text = File.read(wad_folder + file)
+      Dir.glob(wad_folder).each do |file|
+        next if File.directory?(file)
+        puts file
+        if binary_file?(file) == true
+          puts " - File is binary"
+          next
+        else
+          puts " - File is not binary"
+        end
+        file_text = File.read(file)
         #puts "@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
         #puts "File Text Pre:"
         #puts "@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
         #puts file_text
         renamed_actor = "#{actor.name_with_case}_MM#{actor_counter.to_s}"
+
         # the actor name should either be surrounded by spaces
         # ' actorname '
         # or by quotes
         # '"actorname"'
         # which is what [\s"] accomplishes in the regex
-        file_text = file_text.gsub(/(?<=[\s"])#{actor.name_with_case}(?=[\s"])/, renamed_actor)
+        file_text_modified = file_text.gsub(/(?<=[\s"])#{actor.name_with_case}(?=[\s"])/, renamed_actor)
         #puts "@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
         #puts "File Text Post:"
         #puts "@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
         #puts file_text
-        File.write(wad_folder + file, file_text)
+        if file_text != file_text_modified
+          File.write(file, file_text_modified)
+          # rename the actor in actordb
+          actordb.each_with_index do |actorrename, actorrename_index|
+            if actor.file_path.downcase == actorrename.file_path.downcase && actor.name.downcase == actorrename.name.downcase
+              actordb[actorrename_index].name_with_case = renamed_actor
+              actordb[actorrename_index].name = renamed_actor.downcase
+            end
+            #if actorrename.inherits == actor.name
+            #  puts "Actor #{actorrename.inherits} -> #{renamed_actor.downcase}"
+            #  actordb[actorrename_index].inherits = renamed_actor.downcase
+            #end
+          end
+        end
       end
       puts "------------------------------"
     end
@@ -3178,6 +3257,10 @@ actordb.each_with_index do |actor, actor_index|
       lines = file_text.lines
       lines.each_with_index do |line, line_index|
         if line =~ /^\s*actor\s+/i
+          #make sure any comments have a space in front
+          line = line.gsub("//", " //")
+          #make sure colons have space around them
+          line = line.gsub(":", " : ")
           words = line.lstrip.split
           next if words[1].downcase != actor.name_with_case.downcase
           puts "Monster Actor found (#{actor.name_with_case}): #{line}"
@@ -3292,7 +3375,7 @@ sprites_by_sha.each do |key, sprites|
     elsif sprite.split("#{fs_os}")[1] != "IWADs_Extracted"
       puts "  - Duplicate: #{sprite}"
       puts "    - Deleting!"
-      File.delete(sprite)
+      #File.delete(sprite)
     else
       # We can't really delete duplicate IWAD sprites for hopefully obvious reasons
       puts "  - IWAD Sprite: #{sprite}"
@@ -3415,28 +3498,38 @@ sprite_prefix.each do |key, prefix|
   puts wads_with_prefix.inspect
 
   # rename the files
-  wads_with_prefix.each_with_index do |prefix, index|
+  wads_with_prefix.each_with_index do |wad_prefix, index|
     # skip the first entry which is the original
     next if index == 0
-    if prefix[0].split("#{fs_os}")[1] == "Processing"
-      list_of_sprites = Dir.glob("#{prefix[0]}#{fs_os}sprites#{fs_os}#{key}*")
-    elsif prefix[0].split("#{fs_os}")[1] == "Processing_PK3"
-      list_of_sprites = Dir.glob("#{prefix[0]}#{fs_os}**#{fs_os}*#{fs_os}*").select { |entry| entry =~ /sprites/i && entry =~ /#{key}/ }
-      list_of_sprites = Dir.glob("#{prefix[0]}#{fs_os}sprites#{fs_os}")
+    if wad_prefix[0].split("#{fs_os}")[1] == "Processing"
+      list_of_sprites = Dir.glob("#{wad_prefix[0]}#{fs_os}sprites#{fs_os}#{key}*")
+    elsif wad_prefix[0].split("#{fs_os}")[1] == "Processing_PK3"
+      list_of_sprites = Dir.glob("#{wad_prefix[0]}#{fs_os}**#{fs_os}*").select { |entry| entry =~ /sprites/i && entry =~ /#{key}/ }
     else
       # compiler necessitates this "else" I think
       next
     end
-    puts "Sprites in #{prefix[0]}:"
+    puts "Sprites in #{wad_prefix[0]}:"
     puts list_of_sprites.inspect
     puts "Renaming..."
     list_of_sprites.each do |sprite|
       # prefix[1] should hold the new prefix which we will rename with
       # regex looks for /BLAH and replaces with /BLA2
-      new_path = sprite.gsub(/#{fs_os}#{key}/, "/#{prefix[1]}")
+      new_path = sprite.gsub(/#{fs_os}#{key}/, "/#{wad_prefix[1]}")
       puts "Renaming: #{sprite} -> #{new_path}"
       File.rename(sprite, new_path)
     end
+
+    puts "wad_refix: #{wad_prefix}"
+    puts "prefix: #{prefix}"
+    puts "key: #{key}"
+    puts "prefix_counter: #{prefix_counter}"
+
+    # Troubleshooting a prefix is made easier by this code...
+    #if key == "SKLL"
+    #  puts "hit enter..."
+    #  gets
+    #end
   end
 
   # rename the animations in decorate or zscript
@@ -3457,15 +3550,42 @@ sprite_prefix.each do |key, prefix|
     if list_of_decorate.nil?
       puts "list_of_decorate is nil"
     else
-      list_of_decorate.each do |decorate|
-        decorate_text = File.read(decorate)
+      list_of_decorate.each_with_index do |decorate, decorate_index|
+        puts "Decorate: #{decorate}"
+        # since Doom DECORATE is CASE INSENSITIVE we have to search and compare to find the actual file name
+        file_search_term = "#{decorate.split("/")[0..1].join("/")}/**/*"
+        puts "file_search_term: #{file_search_term}"
+        file_search = Dir.glob("#{file_search_term}")
+        file_match = "UNDEFINED"
+        file_search.each do |searchfile|
+          # this takes up a lot of time, but might be nice for troubleshooting
+          #puts "searching: #{decorate.downcase} == #{searchfile.downcase}"
+          if decorate.downcase == searchfile.downcase
+            file_match = searchfile
+            list_of_decorate[decorate_index] = file_match
+            break
+          end
+        end
+        if file_match == "UNDEFINED"
+          puts "Fatal Error: file not found: #{decorate}"
+          exit(1)
+        end
+
+        decorate_text = File.read(file_match)
         decorate_text.each_line do |decorate_line|
+          puts "Decorate Line: #{decorate_line}"
           if decorate_line =~ /^\s*\#include\s+/i
+            include_file = "UNDEFINED"
+            if decorate_line =~ /\"/
+              include_file = decorate_line.split('"')[1]
+            else
+              include_file = decorate_line.split[1]
+            end
             if prefix[0].split("#{fs_os}")[1] == "Processing"
-              list_of_decorate << "#{prefix[0]}#{fs_os}defs#{fs_os}#{decorate_line.split("\"")[1].upcase}.raw"
+              list_of_decorate << "#{prefix[0]}#{fs_os}defs#{fs_os}#{include_file.upcase}.raw"
             elsif prefix[0].split("#{fs_os}")[1] == "Processing_PK3"
               # normalize path
-              decorate_path_normalized = Path["#{prefix[0]}#{fs_os}#{decorate_line.split("\"")[1]}"].normalize.to_s
+              decorate_path_normalized = Path["#{prefix[0]}#{fs_os}#{include_file}"].normalize.to_s
               list_of_decorate << "#{decorate_path_normalized}"
             end
           end
@@ -3536,6 +3656,52 @@ map_folders.each do |folder|
   FileUtils.rm_r(folder)
 end
 
+puts "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
+puts "@ DELETING ANY 'GAME' PROPERTY      @"
+puts "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
+# This only affects DECORATE, allegedly...
+decorate_files = Dir.glob(".#{fs}Processing#{fs}*#{fs}defs#{fs}DECORATE.raw")
+# rename the directories to use forward slashes
+decorate_files.each do |decorate_file|
+  decorate_file = decorate_file.split("#{fs_os}").join("#{fs}")
+end
+# add include files
+decorate_files.each do |decorate_file|
+  file_text = File.read(decorate_file)
+  include_file = "UNDEFINED"
+  file_text_lines = file_text.lines
+  file_text_lines.each_with_index do |line, line_index|
+    if line =~ /^\h*\#include/i
+      if line =~ /\"/
+        include_file = line.split('"')[1]
+      else
+        include_file = line.split[1]
+      end
+      folder_path = decorate_file.split("#{fs}")[0..-2].join("#{fs}")
+      include_file_path = Path.posix(folder_path + "#{fs}" + include_file.upcase + ".raw").normalize.to_s
+      decorate_files << include_file_path
+    end
+  end
+end
+# delete the lines that start with "game
+decorate_files.each do |decorate_file|
+  file_text = File.read(decorate_file)
+  file_lines = file_text.lines
+  file_lines.each_with_index do |file_line, file_line_index|
+    if file_line =~ /^\h*game/i
+      #puts "line found: #{file_line}"
+      #puts "hit enter to continue..."
+      #gets
+
+      # note: normally this would mess up the counts, but I don't expect two "game" properties in a row
+      # there should only be one "game" per actor
+      file_lines.delete_at(file_line_index)
+    end
+  end
+  file_text_modified = file_lines.join("\n")
+  File.write(decorate_file, file_text_modified)
+end
+
 # Compile the folders back into wads
 puts "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
 puts "@ CREATING WADS AGAIN               @"
@@ -3549,7 +3715,7 @@ wad_directories.each do |wad_directory|
   puts "wad_directory: #{wad_directory}"
   wad_destination = ".#{fs}Completed#{fs}#{wad_directory.split("#{fs}")[2]}.wad"
   puts "wad_destination: #{wad_destination}"
-  system ".#{fs}#{jeutoolexe} build \"#{wad_destination}\" \"#{wad_directory}\""
+  system ".#{fs}#{jeutoolexe} build \"#{wad_destination}\" \"#{wad_directory}\" -v"
 end
 
 puts "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
@@ -3594,6 +3760,7 @@ lua_file += "{\n"
 
 actordb.each do |actor|
   next if (actor.ismonster == false && actor.monster == false) || actor.doomednum == -1
+  lua_file += "  -- Source Wad: #{actor.source_wad_folder}\n"
   lua_file += "  #{actor.name} =\n"
   lua_file += "  {\n"
   lua_file += "    id = #{actor.doomednum},\n"
@@ -3628,6 +3795,7 @@ lua_file += "  {\n"
 
 actordb.each do |actor|
   next if (actor.ismonster == false && actor.monster == false) || actor.doomednum == -1
+  lua_file += "    -- Source File: #{actor.source_wad_folder}\n"
   lua_file += "    {\n"
   lua_file += "      name = \"float_#{actor.name}\",\n"
   lua_file += "      label = _(\"#{actor.name_with_case}\"),\n"
@@ -3635,8 +3803,8 @@ actordb.each do |actor|
   lua_file += "      min = 0,\n"
   lua_file += "      max = 20,\n"
   lua_file += "      increment = .02,\n"
-  lua_file += "      default = _(\"Default\"),\n"
-  lua_file += "      nan = _(\"Default\"),\n"
+  lua_file += "      default = _(5.0),\n"
+  lua_file += "      nan = _(5.0),\n"
   lua_file += "      tooltip = _(\"Control the amount of #{actor.name_with_case}\"),\n"
   lua_file += "      presets = _(\"0:0 (None at all,.02:0.02 (Scarce),.14:0.14 (Less),.5:0.5 (Plenty),1.2:1.2 (More),3:3 (Heaps),20:20 (INSANE)\"),\n"
   lua_file += "      randomize_group = \"monsters\",\n"
