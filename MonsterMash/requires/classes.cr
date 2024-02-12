@@ -298,6 +298,8 @@ class Actor
   # these first few are defined on the actor line
   property name : String = "UNDEFINED"
   property name_with_case : String = "UNDEFINED"
+  property renamed : String = "UNDEFINED"
+  property renamed_with_case : String = "UNDEFINED"
   property inherits : String = "UNDEFINED"
   property replaces : String = "UNDEFINED"
   # -1 will mean undefined

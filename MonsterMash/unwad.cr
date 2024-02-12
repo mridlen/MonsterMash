@@ -36,10 +36,7 @@ def binary_file?(file_path : String | Path) : Bool
   file_is_binary = false
   bytes = File.read(file_path).to_slice
   bytes.each do |byte|
-    if TEXT_CHARACTERS.includes?(byte)
-      puts "byte: #{byte.to_s}"
-    else
-      puts "binary file detected"
+    if !TEXT_CHARACTERS.includes?(byte)
       file_is_binary = true
       break
     end
@@ -54,6 +51,12 @@ def binary_file?(file_path : String | Path) : Bool
   #    end
   #  end
   #end
+
+  if file_is_binary == true
+    puts " - file is binary"
+  else
+    puts " - file is text"
+  end
 
   file_is_binary
 rescue
@@ -2953,6 +2956,16 @@ actors_by_name.each_key do |key|
     puts "Actor: #{key} Count: #{actors_by_name[key].size}"
     actor_counter = 0
     actors_by_name[key].each_with_index do |actor, actor_index|
+      #if key == "gemturret"
+      #  puts "Actor Name With Case: \"#{actor.name_with_case}\""
+      #  puts "Actor Name No Case: \"#{actor.name}\""
+      #  actor.name_with_case.each_byte do |byte|
+      #    print byte.to_s(16).rjust(2, '0') + " "
+      #  end
+      #  puts
+      #  puts "waiting..."
+      #  gets
+      #end
       if actor_index == 0
         puts "Primary:"
       end
@@ -2961,7 +2974,13 @@ actors_by_name.each_key do |key|
       # do a gsub for every file in the defs folder of that wad
       # (?<=[\s"])WyvernBall(?=[\s"])
       # remove the last field of the file path, which is the file name
-      wad_folder = actor.file_path.split("#{fs}")[0..-2].join("#{fs}") + "#{fs}**#{fs}*"
+      wad_folder = actor.file_path.split("#{fs}")[0..2].join("#{fs}") + "#{fs}**#{fs}*"
+      puts wad_folder
+      puts Dir.glob(wad_folder).inspect
+      #if key == "gemturret"
+      #  puts "waiting..."
+      #  gets
+      #end
       puts "Wad Folder: #{wad_folder}"
       if actor_index == 0
          puts "Renames:"
@@ -2972,15 +2991,22 @@ actors_by_name.each_key do |key|
         puts file
         if binary_file?(file) == true
           puts " - File is binary"
+          #if key == "gemturret"
+          #  gets
+          #end
           next
         else
           puts " - File is not binary"
+          #if key == "gemturret"
+          #  gets
+          #end
         end
         file_text = File.read(file)
         #puts "@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
         #puts "File Text Pre:"
         #puts "@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
         #puts file_text
+        search_term = "#{actor.name_with_case}"
         renamed_actor = "#{actor.name_with_case}_MM#{actor_counter.to_s}"
 
         # the actor name should either be surrounded by spaces
@@ -2988,7 +3014,30 @@ actors_by_name.each_key do |key|
         # or by quotes
         # '"actorname"'
         # which is what [\s"] accomplishes in the regex
-        file_text_modified = file_text.gsub(/(?<=[\s"])#{actor.name_with_case}(?=[\s"])/, renamed_actor)
+        # regex_search = /(?<=[\s"])#{search_term}(?=[\s"])/i
+
+        # Regex is too hard here... we need to do more fine tuned replacement
+        # There may be a better solution but I am not seeing it
+        file_lines = file_text.lines
+        file_lines.each_with_index do |line, line_index|
+          words = line.split
+          words.each_with_index do |word, word_index|
+            # word 0 is never going to be the actor name
+            next if word_index == 0
+            if word.downcase == actor.name
+              words[word_index] = renamed_actor
+            elsif word =~ /\"#{actor.name}\"/
+              words[word_index] = word.gsub(/\"#{actor.name}\"/, "\"#{renamed_actor}\"")
+            end
+          end
+          file_lines[line_index] = words.join(" ")
+        end
+        file_text_modified = file_lines.join("\n")
+        #if key == "gemturret"
+        #  puts file_text_modified
+        #  puts actor.name_with_case
+        #  gets
+        #end
         #puts "@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
         #puts "File Text Post:"
         #puts "@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
@@ -2998,19 +3047,27 @@ actors_by_name.each_key do |key|
           # rename the actor in actordb
           actordb.each_with_index do |actorrename, actorrename_index|
             if actor.file_path.downcase == actorrename.file_path.downcase && actor.name.downcase == actorrename.name.downcase
-              actordb[actorrename_index].name_with_case = renamed_actor
-              actordb[actorrename_index].name = renamed_actor.downcase
+              actordb[actorrename_index].renamed_with_case = renamed_actor
+              actordb[actorrename_index].renamed = renamed_actor.downcase
             end
-            #if actorrename.inherits == actor.name
-            #  puts "Actor #{actorrename.inherits} -> #{renamed_actor.downcase}"
-            #  actordb[actorrename_index].inherits = renamed_actor.downcase
-            #end
           end
+          puts "File: #{file}"
+          puts file_text_modified
+          #puts "waiting..."
+          #gets
         end
       end
       puts "------------------------------"
     end
     actor_counter += 1
+  end
+end
+# Update actor names to their renamed values
+actordb.each_with_index do |actor, actor_index|
+  if actor.renamed != "UNDEFINED"
+    actordb[actor_index].name = actor.renamed
+    actordb[actor_index].name_with_case = actor.renamed_with_case
+    puts actor.renamed_with_case
   end
 end
 # All duplicate names should be addressed by this point.
