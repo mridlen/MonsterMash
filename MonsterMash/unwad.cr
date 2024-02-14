@@ -251,6 +251,20 @@ puts "Copy from Source to Processing completed."
 
 puts "Starting Processing procedure..."
 
+# build a list of files under Processing_PK3 so we can do a case insensitive search
+processing_pk3_file_list = Dir.glob(".#{fs}Processing_PK3#{fs}**/*")
+case_insensitive_file_db = Hash(String, String).new
+processing_pk3_file_list.each do |file|
+  case_insensitive_file_db[file.to_s.downcase] = file.to_s
+end
+
+# build a list of files under Processing so we can do a case insensitive search
+processing_file_list = Dir.glob(".#{fs}Processing#{fs}**/*")
+processing_hash = Hash(String, String).new
+processing_file_list.each do |file|
+  case_insensitive_file_db[file.to_s.downcase] = file.to_s
+end
+
 # Build a list of files and put them into a hash that tells if they are ZSCRIPT
 # or a DECORATE. We need to know this because ZSCRIPT works a little differently
 zscript_files_pk3 = Dir.glob(".#{fs}Processing_PK3#{fs}*#{fs}ZSCRIPT*")
@@ -298,6 +312,9 @@ zscript_files_pk3.each_with_index do |file, file_index|
         puts "File: #{file} Line: #{line}"
         exit(1)
       end
+
+      # do a case insensitive search to find the case sensitive version
+      include_file_normalized = case_insensitive_file_db[include_file_normalized.downcase]
 
       # add the path to the zscript_files_pk3
       zscript_files_pk3 << include_file_normalized
@@ -377,6 +394,9 @@ decorate_files_pk3.each_with_index do |file, file_index|
         puts "File: #{file} Line: #{line}"
         exit(1)
       end
+
+      # do a case insensitive search for the path
+      include_file_normalized = case_insensitive_file_db[include_file_normalized.downcase]
 
       # add the path to the decorate_files_pk3
       decorate_files_pk3 << include_file_normalized
@@ -2836,61 +2856,61 @@ end
 # Regex:  ^actor\s+greenpoisonball\s+[^{]*\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})
 # where "greenpoisonball" is the offending actor... we will use a variable for that
 
-identical_actor_name = "UNDEFINED"
-identical_actors.each_with_index do |actor, actor_index|
-  # if the identical_actor_name != actor.name, it means the actor changed
-  # They come into the list grouped by name like this:
-  # actor1, actor1, actor1, actor2, actor2, actor3, actor3, actor4, actor4...
-  # since we DO want one of each (we are only deleting DUPLICATES),
-  # we will go to next iteration when this occurs
-  if identical_actor_name != actor.name
-    identical_actor_name = actor.name
-    # mark the actor as primary in actordb - this way we will not touch it later
-    actordb[actor.index].primary = true
-    next
-  end
-
-  puts "Identical Actors Index: #{actor_index}"
-  file_text = File.read(actor.file_path)
-
-  if script_type[actor.file_path] == "ZSCRIPT"
-    regex = /^\h*class\s+#{actor.name}\s+[^{]*\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi
-  elsif script_type[actor.file_path] == "DECORATE"
-    regex = /^\h*actor\s+#{actor.name}\s+[^{]*\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi
-  elsif script_type[actor.file_path] == "BUILT_IN"
-    #take no action, since this is a built in actor
-    puts "Built In Actor: #{actor.name_with_case}. Skipping..."
-    next
-  else
-    next
-  end
-
-  puts "Removing Actor:"
-  puts file_text.partition(regex)[1]
-
-  file_text_post = file_text.gsub(regex, "// duplicate actor removed: #{actor.name}")
-
-  File.write(actor.file_path, file_text_post)
-
-  puts "---------------------------------------------------------"
-  puts "Removing Actor Name: #{actor.name}, Index: #{actor.index}"
-  puts "---------------------------------------------------------"
-  deletion_indexes = Array(Int32).new
-  actordb.each_with_index do |actor_del, actor_del_index|
-    if actor_del.index == actor.index && actor_del.file_path == actor.file_path
-      puts "actor_del name: #{actor_del.name}, actor name: #{actor.name}"
-      deletion_indexes << actor_del_index
-    end
-  end
-  #reverse order so that it doesn't delete the wrong actors
-  # e.g. it should delete the element 12 before deleting element 10
-  # otherwise it would delete element 10 and then delete former element 13 (I think)
-  deletion_indexes.reverse!
-  deletion_indexes.each do |deletion_index|
-    puts "Deleting #{actordb[deletion_index].name}..."
-    actordb.delete_at(deletion_index)
-  end
-end
+# identical_actor_name = "UNDEFINED"
+# identical_actors.each_with_index do |actor, actor_index|
+#   # if the identical_actor_name != actor.name, it means the actor changed
+#   # They come into the list grouped by name like this:
+#   # actor1, actor1, actor1, actor2, actor2, actor3, actor3, actor4, actor4...
+#   # since we DO want one of each (we are only deleting DUPLICATES),
+#   # we will go to next iteration when this occurs
+#   if identical_actor_name != actor.name
+#     identical_actor_name = actor.name
+#     # mark the actor as primary in actordb - this way we will not touch it later
+#     actordb[actor.index].primary = true
+#     next
+#   end
+#
+#   puts "Identical Actors Index: #{actor_index}"
+#   file_text = File.read(actor.file_path)
+#
+#   if script_type[actor.file_path] == "ZSCRIPT"
+#     regex = /^\h*class\s+#{actor.name}\s+[^{]*\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi
+#   elsif script_type[actor.file_path] == "DECORATE"
+#     regex = /^\h*actor\s+#{actor.name}\s+[^{]*\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi
+#   elsif script_type[actor.file_path] == "BUILT_IN"
+#     #take no action, since this is a built in actor
+#     puts "Built In Actor: #{actor.name_with_case}. Skipping..."
+#     next
+#   else
+#     next
+#   end
+#
+#   puts "Removing Actor:"
+#   puts file_text.partition(regex)[1]
+#
+#   file_text_post = file_text.gsub(regex, "// duplicate actor removed: #{actor.name}")
+#
+#   File.write(actor.file_path, file_text_post)
+#
+#   puts "---------------------------------------------------------"
+#   puts "Removing Actor Name: #{actor.name}, Index: #{actor.index}"
+#   puts "---------------------------------------------------------"
+#   deletion_indexes = Array(Int32).new
+#   actordb.each_with_index do |actor_del, actor_del_index|
+#     if actor_del.index == actor.index && actor_del.file_path == actor.file_path
+#       puts "actor_del name: #{actor_del.name}, actor name: #{actor.name}"
+#       deletion_indexes << actor_del_index
+#     end
+#   end
+#   #reverse order so that it doesn't delete the wrong actors
+#   # e.g. it should delete the element 12 before deleting element 10
+#   # otherwise it would delete element 10 and then delete former element 13 (I think)
+#   deletion_indexes.reverse!
+#   deletion_indexes.each do |deletion_index|
+#     puts "Deleting #{actordb[deletion_index].name}..."
+#     actordb.delete_at(deletion_index)
+#   end
+# end
 
 puts "=========================="
 puts "CHECKING DUPLICATES"
@@ -3058,8 +3078,8 @@ actors_by_name.each_key do |key|
         end
       end
       puts "------------------------------"
+      actor_counter += 1
     end
-    actor_counter += 1
   end
 end
 # Update actor names to their renamed values
@@ -3091,6 +3111,9 @@ actordb.each_with_index do |actor, actor_index|
   success = false
   file_paths_array << actor.file_path
   file_paths_array.each do |file_path|
+    #check the case insensitve list we built at the beginning
+    file_path = case_insensitive_file_db[file_path.downcase]
+    next if File.directory?(file_path)
     text = File.read(file_path)
     lines = text.lines
     lines.each do |line|
@@ -3162,6 +3185,7 @@ actordb.each_with_index do |actor, actor_index|
       break if inherits_name == "actor"
       break if inherits_name == "object"
       break if inherits_name == "thinker"
+      break if inherits_name == "eventhandler"
       actordb.each_with_index do |actor_check, actor_check_index|
         if inherits_name == actor_check.name
           puts " - Inherits: #{inherits_name} -> #{actor_check.inherits}"
@@ -3175,6 +3199,7 @@ actordb.each_with_index do |actor, actor_index|
     # e.g. Blah : Blah2, Blah2 : Blah3, Blah3 <no inheritance on Blah3>
     # we start with Blah3, check properties and then go to Blah2, and then Blah
     inheritance.reverse!
+    is_monster = false
     inheritance.each do |inherited_actor|
       actordb.each do |actor_check|
         if actor_check.name == inherited_actor
@@ -3211,7 +3236,13 @@ actordb.each_with_index do |actor, actor_index|
   #we will set this property for future reference
   if is_monster == true
     puts "Actor #{actor.name_with_case} is a Monster!"
-    actor.ismonster = true
+    actordb[actor_index].ismonster = true
+    actordb[actor_index].monster = true
+  else
+    puts "Actor #{actor.name_with_case} is NOT a Monster."
+    actordb[actor_index].ismonster = false
+    actordb[actor_index].monster = false
+    actordb[actor_index].doomednum = -1
   end
 end
 
@@ -3239,7 +3270,7 @@ puts "ID'd non-monsters: #{id_non_monster}"
 
 # wipe all doomednums from the Processing directory
 actordb.each do |actor|
-  if (actor.built_in != true) && (actor.doomednum != -1)
+  if (actor.built_in != true)
     puts "-------------------------------------------------------------------"
     puts "Actor: #{actor.name_with_case}"
     puts "File: #{actor.file_path}"
@@ -3254,7 +3285,7 @@ actordb.each do |actor|
         words = line.split
         words.each_with_index do |word, word_index|
           puts "  word: #{word}"
-          if word == "{" || word =~ /\//
+          if word =~ /^{/ || word =~ /^\//
             puts "   Word detected that starts with { or /"
             break
           end
@@ -3328,6 +3359,7 @@ actordb.each_with_index do |actor, actor_index|
               early_end_index = word_index
             end
           end
+          puts "Incrementing doomednum..."
           while true
             break if doomednum_info.fetch(doomednum_counter, nil) == nil
             doomednum_counter += 1
@@ -3346,6 +3378,8 @@ actordb.each_with_index do |actor, actor_index|
       actordb[actor_index].doomednum = -1
     end
   elsif script_type[actor.file_path] == "ZSCRIPT"
+    next if actor.built_in == true
+    next if actor.ismonster == false && actor.monster == false
     # determine if a MAPINFO file exists, and create if not
     if actor.file_path.split("#{fs}")[1] == "Processing_PK3"
       mapinfo_file = actor.file_path.split("#{fs}")[0..2].join("#{fs}") + "#{fs}MAPINFO"
@@ -3570,11 +3604,19 @@ sprite_prefix.each do |key, prefix|
     puts list_of_sprites.inspect
     puts "Renaming..."
     list_of_sprites.each do |sprite|
+      next if File.directory?(sprite)
+      # Below is a bad choice, and I'm doing it differently... folders were getting renamed
+      #
       # prefix[1] should hold the new prefix which we will rename with
       # regex looks for /BLAH and replaces with /BLA2
-      new_path = sprite.gsub(/#{fs_os}#{key}/, "/#{wad_prefix[1]}")
-      puts "Renaming: #{sprite} -> #{new_path}"
-      File.rename(sprite, new_path)
+      # new_path = sprite.gsub(/#{fs_os}#{key}/, "/#{wad_prefix[1]}")
+      #
+      new_file = sprite.split("#{fs_os}").last
+      new_path = sprite.split("#{fs_os}")[0..-2].join("#{fs_os}") + fs_os + new_file
+      if new_path != sprite
+        puts "Renaming: #{sprite} -> #{new_path}"
+        File.rename(sprite, new_path)
+      end
     end
 
     puts "wad_refix: #{wad_prefix}"
@@ -3705,7 +3747,7 @@ end
 map_folders = Dir.glob(".#{fs}Processing#{fs}*#{fs}maps#{fs}")
 # we are looking for "maps" in case insensitive
 map_folders_pk3 = Dir.glob(".#{fs}Processing_PK3#{fs}*#{fs}*#{fs}").select { |entry|
-    entry = entry.split("#{fs_os}").join("#{fs}")  
+    entry = entry.split("#{fs_os}").join("#{fs}")
     entry.split("#{fs}")[3] =~ /maps/i
   }
 map_folders = map_folders + map_folders_pk3
