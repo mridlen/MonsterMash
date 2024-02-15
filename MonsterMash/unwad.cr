@@ -3269,6 +3269,7 @@ puts "  - Built In: #{built_in_count}"
 puts "ID'd non-monsters: #{id_non_monster}"
 
 # wipe all doomednums from the Processing directory
+# wipe all replaces as well
 actordb.each do |actor|
   if (actor.built_in != true)
     puts "-------------------------------------------------------------------"
@@ -3277,11 +3278,25 @@ actordb.each do |actor|
     file_text = File.read(actor.file_path)
     lines = file_text.lines
     lines.each_with_index do |line, line_index|
+      if line =~ /^\s*actor\s+/i
+        #insert line break before curly braces
+        modified_line = line.gsub("{", "\n{")
+        lines[line_index] = modified_line
+      end
+    end
+    lines.each_with_index do |line, line_index|
       if line =~ /^\h*actor\s+/i
+        # ensure that comments, and colons have a space in front
+        line = line.gsub("//", " //")
+        line = line.gsub(":", " :")
+        # make sure any newly doubled spaces go away with a quick split and join
+        line = line.split.join(" ")
+
         puts "actor_line: #{line}"
 
         delete_word = -1
 
+        # remove doomednums
         words = line.split
         words.each_with_index do |word, word_index|
           puts "  word: #{word}"
@@ -3292,15 +3307,40 @@ actordb.each do |actor|
           if word.to_i? != nil
             puts "  Number detected"
             delete_word = word_index
+            break
           end
         end
-
         if delete_word != -1
           puts "Deleting Word: #{words[delete_word]}"
           words.delete_at(delete_word)
         end
-
         lines[line_index] = words.join(" ")
+
+        delete_word = -1
+        words = lines[line_index].split
+        words.each_with_index do |word, word_index|
+          puts "  word: #{word}"
+          if word =~ /^{/ || word =~ /^\//
+            puts "   Word detected that starts with { or /"
+            break
+          end
+          if word =~ /replaces/i
+            puts "  Replaces detected"
+            delete_word = word_index
+            break
+          end
+        end
+        if delete_word != -1
+          puts "Deleting Replace: #{words[delete_word]} #{words[delete_word + 1]}"
+          words.delete_at(delete_word)
+          words.delete_at(delete_word)
+          puts "Words: #{words}"
+          puts "waiting..."
+          gets
+        end
+        lines[line_index] = words.join(" ")
+
+
         puts "Writing Line: #{lines[line_index]}"
         puts "---------------------"
       end
