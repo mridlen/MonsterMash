@@ -3284,8 +3284,10 @@ actordb.each do |actor|
         lines[line_index] = modified_line
       end
     end
+    file_text = lines.join("\n")
+    lines = file_text.lines
     lines.each_with_index do |line, line_index|
-      if line =~ /^\h*actor\s+/i
+      if line =~ /^\s*actor\s+/i
         # ensure that comments, and colons have a space in front
         line = line.gsub("//", " //")
         line = line.gsub(":", " :")
@@ -3300,8 +3302,15 @@ actordb.each do |actor|
         words = line.split
         words.each_with_index do |word, word_index|
           puts "  word: #{word}"
-          if word =~ /^{/ || word =~ /^\//
-            puts "   Word detected that starts with { or /"
+          if word =~ /^{/
+            puts "   Fatal Error: Word detected that starts with { or /"
+            puts "   Line: #{line}"
+            puts "   Words: #{words}"
+            exit(1)
+            break
+          end
+          if word =~ /^\/\//
+            puts "   Comment detected"
             break
           end
           if word.to_i? != nil
@@ -3330,14 +3339,14 @@ actordb.each do |actor|
             break
           end
         end
-        if delete_word != -1
-          puts "Deleting Replace: #{words[delete_word]} #{words[delete_word + 1]}"
-          words.delete_at(delete_word)
-          words.delete_at(delete_word)
-          puts "Words: #{words}"
-          puts "waiting..."
-          gets
-        end
+        #if delete_word != -1
+        #  puts "Deleting Replace: #{words[delete_word]} #{words[delete_word + 1]}"
+        #  words.delete_at(delete_word)
+        #  words.delete_at(delete_word)
+        #  puts "Words: #{words}"
+        #  puts "waiting..."
+        #  gets
+        #end
         lines[line_index] = words.join(" ")
 
 
@@ -3622,6 +3631,7 @@ sprite_prefix.each do |key, prefix|
       wads_with_prefix[pfix[0].split("#{fs_os}")[0..2].join("#{fs_os}")] = prefix_counter
       sprite_prefix[prefix_counter] = Array(Tuple(String, String)).new
       sprite_prefix[prefix_counter] << pfix
+      prefix_counter = increment_prefix(prefix_counter, sprite_prefix)
     end
   end
 
@@ -3630,18 +3640,29 @@ sprite_prefix.each do |key, prefix|
 
   # rename the files
   wads_with_prefix.each_with_index do |wad_prefix, index|
+    if wad_prefix[0].split("#{fs_os}")[2] == "Eyes"
+      puts wad_prefix.inspect
+      puts "Found Eyes..."
+      gets
+    end
     # skip the first entry which is the original
     next if index == 0
     if wad_prefix[0].split("#{fs_os}")[1] == "Processing"
-      list_of_sprites = Dir.glob("#{wad_prefix[0]}#{fs_os}sprites#{fs_os}#{key}*")
+      list_of_sprites = Dir.glob(".#{fs_os}#{wad_prefix[0]}#{fs_os}sprites#{fs_os}#{key}*")
     elsif wad_prefix[0].split("#{fs_os}")[1] == "Processing_PK3"
-      list_of_sprites = Dir.glob("#{wad_prefix[0]}#{fs_os}**#{fs_os}*").select { |entry| entry =~ /sprites/i && entry =~ /#{key}/ }
+      list_of_sprites = Dir.glob(".#{fs_os}#{wad_prefix[0]}#{fs_os}**#{fs_os}*").select { |entry| entry =~ /sprites/i && entry =~ /#{key}/ }
     else
       # compiler necessitates this "else" I think
       next
     end
     puts "Sprites in #{wad_prefix[0]}:"
     puts list_of_sprites.inspect
+    if wad_prefix[0].split("#{fs_os}")[2] == "Eyes"
+      puts "Wad Prefix:"
+      puts wad_prefix.inspect
+      puts "waiting..."
+      gets
+    end
     puts "Renaming..."
     list_of_sprites.each do |sprite|
       next if File.directory?(sprite)
@@ -3652,7 +3673,10 @@ sprite_prefix.each do |key, prefix|
       # new_path = sprite.gsub(/#{fs_os}#{key}/, "/#{wad_prefix[1]}")
       #
       new_file = sprite.split("#{fs_os}").last
-      new_path = sprite.split("#{fs_os}")[0..-2].join("#{fs_os}") + fs_os + new_file
+      # we take wad prefix[1] which is the new 4 character prefix
+      # and tack on the remaining characters of the original filename starting with the 5th char (4)
+      new_file_renamed = wad_prefix[1] + new_file[4..-1]
+      new_path = sprite.split("#{fs_os}")[0..-2].join("#{fs_os}") + fs_os + new_file_renamed
       if new_path != sprite
         puts "Renaming: #{sprite} -> #{new_path}"
         File.rename(sprite, new_path)
