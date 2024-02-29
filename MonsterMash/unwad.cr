@@ -3166,6 +3166,68 @@ actors_by_name = actordb.reduce(Hash(String, Array(Actor)).new) do |acc, actor|
   acc
 end
 
+# identify weapons
+actordb.each_with_index do |actor, actor_index|
+  # we are going to assume that any weapon values
+  # means that it is in fact a weapon
+  # probably not a safe bet, but it might be "good enough"
+  if actor.weapon.noautofire == true ||
+     actor.weapon.readysndhalf == true ||
+     actor.weapon.dontbob == true ||
+     actor.weapon.axeblood == true ||
+     actor.weapon.noalert == true ||
+     actor.weapon.ammo_optional == true ||
+     actor.weapon.alt_ammo_optional == true ||
+     actor.weapon.ammo_checkboth == true ||
+     actor.weapon.primary_uses_both == true ||
+     actor.weapon.alt_uses_both == true ||
+     actor.weapon.wimpy_weapon == true ||
+     actor.weapon.powered_up == true ||
+     actor.weapon.staff2_kickback == true ||
+     actor.weapon.explosive == true ||
+     actor.weapon.meleeweapon == true ||
+     actor.weapon.bfg == true ||
+     actor.weapon.cheatnotweapon == true ||
+     actor.weapon.noautoswitchto == true ||
+     actor.weapon.noautoaim == true ||
+     actor.weapon.nodeathdeselect == true ||
+     actor.weapon.nodeathinput == true ||
+     actor.weapon.allow_with_respawn_invul == true ||
+     actor.weapon.nolms == true ||
+     
+     actor.weapon.ammogive != -1 ||
+     actor.weapon.ammogive1 != -1 ||
+     actor.weapon.ammogive2 != -1 ||
+     actor.weapon.ammotype != "UNDEFINED" ||
+     actor.weapon.ammotype1 != "UNDEFINED" ||
+     actor.weapon.ammotype2 != "UNDEFINED" ||
+     actor.weapon.ammouse != -1 ||
+     actor.weapon.ammouse1 != -1 ||
+     actor.weapon.ammouse2 != -1 ||
+     actor.weapon.minselectionammo1 != -1 ||
+     actor.weapon.minselectionammo2 != -1 ||
+     actor.weapon.bobpivot3d != "UNDEFINED" ||
+     actor.weapon.bobrangex != 1.0 ||
+     actor.weapon.bobrangey != 1.0 ||
+     actor.weapon.bobspeed != 1.0 ||
+     actor.weapon.bobstyle != "UNDEFINED" ||
+     actor.weapon.kickback != -1 ||
+     actor.weapon.defaultkickback == true ||
+     actor.weapon.readysound != "UNDEFINED" ||
+     actor.weapon.selectionorder != -1 ||
+     actor.weapon.sisterweapon != "UNDEFINED" ||
+     actor.weapon.slotnumber != -1 ||
+     actor.weapon.slotpriority != 0.0 ||
+     actor.weapon.upsound != "UNDEFINED" ||
+     actor.weapon.weaponscalex != 1.0 ||
+     actor.weapon.weaponscaley != 1.2 ||
+     actor.weapon.yadjust != 0 ||
+     actor.weapon.lookscale != 0.0
+    actordb[actor_index].is_weapon = true
+    puts "Weapon: #{actor.name_with_case}"
+  end
+end
+
 # we need to evaluate inheritance specifically as far as monsters are concerned
 actordb.each_with_index do |actor, actor_index|
   next if actor.built_in == true
@@ -3339,14 +3401,12 @@ actordb.each do |actor|
             break
           end
         end
-        #if delete_word != -1
-        #  puts "Deleting Replace: #{words[delete_word]} #{words[delete_word + 1]}"
-        #  words.delete_at(delete_word)
-        #  words.delete_at(delete_word)
-        #  puts "Words: #{words}"
-        #  puts "waiting..."
-        #  gets
-        #end
+        if delete_word != -1
+          puts "Deleting Replace: #{words[delete_word]} #{words[delete_word + 1]}"
+          words.delete_at(delete_word)
+          words.delete_at(delete_word)
+          puts "Words: #{words}"
+        end
         lines[line_index] = words.join(" ")
 
 
@@ -3385,11 +3445,11 @@ mapinfo_files_wad.each do |mapinfo_file|
 end
 # gsub(/doomednums\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi, "")
 
-# assign doomednums to all monster actors
+# assign doomednums to all monster actors (& weapons)
 doomednum_counter = 15000
 actordb.each_with_index do |actor, actor_index|
   if script_type[actor.file_path] == "DECORATE"
-    if (actor.built_in != true) && (actor.ismonster == true || actor.monster == true)
+    if (actor.built_in != true) && (actor.ismonster == true || actor.monster == true || actor.is_weapon == true)
       file_text = File.read(actor.file_path)
       lines = file_text.lines
       lines.each_with_index do |line, line_index|
@@ -3400,7 +3460,7 @@ actordb.each_with_index do |actor, actor_index|
           line = line.gsub(":", " : ")
           words = line.lstrip.split
           next if words[1].downcase != actor.name_with_case.downcase
-          puts "Monster Actor found (#{actor.name_with_case}): #{line}"
+          puts "Monster/Weapon Actor found (#{actor.name_with_case}): #{line}"
           # set to size minus 1
           early_end_index = words.size
           words.each_with_index do |word, word_index|
@@ -3423,12 +3483,12 @@ actordb.each_with_index do |actor, actor_index|
       file_text = lines.join("\n")
       File.write(actor.file_path, file_text)
     else
-      #the actor is not a monster, so it will not be assigned a doomednum, and we will wipe it to -1 in the database
+      #the actor is not a monster/weapon, so it will not be assigned a doomednum, and we will wipe it to -1 in the database
       actordb[actor_index].doomednum = -1
     end
   elsif script_type[actor.file_path] == "ZSCRIPT"
     next if actor.built_in == true
-    next if actor.ismonster == false && actor.monster == false
+    next if actor.ismonster == false && actor.monster == false && actor.is_weapon == false
     # determine if a MAPINFO file exists, and create if not
     if actor.file_path.split("#{fs}")[1] == "Processing_PK3"
       mapinfo_file = actor.file_path.split("#{fs}")[0..2].join("#{fs}") + "#{fs}MAPINFO"
@@ -3484,6 +3544,12 @@ sprites_files = Dir.glob(".#{fs_os}Processing#{fs_os}*#{fs_os}sprites#{fs_os}*")
 sprites_pk3 = Dir.glob(".#{fs_os}Processing_PK3#{fs_os}**#{fs_os}*").select { |entry| entry =~ /sprites/i }
 sprites_files = sprites_files + sprites_pk3
 sprites_files = sprites_files + Dir.glob(".#{fs_os}IWADs_Extracted#{fs_os}*#{fs_os}sprites#{fs_os}*")
+
+sprites_files.each do |sprite|
+  if sprite =~ /samo/i
+    puts "Sprite: #{sprite}"
+  end
+end
 
 #sprites_by_name = sprites_files
 #  .group_by { |sprite| sprite.split("/").last }
@@ -3560,8 +3626,8 @@ def increment_prefix(original_string : String, sprite_prefix : Hash(String, Arra
     puts "Modified Prefix #{original_string_modified} is taken by #{sprite_prefix[original_string_modified][0]}, trying next..."
     original_string_modified = original_string_modified.succ
     #error protection, check for numbers or 5 char prefixes
-    if original_string_modified =~ /^[0-9]/ || original_string_modified.size > 4
-      puts "Fatal Error: prefix \"#{original_string_modified}\" starts with digit or is larger than 4 characters"
+    if original_string_modified.size > 4
+      puts "Fatal Error: prefix \"#{original_string_modified}\" is larger than 4 characters"
       exit(1)
     end
   end
@@ -3640,29 +3706,22 @@ sprite_prefix.each do |key, prefix|
 
   # rename the files
   wads_with_prefix.each_with_index do |wad_prefix, index|
-    if wad_prefix[0].split("#{fs_os}")[2] == "Eyes"
-      puts wad_prefix.inspect
-      puts "Found Eyes..."
-      gets
-    end
     # skip the first entry which is the original
     next if index == 0
     if wad_prefix[0].split("#{fs_os}")[1] == "Processing"
       list_of_sprites = Dir.glob(".#{fs_os}#{wad_prefix[0]}#{fs_os}sprites#{fs_os}#{key}*")
     elsif wad_prefix[0].split("#{fs_os}")[1] == "Processing_PK3"
-      list_of_sprites = Dir.glob(".#{fs_os}#{wad_prefix[0]}#{fs_os}**#{fs_os}*").select { |entry| entry =~ /sprites/i && entry =~ /#{key}/ }
+      list_of_sprites = Dir.glob(".#{fs_os}#{wad_prefix[0]}#{fs_os}**#{fs_os}*").select { |entry| entry =~ /sprites/i && entry =~ /#{key}/i }
     else
       # compiler necessitates this "else" I think
       next
     end
     puts "Sprites in #{wad_prefix[0]}:"
-    puts list_of_sprites.inspect
-    if wad_prefix[0].split("#{fs_os}")[2] == "Eyes"
-      puts "Wad Prefix:"
-      puts wad_prefix.inspect
-      puts "waiting..."
-      gets
+    list_of_sprites.each_with_index do |sprite, sprite_index|
+      updated_sprite = Path.posix(sprite).normalize.to_s
+      list_of_sprites[sprite_index] = ".#{fs}" + updated_sprite
     end
+    puts list_of_sprites.inspect
     puts "Renaming..."
     list_of_sprites.each do |sprite|
       next if File.directory?(sprite)
@@ -3689,7 +3748,7 @@ sprite_prefix.each do |key, prefix|
     puts "prefix_counter: #{prefix_counter}"
 
     # Troubleshooting a prefix is made easier by this code...
-    #if key == "SKLL"
+    #if key == "MUZZ"
     #  puts "hit enter..."
     #  gets
     #end
@@ -3764,6 +3823,22 @@ sprite_prefix.each do |key, prefix|
             decorate_text_lines[decorate_line_index] = decorate_line.sub(key, prefix[1])
             puts "Corrected line: #{decorate_text_lines[decorate_line_index]}"
           end
+          if ( decorate_line =~ /^\s*inventory.icon/i ||
+               decorate_line =~ /^\s*inventory.althudicon/i ||
+               decorate_line =~ /^\s*player.crouchsprite/i ||
+               decorate_line =~ /^\s*player.scoreicon/i ) &&
+             decorate_line =~ /#{key}/i
+            puts "Matched line..: #{decorate_line}"
+            value = decorate_line.split[1]
+            value_renamed = value.sub(key, prefix[1])
+            decorate_text_lines[decorate_line_index] = decorate_line.sub(value, value_renamed)
+            puts "Key: #{key}"
+            puts "Prefix: #{prefix.inspect}"
+            puts "Value: #{value}"
+            puts "Value Renamed: #{value}"
+            puts "Decorate Text: #{decorate_text_lines[decorate_line_index]}"
+          end
+          
         end
         decorate_text = decorate_text_lines.join("\n")
         File.write(decorate, decorate_text)
@@ -3798,12 +3873,83 @@ sprite_prefix.each do |key, prefix|
             zscript_text_lines[zscript_line_index] = zscript_line.sub(key, prefix[1])
             puts "Corrected line: #{zscript_text_lines[zscript_line_index]}"
           end
+          if ( zscript_line =~ /^\s*inventory.icon/i ||
+               zscript_line =~ /^\s*inventory.althudicon/i ||
+               zscript_line =~ /^\s*player.crouchsprite/i ||
+               zscript_line =~ /^\s*player.scoreicon/i ) &&
+               zscript_line =~ /#{key}/i
+            puts "Matched line..: #{zscript_line}"
+            value = zscript_line.split[1]
+            value_renamed = value.sub(key, prefix[1])
+            zscript_text_lines[zscript_line_index] = zscript_line.sub(value, value_renamed)
+            puts "Key: #{key}"
+            puts "Prefix: #{prefix.inspect}"
+            puts "Value: #{value}"
+            puts "Value Renamed: #{value}"
+            puts "Decorate Text: #{zscript_text_lines[zscript_line_index]}"
+          end
         end
         zscript_text = zscript_text_lines.join("\n")
         File.write(zscript, zscript_text)
       end
     end
 
+    # TEXTURES lump renaming
+    textures_list = Dir.glob(".#{fs}Processing#{fs}*#{fs}defs#{fs}TEXTURES.raw")
+    pk3_textures_list = Dir.glob(".#{fs}Processing_PK3#{fs}*#{fs}*")
+    pk3_textures_list = pk3_textures_list.select {|file| file.split("#{fs_os}")[3] =~ /textures/i }
+    pk3_textures_list = pk3_textures_list.select {|file| File.directory?(file) == false }
+    textures_list = textures_list + pk3_textures_list
+    textures_list.each do |texture_file|
+      puts "Texture File: #{texture_file}"
+      puts "Prefix: #{prefix[0]}"
+      next if texture_file !~ /#{prefix[0]}/
+      file_text = File.read(texture_file)
+      file_text_lines = file_text.lines
+      file_text_lines.each_with_index do |line, line_index|
+        if   line =~ /#{key}/ &&
+           ( line =~ /^\s*texture/i ||
+             line =~ /^\s*sprite/i ||
+             line =~ /^\s*graphic/i ||
+             line =~ /^\s*walltexture/i ||
+             line =~ /^\s*flat/i ||
+             line =~ /^\s*patch/i ||
+             line =~ /^\s*graphic/i ||
+             line =~ /^\s*sprite/i )
+          value = line.split[1]
+          replacement_value = value.gsub(key, prefix[1])
+          replacement_line = line.gsub(value, replacement_value)
+          puts "Replacing / With:"
+          puts line
+          puts replacement_line
+          file_text_lines[line_index] = replacement_line
+        end
+      end
+      file_text = file_text_lines.join("\n")
+      File.write(texture_file, file_text)
+    end
+
+    # GLDEFS lump renaming
+    gldefs_list = Dir.glob(".#{fs}Processing#{fs}*#{fs}defs#{fs}GLDEFS.raw")
+    pk3_gldefs_list = Dir.glob(".#{fs}Processing_PK3#{fs}*#{fs}*")
+    pk3_gldefs_list = pk3_gldefs_list.select {|file| file.split("#{fs_os}")[3] =~ /gldefs/i }
+    pk3_gldefs_list = pk3_gldefs_list.select {|file| File.directory?(file) == false }
+    gldefs_list = gldefs_list + pk3_gldefs_list
+    gldefs_list.each do |gldefs_file|
+      file_text = File.read(gldefs_file)
+      file_text_lines = file_text.lines
+      file_text_lines.each_with_index do |line, line_index|
+        if ( line =~ /^\s*frame/i ) &&
+             line =~ /#{key}/
+          value = line.split[1]
+          replacement_value = value.sub(key, prefix[1])
+          replacement_line = line.sub(value, replacement_value)
+          file_text_lines[line_index] = replacement_line
+        end
+      end
+      file_text = file_text_lines.join("\n")
+      File.write(gldefs_file, file_text)      
+    end
   end
 end
 
@@ -3939,6 +4085,50 @@ end
 # Close out the section
 lua_file += "}\n"
 
+
+# Generate the Lua for Weapons
+lua_file += "MONSTER_MASH.WEAPONS =\n"
+lua_file += "{\n"
+actordb.each_with_index do |actor, index|
+  next if actor.is_weapon == false
+  # grab the ammo type value
+  actor_ammo_extracted = "UNDEFINED"
+  if actor.weapon.ammotype =~ /\"/
+    actor_ammo_extracted_pre = actor.weapon.ammotype.split("\"")[2]
+    if actor_ammo_extracted_pre != nil
+      actor_ammo_extracted = actor_ammo_extracted_pre.sub("\\", "")
+    end
+  else
+    actor_ammo_extracted = actor.weapon.ammotype
+  end
+  # add an underscore if it starts with a number
+  number_prefix = ""
+  if actor.name_with_case =~ /^\d/
+    number_prefix = "_"
+  end
+  # do some character replaces if these pop up (might fix these earlier in the process)
+  fixed_actor_name = actor.name_with_case.gsub("~", "_")
+  fixed_actor_name = fixed_actor_name.gsub(":", "")
+  fixed_actor_name = fixed_actor_name.gsub("-", "_")
+  lua_file += "  -- Source File: #{actor.source_wad_folder}\n"
+  lua_file += "  #{number_prefix}#{fixed_actor_name} =\n"
+  lua_file += "  {\n"
+  lua_file += "    id = #{actor.doomednum},\n"
+  lua_file += "    level = 1,\n"
+  lua_file += "    pref = 40,\n"
+  lua_file += "    add_prob = 70,\n"
+  lua_file += "    attack = \"hitscan\",\n"
+  lua_file += "    rate = 0.9,\n"
+  lua_file += "    damage = 50,\n"
+  #lua_file += "    ammo = \"#{actor_ammo_extracted}\",\n"
+  lua_file += "    ammo = \"clip\",\n"
+  lua_file += "    per = 1,\n"
+  #lua_file += "    give = { { ammo=\"#{actor_ammo_extracted}\", count=#{actor.weapon.ammogive} } }\n"
+  lua_file += "    give = { {ammo=\"clip\", count=20} }\n"
+  lua_file += "  },\n"
+end
+lua_file += "}\n"
+
 lua_file += "OB_MODULES[\"monster_mash\"] =\n"
 lua_file += "{\n"
 lua_file += "  name = \"monster_mash_control\",\n"
@@ -3956,6 +4146,7 @@ lua_file += "  },\n"
 lua_file += "  options =\n"
 lua_file += "  {\n"
 
+# Monster controls
 actordb.each do |actor|
   next if (actor.ismonster == false && actor.monster == false) || actor.doomednum == -1
   lua_file += "    -- Source File: #{actor.source_wad_folder}\n"
@@ -3974,16 +4165,44 @@ actordb.each do |actor|
   lua_file += "    },\n"
 end
 
+# Weapon controls
+actordb.each do |actor|
+  next if (actor.is_weapon == false) || actor.doomednum == -1
+  lua_file += "    -- Source File: #{actor.source_wad_folder}\n"
+  lua_file += "    {\n"
+  lua_file += "      name = \"float_#{actor.name}\",\n"
+  lua_file += "      label = _(\"#{actor.name_with_case}\"),\n"
+  lua_file += "      valuator = \"slider\",\n"
+  lua_file += "      min = 0,\n"
+  lua_file += "      max = 20,\n"
+  lua_file += "      increment = .02,\n"
+  lua_file += "      default = _(5.0),\n"
+  lua_file += "      nan = _(5.0),\n"
+  lua_file += "      tooltip = _(\"Control the amount of #{actor.name_with_case}\"),\n"
+  lua_file += "      presets = _(\"0:0 (None at all,.02:0.02 (Scarce),.14:0.14 (Less),.5:0.5 (Plenty),1.2:1.2 (More),3:3 (Heaps),20:20 (INSANE)\"),\n"
+  lua_file += "      randomize_group=\"pickups\",\n"
+  lua_file += "    },\n"
+end
+
 lua_file += "  },\n"
 lua_file += "}\n"
 
+
+#output lua script to the screen
 puts lua_file
 
+#write the lua file
 File.write("..#{fs_os}modules#{fs_os}monster_mash.lua", lua_file)
+
+###########################
+# Script FINISHED!!!
 ###########################
 ###########################
 ###########################
+# exit cleanly
 exit(0)
+#
+#
 # OLD CODE
 ###########################
 
