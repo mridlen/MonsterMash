@@ -2461,13 +2461,13 @@ full_dir_list.each do |file_path|
         new_actor.weapon.ammogive2 = line.split[1].to_i
       elsif property_name == "weapon.ammotype"
         puts "  - Weapon.AmmoType: " + line.split[1..-1].join(' ')
-        new_actor.weapon.ammotype = line.split[1..-1]?.to_s
+        new_actor.weapon.ammotype = line.split[1..-1].join(' ')
       elsif property_name == "weapon.ammotype1"
         puts "  - Weapon.AmmoType1: " + line.split[1..-1].join(' ')
-        new_actor.weapon.ammotype1 = line.split[1..-1]?.to_s
+        new_actor.weapon.ammotype1 = line.split[1..-1].join(' ')
       elsif property_name == "weapon.ammotype2"
         puts "  - Weapon.AmmoType2: " + line.split[1..-1].join(' ')
-        new_actor.weapon.ammotype2 = line.split[1..-1]?.to_s
+        new_actor.weapon.ammotype2 = line.split[1..-1].join(' ')
       elsif property_name == "weapon.ammouse"
         puts "  - Weapon.AmmoUse: " + line.split[1..-1].join(' ')
         new_actor.weapon.ammouse = line.split[1].to_i
@@ -3168,6 +3168,9 @@ end
 
 # identify weapons
 actordb.each_with_index do |actor, actor_index|
+  # skip any built_in weapons
+  next if actor.built_in == true
+
   # we are going to assume that any weapon values
   # means that it is in fact a weapon
   # probably not a safe bet, but it might be "good enough"
@@ -3225,6 +3228,145 @@ actordb.each_with_index do |actor, actor_index|
      actor.weapon.lookscale != 0.0
     actordb[actor_index].is_weapon = true
     puts "Weapon: #{actor.name_with_case}"
+
+    # Set a slot number if not defined (this is essentially mandatory or the guns will not work correctly)
+    if actor.weapon.slotnumber == -1
+      #slot number is not defined so lets check ammo type
+      if actor.weapon.ammotype == "UNDEFINED" && actor.weapon.ammotype1 == "UNDEFINED" && actor.weapon.ammotype2 == "UNDEFINED"
+        puts "#{actor.source_file}:#{actor.name} is a weapon with both no slot number and no ammo type. It's not a weapon."
+        actordb[actor_index].is_weapon = false
+      else
+        # parse out ammotype if there are quotation marks
+        weapon_ammo_type = "UNDEFINED"
+        weapon_ammo_type1 = "UNDEFINED"
+        weapon_ammo_type2 = "UNDEFINED"
+        if actor.weapon.ammotype =~ /\"/
+          weapon_ammo_type = actor.weapon.ammotype.gsub(/\"/, "").downcase
+        else
+          weapon_ammo_type = actor.weapon.ammotype.to_s.downcase
+        end
+        if actor.weapon.ammotype1 =~ /\"/
+          weapon_ammo_type1 = actor.weapon.ammotype1.gsub(/\"/, "").downcase
+        else
+          weapon_ammo_type1 = actor.weapon.ammotype1.to_s.downcase
+        end
+        if actor.weapon.ammotype2 =~ /\"/
+          weapon_ammo_type2 = actor.weapon.ammotype2.gsub(/\"/, "").downcase
+        else
+          weapon_ammo_type2 = actor.weapon.ammotype2.to_s.downcase
+        end
+
+        # we already checked to make sure at least one value was populated
+        # so now we just need to establish precidence
+        # priority: 1) ammotype 2) ammotype1 3) ammotype
+        if weapon_ammo_type == "UNDEFINED" || weapon_ammo_type == "undefined"
+          if weapon_ammo_type1 != "UNDEFINED" && weapon_ammo_type1 != "undefined"
+            weapon_ammo_type = weapon_ammo_type1.gsub(/\"/, "")
+          else
+            weapon_ammo_type = weapon_ammo_type2.gsub(/\"/, "")
+          end
+        end
+
+        # set weapon slot based on ammo type
+        if weapon_ammo_type == "clip"
+          #set to slot 2 if wimpy weapon, otherwise it gets slot 4
+          if actor.weapon.wimpy_weapon == true
+            actordb[actor_index].weapon.slotnumber = 2
+          else
+            actordb[actor_index].weapon.slotnumber = 4
+          end
+        elsif weapon_ammo_type == "shell"
+          actordb[actor_index].weapon.slotnumber = 3
+        elsif weapon_ammo_type == "rocketammo"
+          actordb[actor_index].weapon.slotnumber = 5
+        elsif weapon_ammo_type == "cell"
+          if actor.weapon.bfg == true
+            actordb[actor_index].weapon.slotnumber = 7
+          else
+            actordb[actor_index].weapon.slotnumber = 6
+          end
+        else
+          # slot number 8 will be an "unknown weapon bucket"
+          actordb[actor_index].weapon.slotnumber = 8
+        end
+
+        puts "Actor Ammo Type: #{actor.weapon.ammotype} -> #{weapon_ammo_type}"
+        puts "Actor Ammo Type1: #{actor.weapon.ammotype1} -> #{weapon_ammo_type1}"
+        puts "Actor Ammo Type2: #{actor.weapon.ammotype2} -> #{weapon_ammo_type2}"
+        puts "Updating #{actor.source_file}:#{actor.name}: New slot number: #{actordb[actor_index].weapon.slotnumber}"
+
+        # Edit the file and make the insertion
+        if script_type[actor.file_path] == "DECORATE"
+          file_text = File.read(actor.file_path)
+          found_actor_line = -1
+          found_open_curly = -1
+          file_text_lines = file_text.lines
+          file_text_lines.each_with_index do |line, line_index|
+            if found_actor_line == -1 && line =~ /^\s*actor\s+#{actor.name}[:|\s]/i
+              puts "Actor Line found: #{line_index}"
+              puts "Line: #{line}"
+              found_actor_line = line_index
+            end
+            if found_actor_line != -1 && found_open_curly == -1 && line =~ /\{/
+              puts "Found Open Curly: #{line_index}"
+              puts "Line: #{line}"
+              found_open_curly = line_index
+              break
+            end
+          end
+          found_open_curly = found_open_curly + 1
+          puts "Found Open Curly + 1: #{found_open_curly}"
+          insert_line = "  Weapon.SlotNumber #{actordb[actor_index].weapon.slotnumber}"
+          puts "Insert Line: #{insert_line}"
+          file_text_lines.insert(found_open_curly, insert_line)
+          file_text = file_text_lines.join("\n")
+          File.write(actor.file_path, file_text)
+        elsif script_type[actor.file_path] == "ZSCRIPT"
+          file_text = File.read(actor.file_path)
+          found_actor_line = -1
+          found_actor_open_curly = -1
+          found_default_line = -1
+          found_default_open_curly = -1
+          file_text_lines = file_text.lines
+          file_text_lines.each_with_index do |line, line_index|
+            if found_actor_line == -1 && line =~ /^\s*class\s+#{actor.name}\s+/i
+              puts "Actor Line found: #{line_index}"
+              puts "Line: #{line}"
+              found_actor_line = line_index
+            end
+            if found_actor_line != -1 && found_actor_open_curly == -1 && line =~ /\{/
+              puts "Found Actor Open Curly: #{line_index}"
+              puts "Line: #{line}"
+              found_actor_open_curly = line_index
+            end
+            if found_actor_open_curly != -1 && found_default_line == -1 && line =~ /^\s*default/i
+              puts "Found Default Section: #{line_index}"
+              puts "Line: #{line}"
+              found_default_line = line_index
+            end
+            if found_default_line != -1 && found_default_open_curly == -1 && line =~ /\{/
+              puts "Found Default Open Curly: #{line_index}"
+              puts "Line: #{line}"
+              found_default_open_curly = line_index
+              break
+            end
+          end
+          puts "Found Default Open Curly: #{found_default_open_curly}"
+          found_default_open_curly = found_default_open_curly + 1
+          puts "Inserting at #{found_default_open_curly}"
+          insert_line = "  Weapon.SlotNumber #{actordb[actor_index].weapon.slotnumber};"
+          puts "Insert Line: #{insert_line}"
+          file_text_lines = file_text_lines.insert(found_default_open_curly, insert_line)
+          file_text = file_text_lines.join("\n")
+          File.write(actor.file_path, file_text)
+        end        
+
+        if actor.file_path == "./Processing/Hunting\ Rifle/defs/DECORATE.raw"
+          puts "waiting..."
+          gets
+        end
+      end
+    end
   end
 end
 
