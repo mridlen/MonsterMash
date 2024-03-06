@@ -251,6 +251,11 @@ puts "Copy from Source to Processing completed."
 
 puts "Starting Processing procedure..."
 
+# Delete any KEYCONF.raw files in Processing directory
+keyconf_list = Dir.glob(".#{fs}Processing#{fs}**#{fs}KEYCONF.raw")
+puts keyconf_list.inspect
+FileUtils.rm(keyconf_list)
+
 # build a list of files under Processing_PK3 so we can do a case insensitive search
 processing_pk3_file_list = Dir.glob(".#{fs}Processing_PK3#{fs}**/*")
 case_insensitive_file_db = Hash(String, String).new
@@ -3360,11 +3365,6 @@ actordb.each_with_index do |actor, actor_index|
           file_text = file_text_lines.join("\n")
           File.write(actor.file_path, file_text)
         end        
-
-        if actor.file_path == "./Processing/Hunting\ Rifle/defs/DECORATE.raw"
-          puts "waiting..."
-          gets
-        end
       end
     end
   end
