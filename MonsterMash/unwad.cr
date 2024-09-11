@@ -4335,19 +4335,45 @@ actordb.each_with_index do |actor, index|
   next if actor.is_weapon == false
   # grab the ammo type value
   actor_ammo_extracted = "UNDEFINED"
+  # default is ammotype, second chance is ammotype1 and then ammotype2 (not sure how to implement ammotype2)
   if actor.weapon.ammotype =~ /\"/
-    actor_ammo_extracted_pre = actor.weapon.ammotype.split("\"")[2]
+    actor_ammo_extracted_pre = actor.weapon.ammotype.split("\"")[1]
     if actor_ammo_extracted_pre != nil
       actor_ammo_extracted = actor_ammo_extracted_pre.sub("\\", "")
     end
-  else
+  elsif actor.weapon.ammotype != "UNDEFINED"
     actor_ammo_extracted = actor.weapon.ammotype
+  elsif actor.weapon.ammotype1 =~ /\"/
+    actor_ammo_extracted_pre = actor.weapon.ammotype1.split("\"")[1]
+    if actor_ammo_extracted_pre != nil
+      actor_ammo_extracted = actor_ammo_extracted_pre.sub("\\", "")
+    end
+  elsif actor.weapon.ammotype1 != "UNDEFINED"
+    actor_ammo_extracted = actor.weapon.ammotype1
+  elsif actor.weapon.ammotype2 =~ /\"/
+    actor_ammo_extracted_pre = actor.weapon.ammotype2.split("\"")[1]
+    if actor_ammo_extracted_pre != nil
+      actor_ammo_extracted = actor_ammo_extracted_pre.sub("\\", "")
+    end
+  elsif actor.weapon.ammotype2 != "UNDEFINED"
+    actor_ammo_extracted = actor.weapon.ammotype2
+  else
+    # if all else fails, we default to "clip"
+    actor_ammo_extracted = "clip"
   end
+  # downcase it
+  actor_ammo_extracted = actor_ammo_extracted.downcase
   # add an underscore if it starts with a number
   number_prefix = ""
   if actor.name_with_case =~ /^\d/
     number_prefix = "_"
   end
+  if actor.weapon.ammogive < 1
+    ammo_count = 5
+  else
+    ammo_count = actor.weapon.ammogive
+  end
+
   # do some character replaces if these pop up (might fix these earlier in the process)
   fixed_actor_name = actor.name_with_case.gsub("~", "_")
   fixed_actor_name = fixed_actor_name.gsub(":", "")
@@ -4362,11 +4388,9 @@ actordb.each_with_index do |actor, index|
   lua_file += "    attack = \"hitscan\",\n"
   lua_file += "    rate = 0.9,\n"
   lua_file += "    damage = 50,\n"
-  #lua_file += "    ammo = \"#{actor_ammo_extracted}\",\n"
-  lua_file += "    ammo = \"clip\",\n"
+  lua_file += "    ammo = \"#{actor_ammo_extracted}\",\n"
   lua_file += "    per = 1,\n"
-  #lua_file += "    give = { { ammo=\"#{actor_ammo_extracted}\", count=#{actor.weapon.ammogive} } }\n"
-  lua_file += "    give = { {ammo=\"clip\", count=20} }\n"
+  lua_file += "    give = { { ammo=\"#{actor_ammo_extracted}\", count=#{ammo_count} } }\n"
   lua_file += "  },\n"
 end
 lua_file += "}\n"
@@ -4381,6 +4405,14 @@ actordb.each do |actor|
   if actor.name_with_case =~ /^\d/
     number_prefix = "_"
   end
+  # check if there's an inventory amount and if not, count=5
+  if actor.inventory.amount != "" && actor.inventory.amount > 0
+    inventory_count = actor.inventory.amount
+  elsif actor.inventory.amount < 1
+    inventory_count = 5
+  else
+    inventory_count = 5
+  end
   lua_file += "  -- Source File: #{actor.source_wad_folder}\n"
   lua_file += "  #{number_prefix}#{actor.name} =\n"
   lua_file += "  {\n"
@@ -4388,7 +4420,7 @@ actordb.each do |actor|
   lua_file += "    kind = \"ammo\",\n"
   lua_file += "    rank = 2,\n"
   lua_file += "    add_prob = 40,\n"
-  lua_file += "    give = { {ammo=\"clip\",count=20} },\n"
+  lua_file += "    give = { {ammo=\"#{actor.name.downcase}\",count=#{inventory_count} } },\n"
   lua_file += "  },\n"
 end
 lua_file += "}\n"
