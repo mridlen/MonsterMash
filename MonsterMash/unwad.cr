@@ -2795,6 +2795,11 @@ end
 puts "=========================="
 puts "END FILE READING"
 
+#puts "====================="
+#puts "PAUSING FOR CHECKS..."
+#puts "====================="
+#STDIN.gets
+
 puts "=========================="
 puts "Removing Identical Actors"
 puts "=========================="
@@ -3370,6 +3375,63 @@ actordb.each_with_index do |actor, actor_index|
   end
 end
 
+# Evaluate Inheritance for Ammo and Pickups
+inheritance = Hash(String, String).new
+actordb.each_with_index do |actor, actor_index|
+  if actor.inherits != "UNDEFINED"
+    puts "Actor #{actor.name} inherits #{actor.inherits}"
+    inheritance[actor.name] = actor.inherits
+  end
+end
+actordb.each_with_index do |actor, actor_index|
+  inheritance_list = Array(String).new
+  puts "Actor: #{actor.name}"
+  inheritance_list << actor.name
+  iteration_name = actor.inherits
+  while inheritance.has_key?(iteration_name) == true
+    puts " - Inherits: #{iteration_name}"
+    inheritance_list << iteration_name
+    iteration_name = inheritance[iteration_name]
+  end
+  puts "Inheritance List:"
+  puts inheritance_list.inspect
+  if inheritance_list.includes?("ammo")
+    puts "Ammo Item!"
+    actordb[actor_index].is_ammo = true
+  elsif inheritance_list.includes?("healthpickup")
+    puts "Health Item!"
+    actordb[actor_index].is_health = true
+  elsif inheritance_list.includes?("armor")
+    puts "Armor Item!"
+    actordb[actor_index].is_armor = true
+  elsif inheritance_list.includes?("backpackitem")
+    puts "Backpack Item!"
+    actordb[actor_index].is_backpackitem = true
+  elsif inheritance_list.includes?("health")
+    puts "Health Item!"
+    actordb[actor_index].is_health = true
+  elsif inheritance_list.includes?("powerup")
+    puts "Powerup Item!"
+    actordb[actor_index].is_powerup = true
+  end 
+end
+
+puts "Ammo items:"
+actordb.each do |actor|
+  if actor.is_ammo == true
+    puts " - #{actor.name}"
+  end
+end
+
+#  shell_box =
+#  {
+#    id = 2049,
+#    kind = "ammo",
+#    rank = 2,
+#    add_prob = 40,
+#    give = { {ammo="shell",count=20} },
+#  },
+
 # we need to evaluate inheritance specifically as far as monsters are concerned
 actordb.each_with_index do |actor, actor_index|
   next if actor.built_in == true
@@ -3587,11 +3649,11 @@ mapinfo_files_wad.each do |mapinfo_file|
 end
 # gsub(/doomednums\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi, "")
 
-# assign doomednums to all monster actors (& weapons)
+# assign doomednums to all monster actors (& weapons) (& ammo)
 doomednum_counter = 15000
 actordb.each_with_index do |actor, actor_index|
   if script_type[actor.file_path] == "DECORATE"
-    if (actor.built_in != true) && (actor.ismonster == true || actor.monster == true || actor.is_weapon == true)
+    if (actor.built_in != true) && (actor.ismonster == true || actor.monster == true || actor.is_weapon == true || actor.is_ammo == true)
       file_text = File.read(actor.file_path)
       lines = file_text.lines
       lines.each_with_index do |line, line_index|
@@ -3602,7 +3664,7 @@ actordb.each_with_index do |actor, actor_index|
           line = line.gsub(":", " : ")
           words = line.lstrip.split
           next if words[1].downcase != actor.name_with_case.downcase
-          puts "Monster/Weapon Actor found (#{actor.name_with_case}): #{line}"
+          puts "Assignable Actor found (#{actor.name_with_case}): #{line}"
           # set to size minus 1
           early_end_index = words.size
           words.each_with_index do |word, word_index|
@@ -3630,7 +3692,7 @@ actordb.each_with_index do |actor, actor_index|
     end
   elsif script_type[actor.file_path] == "ZSCRIPT"
     next if actor.built_in == true
-    next if actor.ismonster == false && actor.monster == false && actor.is_weapon == false
+    next if actor.ismonster == false && actor.monster == false && actor.is_weapon == false && actor.is_ammo == false
     # determine if a MAPINFO file exists, and create if not
     if actor.file_path.split("#{fs}")[1] == "Processing_PK3"
       mapinfo_file = actor.file_path.split("#{fs}")[0..2].join("#{fs}") + "#{fs}MAPINFO"
@@ -3687,9 +3749,11 @@ sprites_pk3 = Dir.glob(".#{fs_os}Processing_PK3#{fs_os}**#{fs_os}*").select { |e
 sprites_files = sprites_files + sprites_pk3
 sprites_files = sprites_files + Dir.glob(".#{fs_os}IWADs_Extracted#{fs_os}*#{fs_os}sprites#{fs_os}*")
 
+
 sprites_files.each do |sprite|
-  if sprite =~ /samo/i
+  if sprite =~ /acbwaoeuaoeuaoeu/i
     puts "Sprite: #{sprite}"
+    #STDIN.gets
   end
 end
 
@@ -3758,6 +3822,10 @@ sprites_files.each do |directory|
   end
   sprite_prefix[key] << {directory, sha}
 end
+
+puts sprite_prefix.inspect
+#puts "waiting..."
+#gets
 
 # This function should safely increment to the next available prefix
 def increment_prefix(original_string : String, sprite_prefix : Hash(String, Array(Tuple(String, String)))) : String
@@ -3845,6 +3913,8 @@ sprite_prefix.each do |key, prefix|
 
   puts "wads_with_prefix:"
   puts wads_with_prefix.inspect
+  #puts "waiting..."
+  #gets
 
   # rename the files
   wads_with_prefix.each_with_index do |wad_prefix, index|
@@ -4271,6 +4341,28 @@ actordb.each_with_index do |actor, index|
 end
 lua_file += "}\n"
 
+lua_file += "MONSTER_MASH.PICKUPS =\n"
+lua_file += "{\n"
+actordb.each do |actor|
+  next if actor.is_ammo == false
+  next if actor.built_in == true
+  # add an underscore if it starts with a number
+  number_prefix = ""
+  if actor.name_with_case =~ /^\d/
+    number_prefix = "_"
+  end
+  lua_file += "  -- Source File: #{actor.source_wad_folder}\n"
+  lua_file += "  #{number_prefix}#{actor.name} =\n"
+  lua_file += "  {\n"
+  lua_file += "    id = #{actor.doomednum},\n"
+  lua_file += "    kind = \"ammo\",\n"
+  lua_file += "    rank = 2,\n"
+  lua_file += "    add_prob = 40,\n"
+  lua_file += "    give = { {ammo=\"clip\",count=20} },\n"
+  lua_file += "  },\n"
+end
+lua_file += "}\n"
+
 lua_file += "OB_MODULES[\"monster_mash\"] =\n"
 lua_file += "{\n"
 lua_file += "  name = \"monster_mash_control\",\n"
@@ -4299,8 +4391,8 @@ actordb.each do |actor|
   lua_file += "      min = 0,\n"
   lua_file += "      max = 20,\n"
   lua_file += "      increment = .02,\n"
-  lua_file += "      default = _(5.0),\n"
-  lua_file += "      nan = _(5.0),\n"
+  lua_file += "      default = 5.0,\n"
+  lua_file += "      nan = 5.0,\n"
   lua_file += "      tooltip = _(\"Control the amount of #{actor.name_with_case}\"),\n"
   lua_file += "      presets = _(\"0:0 (None at all,.02:0.02 (Scarce),.14:0.14 (Less),.5:0.5 (Plenty),1.2:1.2 (More),3:3 (Heaps),20:20 (INSANE)\"),\n"
   lua_file += "      randomize_group = \"monsters\",\n"
@@ -4318,17 +4410,37 @@ actordb.each do |actor|
   lua_file += "      min = 0,\n"
   lua_file += "      max = 20,\n"
   lua_file += "      increment = .02,\n"
-  lua_file += "      default = _(5.0),\n"
-  lua_file += "      nan = _(5.0),\n"
+  lua_file += "      default = 5.0,\n"
+  lua_file += "      nan = 5.0,\n"
   lua_file += "      tooltip = _(\"Control the amount of #{actor.name_with_case}\"),\n"
   lua_file += "      presets = _(\"0:0 (None at all,.02:0.02 (Scarce),.14:0.14 (Less),.5:0.5 (Plenty),1.2:1.2 (More),3:3 (Heaps),20:20 (INSANE)\"),\n"
   lua_file += "      randomize_group=\"pickups\",\n"
   lua_file += "    },\n"
 end
 
+# Ammo controls
+actordb.each do |actor|
+  next if actor.is_ammo == false
+  next if actor.built_in == true
+  lua_file += "   -- Source File: #{actor.source_wad_folder}\n"
+  lua_file += "   {\n"
+  lua_file += "     name = \"float_#{actor.name}\",\n"
+  lua_file += "     label = _(\"#{actor.name_with_case}\"),\n"
+  lua_file += "     valuator = \"slider\",\n"
+  lua_file += "     min = 0,\n"
+  lua_file += "     max = 10,\n"
+  lua_file += "     increment = .02,\n"
+  lua_file += "     default = 5.0,\n"
+  lua_file += "     nan = 5.0,\n"
+  lua_file += "     tooltip = _(\"Control the amount of #{actor.name_with_case}.\"),\n"
+  lua_file += "     presets = _(\"0:0 (None),.02:0.02 (Scarce),.14:0.14 (Less),.5:0.5 (Plenty),1.2:1.2 (More),3:3 (Heaps),10:10 (I LOVE IT)\"),\n"
+  lua_file += "     randomize_group=\"pickups\",\n"
+  lua_file += "     priority = 75,\n"
+  lua_file += "   },\n"
+end
+
 lua_file += "  },\n"
 lua_file += "}\n"
-
 
 #output lua script to the screen
 puts lua_file
