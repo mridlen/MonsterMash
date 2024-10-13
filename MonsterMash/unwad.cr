@@ -4182,6 +4182,10 @@ puts "@ DELETING ANY 'GAME' PROPERTY      @"
 puts "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
 # This only affects DECORATE, allegedly...
 decorate_files = Dir.glob(".#{fs}Processing#{fs}*#{fs}defs#{fs}DECORATE.raw")
+decorate_files_pk3 = Dir.glob(".#{fs}Processing_PK3#{fs}*#{fs}DECORATE")
+decorate_files = decorate_files + decorate_files_pk3
+all_files = Dir.glob(".#{fs}Processing*#{fs}**#{fs}*")
+
 # rename the directories to use forward slashes
 decorate_files.each do |decorate_file|
   decorate_file = decorate_file.split("#{fs_os}").join("#{fs}")
@@ -4199,8 +4203,34 @@ decorate_files.each do |decorate_file|
         include_file = line.split[1]
       end
       folder_path = decorate_file.split("#{fs}")[0..-2].join("#{fs}")
-      include_file_path = Path.posix(folder_path + "#{fs}" + include_file.upcase + ".raw").normalize.to_s
-      decorate_files << include_file_path
+
+      include_file_upcase = include_file.upcase
+      raw_path = Path.posix(folder_path + "#{fs}" + include_file_upcase + ".raw").normalize.to_s
+      raw_path = ".#{fs}" + raw_path
+      no_ext_path = Path.posix(folder_path + "#{fs}" + include_file).normalize.to_s
+      no_ext_path = ".#{fs}" + no_ext_path
+
+      actual_path = ""
+      all_files.each do |real_path|
+        puts "Path: #{raw_path} Path: #{no_ext_path} Real: #{real_path}"
+        if raw_path.upcase == real_path.upcase
+          puts "Path: #{raw_path} Matched: #{real_path}"
+          actual_path = real_path
+        elsif no_ext_path.upcase == real_path.upcase
+          puts "Path: #{no_ext_path} Matched: #{real_path}"
+          actual_path = real_path
+        end
+      end
+
+      if actual_path != ""
+        decorate_files << actual_path
+      else
+        raise "File not found: #{include_file} Path: #{no_ext_path}"
+        STDIN.gets
+      end
+
+      #include_file_path = Path.posix(folder_path + "#{fs}" + include_file.upcase + ".raw").normalize.to_s
+      #decorate_files << include_file_path
     end
   end
 end
@@ -4456,7 +4486,5 @@ File.write("..#{fs_os}modules#{fs_os}monster_mash.lua", lua_file)
 # exit cleanly
 exit(0)
 #
-#
-# OLD CODE
 ###########################
 
