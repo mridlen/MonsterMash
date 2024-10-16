@@ -49,6 +49,21 @@ Then run it
 cd MonsterMash
 crystal unwad.cr
 ```
+
+The first run will create your base folder structure. You can then copy your wads and pk3s into the "Source" folder. Run it again to resolve conflicts and the files will be produced in the "Completed" folder. Then run the obsidian executable.
+
+Within Obsidian, you will need to enable the addon:
+```
+Addons -> [x] MonsterMash
+Addons -> Restart and Apply Changes
+# then enable MonsterMash in the interface
+Other -> [x] MonsterMash
+```
+
+Reference these files when you run gzdoom. Example run:
+```
+gzdoom -iwad ~/DOOM2.WAD -file ~/Obsidian/addons/MonsterMash/MonsterMash/Completed/* -file ~/Obsidian/2024-09-11-0018_lit_hub.pk3
+```
 Tested on v7.x or higher Obsidian and new "unstable" v21. Both seem to work ok.
 
 ## Prerequisites
