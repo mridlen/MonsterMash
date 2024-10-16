@@ -66,14 +66,6 @@ gzdoom -iwad ~/DOOM2.WAD -file ~/Obsidian/addons/MonsterMash/MonsterMash/Complet
 ```
 Tested on v7.x or higher Obsidian and new "unstable" v21. Both seem to work ok.
 
-Within Obsidian, you will need to enable the addon:
-```
-Addons -> [x] MonsterMash
-Addons -> Restart and Apply Changes
-# then enable MonsterMash in the interface
-Other -> [x] MonsterMash
-```
-
 ## Prerequisites
 
 Install Crystal:
