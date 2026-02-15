@@ -1,30 +1,61 @@
-puts "START"
+###############################################################################
+# Unwad.cr V2 — Monster Mash WAD Processor
+# A complete refactor of V1 with bug fixes and structural improvements.
+#
+# CHANGELOG from V1:
+#  [BUGFIX]  doomednum_info[8102] was duplicated; 8103 now correct
+#  [BUGFIX]  FileUtils.rm_rf("./Processing/*") replaced with proper glob+delete
+#  [BUGFIX]  #include regex now uses Crystal's $~ match data, not Ruby's $1
+#  [BUGFIX]  File re-read after per-line processing no longer discards work
+#  [BUGFIX]  Actor line parsing for 6/7 word lines had wrong field indices
+#  [BUGFIX]  flag_boolean == false (comparison) → flag_boolean = false (assign)
+#  [BUGFIX]  actor_counter increment was in wrong scope during renames
+#  [BUGFIX]  Doomednum insertion now goes BEFORE '{' or comment, not after
+#  [BUGFIX]  Removed 400+ lines of dead code after exit(0)
+#  [BUGFIX]  Recursive PCRE regex replaced with iterative brace-matching
+#  [BUGFIX]  Sprite prefix increment_prefix now only increments to new prefix
+#            for wads that actually conflict (not just re-using same prefix)
+#  [REFACTOR] 600+ lines of elsif flag/property chains → hash-based dispatch
+#  [REFACTOR] Extracted reusable helper methods
+#  [REFACTOR] Added configurable logging (LOG_LEVEL)
+#  [REFACTOR] Proper error handling with begin/rescue blocks
+#  [REFACTOR] Consistent code style and comments
+###############################################################################
 
-puts "Requires..."
+puts "=== Unwad V2 — Monster Mash WAD Processor ==="
+
 require "file"
 require "file_utils"
 require "regex"
 require "digest/sha256"
 require "compress/zip"
 
-# To make this OS agnostic we need to use fs in place of slashes
-# this way Windows will use "\\" and Linux/Mac can use "/"
-fs = File::SEPARATOR
-
 # Other Code Specific To MonsterMash
-# require statements use forward slashes regardless of OS
 require "./requires/classes.cr"
 
-# Import DoomEdNums from module
-#doomednum_info = Hash(Int32, Tuple(Int32, Int32)).new
-require "./requires/doomednums.cr"
-doomednum_info = DoomEdNums.id_numbers
+###############################################################################
+# CONFIGURATION
+###############################################################################
+
+# Log levels: 0 = errors only, 1 = warnings, 2 = info, 3 = debug/verbose
+LOG_LEVEL = 2
+
+def log(level : Int32, msg : String)
+  return if level > LOG_LEVEL
+  prefix = case level
+           when 0 then "[ERROR]"
+           when 1 then "[WARN] "
+           when 2 then "[INFO] "
+           else        "[DEBUG]"
+           end
+  puts "#{prefix} #{msg}"
+end
+
+###############################################################################
+# PLATFORM-SPECIFIC TOOL SELECTION
+###############################################################################
 
 jeutoolexe = ""
-
-puts "Assigning jeutool..."
-# Specify which executable to use for jeutool
-# The rest of the code will be written in Crystal
 {% if flag?(:linux) %}
   jeutoolexe = "jeutool-linux"
 {% elsif flag?(:darwin) %}
@@ -32,3969 +63,2711 @@ puts "Assigning jeutool..."
 {% elsif flag?(:win32) %}
   jeutoolexe = "jeutool.exe"
 {% end %}
-puts "Jeutool assigned: #{jeutoolexe}"
+log(2, "Jeutool assigned: #{jeutoolexe}")
 
-##########################################
+###############################################################################
+# HELPER METHODS
+###############################################################################
+
+# Check if a string is a valid integer
+def numeric?(str : String) : Bool
+  str.to_i? != nil
+end
+
+# Safely read a file, returning empty string on failure
+def safe_read(path : String) : String
+  norm = normalize_path(path)
+  if File.exists?(norm)
+    File.read(norm)
+  else
+    log(1, "File not found: #{norm}")
+    ""
+  end
+end
+
+# Normalize path separators to forward slashes (Windows compat)
+def normalize_path(path : String) : String
+  path.gsub("\\", "/")
+end
+
+# Safe directory move: copy then delete.
+# FileUtils.mv fails on Windows when directories are locked (e.g., Dropbox sync)
+# or when moving across volumes. cp_r + rm_rf is more reliable.
+def safe_move_dir(src : String, dest : String)
+  src_n = normalize_path(src)
+  dest_n = normalize_path(dest)
+  log(3, "Moving directory: #{src_n} → #{dest_n}")
+  FileUtils.rm_rf(dest_n) if Dir.exists?(dest_n)
+  FileUtils.cp_r(src_n, dest_n)
+  FileUtils.rm_rf(src_n)
+rescue ex
+  log(0, "Failed to move '#{src_n}' → '#{dest_n}': #{ex.message}")
+  raise ex
+end
+
+# Collect all DECORATE files for a wad (main + includes).
+# Uses multi-strategy path resolution so it works with both jeutool-extracted
+# WADs (files in defs/ with .raw extension) and PK3-extracted content
+# (files at WAD root with various extensions like .dec, .txt, or no extension).
+def collect_decorate_files(base_path : String) : Array(String)
+  file_list = [base_path]
+  return file_list unless File.exists?(base_path)
+
+  base_dir = normalize_path(File.dirname(base_path))
+  # For files in defs/, the WAD root is one level up
+  wad_root = normalize_path(File.dirname(base_dir))
+
+  File.each_line(base_path) do |line|
+    if line.strip =~ /^#include\s+/i
+      if md = line.match(/"([^"]+)"/)
+        include_ref = md[1]
+
+        # Try multiple resolution strategies (first match wins):
+        candidates = [
+          File.join(base_dir, "#{include_ref.upcase}.raw"),   # defs/NAME.RAW (jeutool)
+          File.join(base_dir, include_ref),                    # defs/path/as-is
+          File.join(base_dir, include_ref.upcase),             # defs/NAME (no ext)
+          File.join(wad_root, include_ref),                    # wad_root/path/as-is (PK3)
+          File.join(wad_root, "#{include_ref.upcase}.raw"),    # wad_root/NAME.RAW
+          File.join(wad_root, include_ref.upcase),             # wad_root/NAME
+        ]
+
+        found = candidates.find { |c| File.exists?(normalize_path(c)) }
+        if found
+          file_list << normalize_path(found)
+        else
+          log(1, "Include not resolved: \"#{include_ref}\" (from #{base_path})")
+          log(3, "  Searched: #{candidates.map { |c| normalize_path(c) }.join(", ")}")
+        end
+      end
+    end
+  end
+  file_list.uniq
+end
+
+# Match balanced braces starting from a given position in text.
+# Returns the substring from the opening '{' to the matching '}'.
+def extract_balanced_braces(text : String, start_pos : Int32) : String?
+  return nil if start_pos < 0 || start_pos >= text.size
+  depth = 0
+  i = start_pos
+  while i < text.size
+    if text[i] == '{'
+      depth += 1
+    elsif text[i] == '}'
+      depth -= 1
+      if depth == 0
+        return text[start_pos..i]
+      end
+    end
+    i += 1
+  end
+  nil
+end
+
+# Remove the states block from actor text using iterative brace matching.
+# V1 used a recursive PCRE regex that doesn't work reliably in Crystal.
+def remove_states_block(actor_text : String) : String
+  result = actor_text
+  # Find "states" keyword followed by "{"
+  if md = result.match(/states\s*\{/mi)
+    states_start = md.begin(0).not_nil!
+    # Find the opening brace
+    brace_start = result.index('{', states_start)
+    if brace_start
+      matched = extract_balanced_braces(result, brace_start)
+      if matched
+        # Remove "states" keyword + the entire braced block
+        states_keyword_start = states_start
+        states_end = brace_start + matched.size
+        result = result[0...states_keyword_start] + result[states_end..]
+      end
+    end
+  end
+  result
+end
+
+# Extract the states block text (content between braces after "states")
+def extract_states_text(actor_text : String) : String?
+  if md = actor_text.match(/states\s*\{/mi)
+    states_start = md.begin(0).not_nil!
+    brace_start = actor_text.index('{', states_start)
+    if brace_start
+      matched = extract_balanced_braces(actor_text, brace_start)
+      if matched && matched.size > 2
+        # Strip outer braces
+        return matched[1..-2].strip
+      end
+    end
+  end
+  nil
+end
+
+# Parse states text into a hash of state_label => state_content
+def parse_states(states_text : String?) : Hash(String, String)
+  states = Hash(String, String).new
+  return states if states_text.nil?
+
+  parts = states_text.not_nil!.split(/^(\S+)\:/m)
+  # First element is anything before the first label — discard
+  parts.shift if parts.size > 0
+
+  (0...parts.size).step(2) do |i|
+    break if i + 1 >= parts.size
+    key = parts[i].strip.downcase
+    value = parts[i + 1]
+    states[key] = value
+  end
+  states
+end
+
+# Delete all contents of a directory without deleting the directory itself
+def clear_directory(path : String)
+  if Dir.exists?(path)
+    Dir.each_child(path) do |child|
+      child_path = File.join(path, child)
+      if File.directory?(child_path)
+        FileUtils.rm_rf(child_path)
+      else
+        File.delete(child_path)
+      end
+    end
+  end
+end
+
+###############################################################################
+# PK3/ZIP SOURCE EXTRACTION
+# Extracts PK3 (ZIP) files and normalizes their directory structure to match
+# what jeutool produces for WADs, so the existing processing pipeline works
+# unchanged. Root-level definition lumps are moved to defs/ with .raw extension.
+###############################################################################
+
+# List of file extensions (lowercase) to treat as definition/text lumps
+# when found at the PK3 root level. These get moved to defs/ with .raw suffix.
+PK3_ROOT_TEXT_EXTENSIONS = Set{".dec", ".txt", ".zs", ".zsc", ".acs", ""}
+
+# Detect whether a root-level file in a PK3 is a definition/text lump
+# that belongs in the defs/ directory.
+def pk3_is_root_text_lump?(filename : String) : Bool
+  canonical = lump_name(filename)
+  return true if DECORATE_LUMP_NAMES.includes?(canonical)
+  return true if TEXT_LUMP_NAMES.includes?(canonical)
+  return true if canonical == "credits" || canonical == "credit"
+  false
+end
+
+# Extract a PK3/ZIP file into dest_dir, normalizing structure to match
+# jeutool WAD extraction format:
+#   - Root-level text/def lumps → defs/LUMPNAME.raw
+#   - Subdirectory content (sprites/, sounds/, etc.) → preserved as-is
+#   - Other root files → left at root
+#
+# This allows the existing DECORATE processing pipeline (which globs for
+# Processing/*/defs/DECORATE.raw) to find PK3-sourced DECORATE files.
+def extract_pk3(pk3_path : String, dest_dir : String)
+  pk3_name = File.basename(pk3_path)
+  log(2, "Extracting PK3: #{pk3_name} → #{dest_dir}")
+  Dir.mkdir_p(dest_dir)
+  defs_dir = normalize_path(File.join(dest_dir, "defs"))
+  Dir.mkdir_p(defs_dir)
+
+  files_extracted = 0
+  root_lumps_moved = 0
+  dirs_created = Set(String).new
+
+  begin
+    File.open(pk3_path) do |file|
+      Compress::Zip::Reader.open(file) do |zip|
+        zip.each_entry do |entry|
+          next if entry.dir?
+
+          entry_name = normalize_path(entry.filename)
+          # Skip macOS resource fork junk
+          next if entry_name.includes?("__MACOSX") || entry_name.starts_with?("._")
+
+          if entry_name.includes?("/")
+            # ── File is inside a subdirectory ─────────────────────────
+            # Preserve the PK3's internal directory structure as-is.
+            # Most PK3 dirs (sprites/, sounds/, etc.) map 1:1 to what we need.
+            dest_path = normalize_path(File.join(dest_dir, entry_name))
+            dir = File.dirname(dest_path)
+            unless dirs_created.includes?(dir)
+              Dir.mkdir_p(dir)
+              dirs_created << dir
+            end
+          else
+            # ── Root-level file ───────────────────────────────────────
+            if pk3_is_root_text_lump?(entry_name)
+              # Move definition lumps to defs/ with .raw extension
+              raw_name = lump_name(entry_name).upcase + ".raw"
+              dest_path = normalize_path(File.join(defs_dir, raw_name))
+              root_lumps_moved += 1
+              log(3, "  Root lump → defs/: #{entry_name} → defs/#{raw_name}")
+            else
+              # Keep other root files in place
+              dest_path = normalize_path(File.join(dest_dir, entry_name))
+              log(3, "  Root file (kept): #{entry_name}")
+            end
+          end
+
+          # Write the file
+          File.open(dest_path, "wb") do |outfile|
+            IO.copy(entry.io, outfile)
+          end
+          files_extracted += 1
+        end
+      end
+    end
+  rescue ex
+    log(0, "Failed to extract PK3 '#{pk3_name}': #{ex.message}")
+    log(0, "  This file will be skipped. Check if it's a valid ZIP/PK3.")
+    return
+  end
+
+  # If a PK3 had an `actors/` directory with DECORATE-like files but
+  # no root DECORATE file, create a synthetic one that #includes everything.
+  decorate_path = normalize_path(File.join(defs_dir, "DECORATE.raw"))
+  actors_dir = normalize_path(File.join(dest_dir, "actors"))
+
+  if !File.exists?(decorate_path) && Dir.exists?(actors_dir)
+    log(2, "  No DECORATE found; generating synthetic DECORATE from actors/ directory")
+    actor_files = Dir.glob("#{actors_dir}/**/*")
+      .select { |f| File.file?(f) }
+      .map { |f| normalize_path(f).sub(dest_dir + "/", "") }
+      .sort
+
+    unless actor_files.empty?
+      synthetic = String.build do |io|
+        io << "// Synthetic DECORATE — auto-generated from PK3 actors/ directory\n"
+        io << "// Source: #{pk3_name}\n\n"
+        actor_files.each do |af|
+          io << "#include \"#{af}\"\n"
+        end
+      end
+      File.write(decorate_path, synthetic)
+      log(2, "  Created synthetic DECORATE with #{actor_files.size} includes")
+    end
+  end
+
+  # If DECORATE/ZSCRIPT exists and references files via include that are in the WAD root
+  # (not in defs/), update the include paths to be relative from defs/
+  [decorate_path, normalize_path(File.join(defs_dir, "ZSCRIPT.raw"))].each do |script_path|
+    next unless File.exists?(script_path)
+    content = File.read(script_path)
+    original = content
+    content = content.gsub(/^(\s*#include\s+")([^"]+)(")/mi) do
+      prefix_match = $1
+      inc_file = $2
+      suffix_match = $3
+
+      # If the include references a file that exists at the WAD root but not in defs/,
+      # prepend ../ so it resolves correctly from defs/
+      inc_from_defs = normalize_path(File.join(defs_dir, inc_file))
+      inc_from_root = normalize_path(File.join(dest_dir, inc_file))
+
+      if !File.exists?(inc_from_defs) && File.exists?(inc_from_root)
+        log(3, "  Rewriting include: \"#{inc_file}\" → \"../#{inc_file}\"")
+        "#{prefix_match}../#{inc_file}#{suffix_match}"
+      else
+        "#{prefix_match}#{inc_file}#{suffix_match}"
+      end
+    end
+
+    if content != original
+      File.write(script_path, content)
+      log(2, "  Updated #{(content.scan(/#include/).size)} include paths for defs/ relocation")
+    end
+  end
+
+  log(2, "  PK3 extracted: #{files_extracted} files, #{root_lumps_moved} root lumps → defs/")
+end
+
+PK3_BUILD_DIR = "./PK3_Build"
+PK3_OUTPUT    = "./Completed/monster_mash.pk3"
+
+# Known resource directories — contents get copied flat into the PK3.
+# These hold binary files (sprites, sounds, etc.) identified by filename.
+RESOURCE_DIRS = Set{
+  "sprites", "sounds", "graphics", "patches", "flats",
+  "textures", "hires", "acs", "models", "brightmaps",
+  "colormaps", "voxels", "music", "filter", "materials",
+  "skins", "voices",
+  # jeutool puts uncategorized lumps here — copy them as generic resources
+  "unknown",
+}
+
+# Known text lumps — these are concatenated across WADs with source attribution.
+# Compared case-insensitively, with .raw/.txt/.lmp extensions stripped.
+TEXT_LUMP_NAMES = Set{
+  "sndinfo", "gldefs", "lockdefs", "animdefs", "decaldef",
+  "sbarinfo", "menudef", "cvarinfo", "terrain", "voxeldef",
+  "modeldef", "keyconf", "textures", "gameinfo", "zmapinfo",
+  "mapinfo", "fontdefs", "reverbs", "althudcf", "x11r6rgb",
+  "textcolo", "textcolors", "dehacked", "loadacs", "s_skin",
+  "skininfo", "dialogue", "doomdefs", "hticdefs", "hexndefs",
+  "strifedefs", "language", "sndseq", "teaminfo", "in_acs",
+  # Translation lumps
+  "trnslate",
+  # ACS-related lumps (compiled ACS libraries loaded by LOADACS)
+  "bloadacs",
+}
+
+# Binary/metadata lumps to skip — these come from the IWAD, engine, or jeutool.
+SKIP_LUMP_NAMES = Set{
+  "playpal", "colormap", "endoom", "dmxgus", "dmxgusc",
+  "pnames", "texture1", "texture2",
+  # jeutool extraction metadata — present in every extracted WAD
+  "base-pal", "config", "info", "updates",
+  # Documentation / old versions — not needed at runtime
+  "readme", "document", "notes", "original", "oldcode",
+  "oldmapin", "oldzscri",
+}
+
+# Lump names that are DECORATE-like (handled separately via master #include)
+DECORATE_LUMP_NAMES = Set{
+  "decorate", "zscript",
+}
+
+# Strip common lump file extensions to get the canonical lump name
+def lump_name(filename : String) : String
+  filename
+    .gsub(/\.(raw|txt|lmp|dec|zs|acs|cfg)$/i, "")
+    .downcase
+    .strip
+end
+
+# Copy all files from src_dir into dest_dir (flat merge).
+# Logs conflicts when a file already exists with different content.
+# Returns count of files copied and conflicts detected.
+def copy_resource_files(src_dir : String, dest_dir : String, wad_name : String,
+                        conflict_log : Array(String),
+                        is_sprites_dir : Bool = false) : {Int32, Int32}
+  copied = 0
+  conflicts = 0
+  Dir.mkdir_p(dest_dir)
+
+  Dir.each_child(src_dir) do |filename|
+    src_path = normalize_path(File.join(src_dir, filename))
+
+    # For sprites, strip .raw extension — WAD lumps have no extensions and
+    # .raw breaks GZDoom's parsing of dual-rotation names (e.g., ISHMA1A5)
+    dest_filename = filename
+    if is_sprites_dir && File.extname(filename).downcase == ".raw"
+      dest_filename = File.basename(filename, File.extname(filename))
+    end
+    dest_path = normalize_path(File.join(dest_dir, dest_filename))
+
+    if File.directory?(src_path)
+      # Recurse into subdirectories (e.g., filter/doom.id.doom2/)
+      sub_copied, sub_conflicts = copy_resource_files(
+        src_path,
+        normalize_path(File.join(dest_dir, filename)),
+        wad_name, conflict_log, is_sprites_dir
+      )
+      copied += sub_copied
+      conflicts += sub_conflicts
+      next
+    end
+
+    # Filter invalid sprites — jeutool sometimes creates 0-byte placeholder files
+    if is_sprites_dir
+      file_size = File.size(src_path)
+      basename = File.basename(dest_filename, File.extname(dest_filename))
+      # Skip zero-byte files (jeutool placeholders, not real image data)
+      if file_size == 0
+        log(3, "  Skipping 0-byte sprite placeholder: #{filename} in #{wad_name}")
+        next
+      end
+      # Skip names that are too short to be valid sprites (need 4-char prefix + frame)
+      # but only if they're also small — legitimate short-named lumps exist
+      if basename.size < 5 && file_size < 64
+        log(3, "  Skipping invalid sprite: #{filename} in #{wad_name} (name=#{basename.size}chars, size=#{file_size}bytes)")
+        next
+      end
+    end
+
+    if File.exists?(dest_path)
+      # File already exists — check if identical
+      src_sha = Digest::SHA256.new.file(src_path).hexfinal
+      dest_sha = Digest::SHA256.new.file(dest_path).hexfinal
+      if src_sha != dest_sha
+        conflicts += 1
+        msg = "CONFLICT: '#{dest_filename}' in #{dest_dir.sub(PK3_BUILD_DIR, "")} — " \
+              "#{wad_name} differs from existing (keeping existing)"
+        conflict_log << msg
+        log(1, msg)
+      else
+        log(3, "  Skipping identical file: #{dest_filename}")
+      end
+    else
+      FileUtils.cp(src_path, dest_path)
+      copied += 1
+    end
+  end
+
+  {copied, conflicts}
+end
+
+# Recursively add all files in a directory to a zip writer.
+def add_dir_to_zip(zip : Compress::Zip::Writer, base_path : String, zip_prefix : String)
+  Dir.each_child(base_path) do |entry|
+    full_path = normalize_path(File.join(base_path, entry))
+    zip_path = zip_prefix.empty? ? entry : "#{zip_prefix}/#{entry}"
+
+    if File.directory?(full_path)
+      add_dir_to_zip(zip, full_path, zip_path)
+    else
+      zip.add(zip_path) do |entry_io|
+        File.open(full_path, "r") do |src|
+          IO.copy(src, entry_io)
+        end
+      end
+    end
+  end
+end
+
+###############################################################################
 # DATA STRUCTURES
-##########################################
+###############################################################################
 
-# < these have been moved to ./requires/classes.cr >
-
-##########################################
-# CREATE ACTORS DATABASE
-##########################################
-
-# this will download most if not all of the actor content into a format
-# that will be readable in Crystal
 actordb = Array(Actor).new
-
-# these will track duplicates
 duped_names_db = Array(DupedActorName).new
 duped_graphics_db = Array(DupedGraphics).new
 duped_doomednum_db = Array(DupedDoomednums).new
 
-##########################################
+###############################################################################
+# RESERVED DOOMEDNUMS
+###############################################################################
+
+doomednum_info = Hash(Int32, Tuple(Int32, Int32)).new
+
+# Obsidian reserved sector/linedef things
+[992, 995, 996, 997, 987].each { |id| doomednum_info[id] = {-1, -1} }
+
+# Reserved Thing IDs (items)
+[8166, 8151].each { |id| doomednum_info[id] = {-1, -1} }
+
+# Regular Monsters (radius categories)
+# [BUGFIX] V1 had 8102 duplicated where 8103 was intended
+[8102, 8103, 8104, 8106, 8108].each { |id| doomednum_info[id] = {-1, -1} }
+
+# Flying Monsters
+[8112, 8113, 8114, 8116, 8118].each { |id| doomednum_info[id] = {-1, -1} }
+
+# Caged Monsters
+[8122, 8123, 8124, 8126, 8128].each { |id| doomednum_info[id] = {-1, -1} }
+
+# Closet / Trap Monsters
+[8132, 8133, 8134, 8136, 8138].each { |id| doomednum_info[id] = {-1, -1} }
+
+# Lights (14992-14999)
+(14992..14999).each { |id| doomednum_info[id] = {-1, -1} }
+
+# Custom decorations
+[27000, 27001, 27002].each { |id| doomednum_info[id] = {-1, -1} }
+
+# Reserved Linedefs
+doomednum_info[888] = {-1, -1}
+
+# Fauna Module
+[30100, 30000].each { |id| doomednum_info[id] = {-1, -1} }
+
+# Frozsoul's Ambient Sounds ranges
+[20000..20025, 22000..22025, 24000..24025, 26000..26025, 28000..28025, 30000..30025].each do |range|
+  range.each { |id| doomednum_info[id] = {-1, -1} }
+end
+
+log(2, "Reserved Doomednums loaded: #{doomednum_info.size} entries")
+
+###############################################################################
 # CREATE DIRECTORIES
-##########################################
+###############################################################################
 
-# We need to keep the WADs and PK3s separate during processing
-puts "Creating WAD Source directory..."
-Dir.mkdir_p(".#{fs}Source#{fs}")
-puts "Creating WAD Processing directory..."
-Dir.mkdir_p(".#{fs}Processing#{fs}")
-puts "Creating PK3 Processing directory..."
-Dir.mkdir_p(".#{fs}Processing_PK3#{fs}")
-puts "Creating Completed (WAD and PK3) directory..."
-Dir.mkdir_p(".#{fs}Completed#{fs}")
-puts "Creating IWADs directory..."
-Dir.mkdir_p(".#{fs}IWADs#{fs}")
-puts "Creating IWADs_Extracted directory..."
-Dir.mkdir_p(".#{fs}IWADs_Extracted#{fs}")
+["./Processing", "./Source", "./Completed", "./IWADs", "./IWADs_Extracted", PK3_BUILD_DIR].each do |dir|
+  Dir.mkdir_p(dir)
+  log(3, "Ensured directory: #{dir}")
+end
 
-##########################################
-# PRE RUN CLEANUP OPERATION
-##########################################
+###############################################################################
+# PRE-RUN CLEANUP
+# [BUGFIX] V1 used FileUtils.rm_rf("./Processing/*") which doesn't glob.
+#          Now using proper directory clearing.
+###############################################################################
 
-# Clear out the Processing folder prior to copying in the files
-# Anything in Processing is fair game for deletion at any time
-puts "Deleting all files under Processing directory..."
-FileUtils.rm_rf(".#{fs}Processing#{fs}*")
-puts "Deleting all files under Processing_PK3 directory..."
-FileUtils.rm_rf(".#{fs}Processing_PK3#{fs}*")
-puts "Deleting all files under Completed directory..."
-FileUtils.rm_rf(".#{fs}Completed#{fs}*")
-puts "Deleting all files under IWADs_Extracted directory..."
-FileUtils.rm_rf(".#{fs}IWADs_Extracted#{fs}*")
-puts "Deletion completed."
+log(2, "Cleaning up Processing, Completed, and IWADs_Extracted...")
+clear_directory("./Processing")
+clear_directory("./Completed")
+clear_directory("./IWADs_Extracted")
+log(2, "Cleanup completed.")
 
+###############################################################################
+# WAD / PK3 EXTRACTION
+# WAD files are extracted with jeutool; PK3/ZIP files use Crystal's built-in
+# ZIP reader with directory structure normalization.
+###############################################################################
 
-#########################################
-# RUN EXTRACTION PROCESS
-#########################################
-puts "Extraction process starting..."
-# Extract each wad in Source to it's own subdirectory
-# Wads will go into Processing, PK3s will go into
+log(2, "Extraction process starting...")
 
-# build list of wad files
-wad_file_list = Dir.glob(".#{fs}Source#{fs}*")
-index_deletes = Array(Int32).new
-wad_file_list.each_with_index do |file, file_index|
-  # check if the extension is wad
-  if file.split(".").last.downcase != "wad"
-    puts "Not a wad file: #{file}"
-    index_deletes << file_index
+wad_extensions = Set{".wad"}
+pk3_extensions = Set{".pk3", ".zip", ".pk7", ".ipk3", ".ipk7"}
+
+# ── Source mods ──────────────────────────────────────────────────────────────
+source_files = Dir.children("./Source").select { |f| File.file?("./Source/#{f}") }
+total_source = source_files.size
+
+source_files.each_with_index do |file_name, file_index|
+  file_path = "./Source/#{file_name}"
+
+  ext = File.extname(file_name).downcase
+  base = File.basename(file_name, File.extname(file_name))
+
+  # Progress bar
+  pct = ((file_index + 1) * 100 / total_source)
+  bar_width = 40
+  filled = (pct * bar_width / 100).to_i
+  bar = "#" * filled + "-" * (bar_width - filled)
+  print "\r  [#{bar}] #{pct}% (#{file_index + 1}/#{total_source}) Extracting #{base.ljust(25)}"
+  STDOUT.flush
+
+  if wad_extensions.includes?(ext)
+    log(3, "Extracting WAD: #{file_path}")
+    system "./#{jeutoolexe} extract \"#{file_path}\" -r"
+
+  elsif pk3_extensions.includes?(ext)
+    dest = normalize_path("./Source/#{base}")
+    log(3, "Extracting PK3: #{file_path}")
+    extract_pk3(file_path, dest)
+
+  else
+    log(1, "Skipping unknown file type in Source/: #{file_name} (#{ext})")
   end
 end
-index_deletes.reverse!
-index_deletes.each do |deletion|
-  wad_file_list.delete_at(deletion)
-end
+puts "" # Clear progress bar
 
-# build list of pk3 files
-pk3_file_list = Dir.glob(".#{fs}Source#{fs}*")
-index_deletes = Array(Int32).new
-pk3_file_list.each_with_index do |file, file_index|
-  # check if the extension is pk3
-  if file.split(".").last.downcase != "pk3"
-    puts "Not a pk3 file: #{file}"
-    index_deletes << file_index
-  end
-end
-index_deletes.reverse!
-index_deletes.each do |deletion|
-  pk3_file_list.delete_at(deletion)
-end
+# ── IWADs ────────────────────────────────────────────────────────────────────
+Dir.each_child("./IWADs") do |file_name|
+  file_path = "./IWADs/#{file_name}"
+  next unless File.file?(file_path)
 
-puts "Wads:"
-puts wad_file_list
-puts "PK3s:"
-puts pk3_file_list
+  ext = File.extname(file_name).downcase
+  base = File.basename(file_name, File.extname(file_name))
 
-# extract PK3 files to Processing_PK3 directory
-pk3_file_list.each do |file|
-  Compress::Zip::Reader.open(file) do |zip|
-    # Specify the target directory
-    dir_name = file.split("#{fs}").last.split(".").first
-    target_directory = ".#{fs}Processing_PK3#{fs}#{dir_name}"
+  if wad_extensions.includes?(ext)
+    log(2, "Extracting IWAD WAD: #{file_path}")
+    system "./#{jeutoolexe} extract \"#{file_path}\" -r"
 
-    # Create the target directory if it doesn't exist
-    Dir.mkdir(target_directory) unless Dir.exists?(target_directory)
+  elsif pk3_extensions.includes?(ext)
+    dest = normalize_path("./IWADs/#{base}")
+    log(2, "Extracting IWAD PK3: #{file_path}")
+    extract_pk3(file_path, dest)
 
-    # Extract all entries in the zip archive to the target directory
-    zip.each_entry do |entry|
-      entry_name = entry.filename
-      target_path = File.join(target_directory, entry_name)
-      puts entry.filename.chars.last
-      if entry_name.chars.last == '/'
-        puts "Directory"
-        Dir.mkdir_p(target_path)
-      else
-        puts "File"
-        File.open(target_path, "w") do |file|
-          IO.copy(entry.io, file)
-        end
-      end
-    end
+  else
+    log(1, "Skipping unknown file type in IWADs/: #{file_name} (#{ext})")
   end
 end
 
-wad_file_list.each do |file_path|
-  if File.file?(file_path)
-    puts "Processing file: #{file_path}"
-    system ".#{fs}#{jeutoolexe} extract \"#{file_path}\" -r"
-  end
+log(2, "Extraction complete.")
+
+###############################################################################
+# MOVE EXTRACTED DIRECTORIES
+###############################################################################
+
+log(2, "Moving extracted directories to Processing...")
+
+Dir.glob("./Source/*/").each do |path|
+  path = normalize_path(path)
+  dest_path = File.join("./Processing/", File.basename(path))
+  safe_move_dir(path, dest_path)
 end
 
-# Do the same thing but for IWADs
-Dir.each_child(".#{fs}IWADs") do |file_name|
-  file_path = ".#{fs}IWADs#{fs}#{file_name}"
-  if File.file?(file_path)
-    puts "Processing file: #{file_path}"
-    system ".#{fs}#{jeutoolexe} extract \"#{file_path}\" -r"
-  end
-end
-puts "Extraction process complete."
-
-puts "Starting the copy process from Source to Processing..."
-# Copy the directories in Source to Processing for processing
-# Only the directories are copied
-Dir.glob(".#{fs}Source#{fs}*#{fs}").each do |path|
-  dest_path = File.join(".#{fs}Processing#{fs}", File.basename(path))
-  #completed_path = File.join(".#{fs}Completed#{fs}", File.basename(path))
-  if Dir.exists?(dest_path)
-    FileUtils.rm_rf(dest_path)
-  end
-
-  #FileUtils.cp_r(path, completed_path)
-  FileUtils.mv(path, dest_path)
-end
-# Do the same thing but for IWADs
-Dir.glob(".#{fs}IWADs#{fs}*#{fs}").each do |path|
-  dest_path = File.join(".#{fs}IWADs_Extracted#{fs}", File.basename(path))
-  if Dir.exists?(dest_path)
-    FileUtils.rm_rf(dest_path)
-  end
-
-  FileUtils.mv(path, dest_path)
+Dir.glob("./IWADs/*/").each do |path|
+  path = normalize_path(path)
+  dest_path = File.join("./IWADs_Extracted/", File.basename(path))
+  safe_move_dir(path, dest_path)
 end
 
-# The PK3 files are created at the Processing_PK3 folder so no further action
-# is needed
+log(2, "Move completed.")
 
-puts "Copy from Source to Processing completed."
+###############################################################################
+# POST-EXTRACTION PROCESSING — Parse DECORATE actors
+###############################################################################
 
-##########################################
-# POST EXTRACTION PROCESSING
-##########################################
+log(2, "Starting DECORATE/ZSCRIPT processing...")
 
-puts "Starting Processing procedure..."
+# Build list of files to process — both DECORATE and ZSCRIPT
+processing_files = Dir.glob("./Processing/*/defs/DECORATE.raw").map { |p| normalize_path(p) }
+zscript_files = Dir.glob("./Processing/*/defs/ZSCRIPT.raw").map { |p| normalize_path(p) }
+# Add ZSCRIPT files that don't have a corresponding DECORATE
+# (if both exist, DECORATE is primary and ZSCRIPT will be handled separately)
+processing_files += zscript_files
+processing_files = processing_files.uniq
+built_in_actors = Dir.glob("./Built_In_Actors/*/*.txt").map { |p| normalize_path(p) }
 
-# Build a list of files and put them into a hash that tells if they are ZSCRIPT
-# or a DECORATE. We need to know this because ZSCRIPT works a little differently
-zscript_files_pk3 = Dir.glob(".#{fs}Processing_PK3#{fs}*#{fs}ZSCRIPT*")
+no_touchy = Hash(String, Bool).new
+processing_files.each { |fp| no_touchy[fp] = false }
+built_in_actors.each { |fp| no_touchy[fp] = true }
 
-puts zscript_files_pk3
-
-deletion_indexes = Array(Int32).new
-zscript_files_pk3.each_with_index do |file, file_index|
-  puts "Filename: #{file}"
-  if File.file?(file) == false
-    deletion_indexes << file_index
-  end
-  file_text = File.read(file)
-  lines = file_text.lines
-  lines.each do |line|
-    if line =~ /^\s*\#include/i
-      puts "line: #{line}"
-
-      # determine the folder path - we need this to determine relative path
-      folder_path = file.split("#{fs}")[0..-2].join("#{fs}")
-      # root folder is useful for absolute paths
-      root_folder = file.split("#{fs}")[0..2].join("#{fs}")
-      puts "Folder path: #{folder_path}"
-      puts "Root path: #{root_folder}"
-      # Example: #include "<stuff here>"
-      # this will get the content inside the quotation marks:
-      include_file = line.split('"')[1]
-
-      # join the path and verify that it isn't too long
-      puts "Normalized path:"
-      if include_file.chars.first == '.'
-        include_file_normalized = ".#{fs}" + Path[folder_path + "#{fs}" + include_file].normalize.to_s
-      else
-        include_file_normalized = ".#{fs}" + Path[root_folder + "#{fs}" + include_file].normalize.to_s
-      end
-      puts include_file_normalized
-
-      # size of 4 means at least 4 fields:
-      #  1  2              3     4
-      # "./Processing_PK3/<dir>/ZSCRIPT"
-      # less than that means it goes out of bounds
-      if include_file_normalized.split("#{fs}").size < 4
-        puts "Fatal Error: relative path goes outside the bounds of the pk3"
-        puts "File: #{file} Line: #{line}"
-        exit(1)
-      end
-
-      # add the path to the zscript_files_pk3
-      zscript_files_pk3 << include_file_normalized
-      puts "---------------------------------"
-    end
-  end
-end
-deletion_indexes.reverse!
-deletion_indexes.each do |deletion|
-  zscript_files_pk3.delete_at(deletion)
-end
-
-puts "zscript_files_pk3: #{zscript_files_pk3}"
-
-decorate_files_pk3 = Dir.glob(".#{fs}Processing_PK3#{fs}*#{fs}DECORATE*")
-
-deletion_indexes = Array(Int32).new
-decorate_files_pk3.each_with_index do |file, file_index|
-  puts "Filename: #{file}"
-  if File.file?(file) == false
-    deletion_indexes << file_index
-  end
-  file_text = File.read(file)
-  lines = file_text.lines
-  lines.each do |line|
-    if line =~ /^\s*\#include/i
-      puts "line: #{line}"
-
-      # determine the folder path - we need this to determine relative path
-      folder_path = file.split("#{fs}")[0..-2].join("#{fs}")
-      # root folder is useful for absolute paths
-      root_folder = file.split("#{fs}")[0..2].join("#{fs}")
-      puts "Folder path: #{folder_path}"
-      puts "Root path: #{root_folder}"
-      # Example: #include "<stuff here>"
-      # this will get the content inside the quotation marks:
-      include_file = line.split('"')[1]
-
-      # join the path and verify that it isn't too long
-      puts "Normalized path:"
-      if include_file.chars.first == '.'
-        include_file_normalized = ".#{fs}" + Path[folder_path + "#{fs}" + include_file].normalize.to_s
-      else
-        include_file_normalized = ".#{fs}" + Path[root_folder + "#{fs}" + include_file].normalize.to_s
-      end
-      puts include_file_normalized
-
-      # size of 4 means at least 4 fields:
-      #  1  2              3     4
-      # "./Processing_PK3/<dir>/ZSCRIPT"
-      # less than that means it goes out of bounds
-      if include_file_normalized.split("#{fs}").size < 4
-        puts "Fatal Error: relative path goes outside the bounds of the pk3"
-        puts "File: #{file} Line: #{line}"
-        exit(1)
-      end
-
-      # add the path to the decorate_files_pk3
-      decorate_files_pk3 << include_file_normalized
-      puts "---------------------------------"
-    end
-  end
-end
-deletion_indexes.reverse!
-deletion_indexes.each do |deletion|
-  decorate_files_pk3.delete_at(deletion)
-end
-
-puts decorate_files_pk3
-
-zscript_processing_files = Dir.glob(".#{fs}Processing#{fs}*#{fs}defs#{fs}ZSCRIPT.raw")
-zscript_processing_files.each do |zscript_file|
-  file_text = File.read(zscript_file)
-  file_path = zscript_file.split("#{fs}")[0..-2].join("#{fs}")
-  lines = file_text.lines
-  lines.each do |line|
-    if line =~ /^\s*\#include/i
-      include_file = File.dirname(zscript_file) + "#{fs}" + line.split('"')[1].upcase + ".raw"
-      zscript_processing_files << include_file
-    end
-  end
-end
-
-puts "ZSCRIPT in Wad files"
-puts zscript_processing_files
-
-# Build a list of Processing and Built_In_Actors, and a flag to tell it
-# not to touch the built in actors
-processing_files = Dir.glob(".#{fs}Processing#{fs}*#{fs}defs#{fs}DECORATE.raw")
-
-# I think this might work to grab all the zs files
-built_in_actors = Dir.glob(".#{fs}Built_In_Actors#{fs}*#{fs}*.zs") + Dir.glob(".#{fs}Built_In_Actors#{fs}*.zs")
-
-processing_files.each do |file|
-  file_text = File.read(file)
-  file_text.each_line do |line|
-    # Only perform processing on the line if it is not empty - to save on CPU
-    # cycles
-    if !line.strip.empty?
-      if line =~ /^\s*#include/i
-        puts "Include file: " + line
-	      # add the include file to the list of files full_dir_list
-	      include_file = line.split('"')[1].upcase
-        # line = File.read(File.dirname(file_path) + "/" + include_file + ".raw")
-        new_directory = File.dirname(file) + "#{fs}" + include_file + ".raw"
-        processing_files << new_directory
-      end
-    end
-  end
-end
-
-#Build a DB to determine if a script is ZSCRIPT or DECORATE
-# script_type[<path>] = "[ZSCRIPT|DECORATE|BUILT_IN]"
-script_type = Hash(String, String).new
-
-# There are 5 types we will need to iterate through:
-# - WAD DECORATE
-# - WAD ZSCRIPT
-# - PK3 DECORATE
-# - PK3 ZSCRIPT
-# - BUILT_IN ZSCRIPT
-
-# WAD DECORATE
-processing_files.each do |file_path|
-  script_type[file_path] = "DECORATE"
-end
-# WAD ZSCRIPT
-zscript_processing_files.each do |file_path|
-  script_type[file_path] = "ZSCRIPT"
-end
-# PK3 DECORATE
-decorate_files_pk3.each do |file_path|
-  script_type[file_path] = "DECORATE"
-end
-# PK3 ZSCRIPT
-zscript_files_pk3.each do |file_path|
-  script_type[file_path] = "ZSCRIPT"
-end
-# BUILT_IN ZSCRIPT
-built_in_actors.each do |file_path|
-  script_type[file_path] = "BUILT_IN"
-end
-
-# concatenate the two file arrays
-# - built in goes first to avoid getting flagged as dupe
-# - ZSCRIPT goes first before DECORATE
-full_dir_list = built_in_actors + zscript_processing_files + zscript_files_pk3 + processing_files + decorate_files_pk3
-
-puts full_dir_list
-puts "-----"
-puts script_type.inspect
+full_dir_list = built_in_actors + processing_files
 
 missing_property_names = Hash(String, Array(String)).new
 missing_actor_flags = Hash(String, Array(String)).new
 
-# Processing on each decorate file, and any included files are added to the end
-full_dir_list.each do |file_path|
-  input_text = File.read(file_path)
-  wad_folder_name = file_path.split(/\//)[2]
-  if script_type[file_path] != "BUILT_IN"
-    # grabbing the wad file source folder name - split on "/" and grab element 2
-    # which is essentially the wad name without ".wad" at the end
+###############################################################################
+# DATA-DRIVEN FLAG & PROPERTY DISPATCH
+# [REFACTOR] Replaces 600+ lines of elsif chains with hash lookups.
+###############################################################################
 
-    decorate_source_file = file_path.split("#{fs}").last
-    puts "#{wad_folder_name}"
+# Build a set of all known flag names. We use a proc to set the flag on the actor.
+# This replaces the massive if/elsif chain for boolean flags.
+KNOWN_FLAGS = Set(String).new
 
-    # Per line processing
-    puts "Per line processing..."
+# We'll populate KNOWN_FLAGS from the Actor class at runtime after creating a
+# default actor. For now, we define a helper that uses Crystal's property setter.
 
-
-    # eliminate any leading spaces for parsing
-    input_text = input_text.gsub(/^\s*/, "")
+# Sets a boolean flag on an actor by name. Returns true if the flag was recognized.
+def set_actor_flag(actor : Actor, flag_name : String, value : Bool) : Bool
+  # Actor-level flags (direct properties)
+  case flag_name
+  when "interpolateangles"    then actor.interpolateangles = value
+  when "flatsprite"           then actor.flatsprite = value
+  when "rollsprite"           then actor.rollsprite = value
+  when "wallsprite"           then actor.wallsprite = value
+  when "rollcenter"           then actor.rollcenter = value
+  when "spriteangle"          then actor.spriteangle = value
+  when "spriteflip"           then actor.spriteflip = value
+  when "xflip"                then actor.xflip = value
+  when "yflip"                then actor.yflip = value
+  when "maskrotation"         then actor.maskrotation = value
+  when "absmaskangle"         then actor.absmaskangle = value
+  when "absmaskpitch"         then actor.absmaskpitch = value
+  when "dontinterpolate"      then actor.dontinterpolate = value
+  when "zdoomtrans"           then actor.zdoomtrans = value
+  when "absviewangles"        then actor.absviewangles = value
+  when "castspriteshadow"     then actor.castspriteshadow = value
+  when "nospriteshadow"       then actor.nospriteshadow = value
+  when "masternosee"          then actor.masternosee = value
+  when "addlightlevel"        then actor.addlightlevel = value
+  when "invisibleinmirrors"   then actor.invisibleinmirrors = value
+  when "onlyvisibleinmirrors" then actor.onlyvisibleinmirrors = value
+  when "solid"                then actor.solid = value
+  when "shootable"            then actor.shootable = value
+  when "float"                then actor.float = value
+  when "nogravity"            then actor.nogravity = value
+  when "windthrust"           then actor.windthrust = value
+  when "pushable"             then actor.pushable = value
+  when "dontfall"             then actor.dontfall = value
+  when "canpass"              then actor.canpass = value
+  when "actlikebridge"        then actor.actlikebridge = value
+  when "noblockmap"           then actor.noblockmap = value
+  when "movewithsector"       then actor.movewithsector = value
+  when "relativetofloor"      then actor.relativetofloor = value
+  when "noliftdrop"           then actor.noliftdrop = value
+  when "slidesonwalls"        then actor.slidesonwalls = value
+  when "nodropoff"            then actor.nodropoff = value
+  when "noforwardfall"        then actor.noforwardfall = value
+  when "notrigger"            then actor.notrigger = value
+  when "blockedbysolidactors" then actor.blockedbysolidactors = value
+  when "blockasplayer"        then actor.blockasplayer = value
+  when "nofriction"           then actor.nofriction = value
+  when "nofrictionbounce"     then actor.nofrictionbounce = value
+  when "falldamage"           then actor.falldamage = value
+  when "allowthrubits"        then actor.allowthrubits = value
+  when "crosslinecheck"       then actor.crosslinecheck = value
+  when "alwaysrespawn"        then actor.alwaysrespawn = value
+  when "ambush"               then actor.ambush = value
+  when "avoidmelee"           then actor.avoidmelee = value
+  when "boss"                 then actor.boss = value
+  when "dontcorpse"           then actor.dontcorpse = value
+  when "dontfacetalker"       then actor.dontfacetalker = value
+  when "dormant"              then actor.dormant = value
+  when "friendly"             then actor.friendly = value
+  when "jumpdown"             then actor.jumpdown = value
+  when "lookallaround"        then actor.lookallaround = value
+  when "missileevenmore"      then actor.missileevenmore = value
+  when "missilemore"          then actor.missilemore = value
+  when "neverrespawn"         then actor.neverrespawn = value
+  when "nosplashalert"        then actor.nosplashalert = value
+  when "notargetswitch"       then actor.notargetswitch = value
+  when "noverticalmeleerange" then actor.noverticalmeleerange = value
+  when "quicktoretaliate"     then actor.quicktoretaliate = value
+  when "standstill"           then actor.standstill = value
+  when "avoidhazards"         then actor.avoidhazards = value
+  when "stayonlift"           then actor.stayonlift = value
+  when "dontfollowplayers"    then actor.dontfollowplayers = value
+  when "seefriendlymonsters"  then actor.seefriendlymonsters = value
+  when "cannotpush"           then actor.cannotpush = value
+  when "noteleport"           then actor.noteleport = value
+  when "activateimpact"       then actor.activateimpact = value
+  when "canpushwalls"         then actor.canpushwalls = value
+  when "canusewalls"          then actor.canusewalls = value
+  when "activatemcross"       then actor.activatemcross = value
+  when "activatepcross"       then actor.activatepcross = value
+  when "cantleavefloorpic"    then actor.cantleavefloorpic = value
+  when "telestomp"            then actor.telestomp = value
+  when "notelestomp"          then actor.notelestomp = value
+  when "staymorphed"          then actor.staymorphed = value
+  when "canblast"             then actor.canblast = value
+  when "noblockmonst"         then actor.noblockmonst = value
+  when "allowthruflags"       then actor.allowthruflags = value
+  when "thrughost"            then actor.thrughost = value
+  when "thruactors"           then actor.thruactors = value
+  when "thruspecies"          then actor.thruspecies = value
+  when "mthruspecies"         then actor.mthruspecies = value
+  when "spectral"             then actor.spectral = value
+  when "frightened"           then actor.frightened = value
+  when "frightening"          then actor.frightening = value
+  when "notarget"             then actor.notarget = value
+  when "nevertarget"          then actor.nevertarget = value
+  when "noinfightspecies"     then actor.noinfightspecies = value
+  when "forceinfighting"      then actor.forceinfighting = value
+  when "noinfighting"         then actor.noinfighting = value
+  when "notimefreeze"         then actor.notimefreeze = value
+  when "nofear"               then actor.nofear = value
+  when "cantseek"             then actor.cantseek = value
+  when "seeinvisible"         then actor.seeinvisible = value
+  when "dontthrust"           then actor.dontthrust = value
+  when "allowpain"            then actor.allowpain = value
+  when "usekillscripts"       then actor.usekillscripts = value
+  when "nokillscripts"        then actor.nokillscripts = value
+  when "stoprails"            then actor.stoprails = value
+  when "minvisible"           then actor.minvisible = value
+  when "mvisblocked"          then actor.mvisblocked = value
+  when "shadowaim"            then actor.shadowaim = value
+  when "doshadowblock"        then actor.doshadowblock = value
+  when "shadowaimvert"        then actor.shadowaimvert = value
+  when "invulnerable"         then actor.invulnerable = value
+  when "buddha"               then actor.buddha = value
+  when "reflective"           then actor.reflective = value
+  when "shieldreflect"        then actor.shieldreflect = value
+  when "deflect"              then actor.deflect = value
+  when "mirrorreflect"        then actor.mirrorreflect = value
+  when "aimreflect"           then actor.aimreflect = value
+  when "thrureflect"          then actor.thrureflect = value
+  when "noradiusdmg"          then actor.noradiusdmg = value
+  when "dontblast"            then actor.dontblast = value
+  when "shadow"               then actor.shadow = value
+  when "ghost"                then actor.ghost = value
+  when "dontmorph"            then actor.dontmorph = value
+  when "dontsquash"           then actor.dontsquash = value
+  when "noteleother"          then actor.noteleother = value
+  when "harmfriends"          then actor.harmfriends = value
+  when "dontdrain"            then actor.dontdrain = value
+  when "dontrip"              then actor.dontrip = value
+  when "bright"               then actor.bright = value
+  when "invisible"            then actor.invisible = value
+  when "noblood"              then actor.noblood = value
+  when "noblooddecals"        then actor.noblooddecals = value
+  when "stealth"              then actor.stealth = value
+  when "floorclip"            then actor.floorclip = value
+  when "spawnfloat"           then actor.spawnfloat = value
+  when "spawnceiling"         then actor.spawnceiling = value
+  when "floatbob"             then actor.floatbob = value
+  when "noicedeath"           then actor.noicedeath = value
+  when "dontgib"              then actor.dontgib = value
+  when "dontsplash"           then actor.dontsplash = value
+  when "dontoverlap"          then actor.dontoverlap = value
+  when "randomize"            then actor.randomize = value
+  when "fixmapthingpos"       then actor.fixmapthingpos = value
+  when "fullvolactive"        then actor.fullvolactive = value
+  when "fullvoldeath"         then actor.fullvoldeath = value
+  when "fullvolsee"           then actor.fullvolsee = value
+  when "nowallbouncesnd"      then actor.nowallbouncesnd = value
+  when "visibilitypulse"      then actor.visibilitypulse = value
+  when "rockettrail"          then actor.rockettrail = value
+  when "grenadetrail"         then actor.grenadetrail = value
+  when "nobouncesound"        then actor.nobouncesound = value
+  when "noskin"               then actor.noskin = value
+  when "donttranslate"        then actor.donttranslate = value
+  when "nopain"               then actor.nopain = value
+  when "forceybillboard"      then actor.forceybillboard = value
+  when "forcexybillboard"     then actor.forcexybillboard = value
+  when "missile"              then actor.missile = value
+  when "ripper"               then actor.ripper = value
+  when "nobossrip"            then actor.nobossrip = value
+  when "nodamagethrust"       then actor.nodamagethrust = value
+  when "dontreflect"          then actor.dontreflect = value
+  when "noshieldreflect"      then actor.noshieldreflect = value
+  when "floorhugger"          then actor.floorhugger = value
+  when "ceilinghugger"        then actor.ceilinghugger = value
+  when "bloodlessimpact"      then actor.bloodlessimpact = value
+  when "bloodsplatter"        then actor.bloodsplatter = value
+  when "foilinvul"            then actor.foilinvul = value
+  when "foilbuddha"           then actor.foilbuddha = value
+  when "seekermissile"        then actor.seekermissile = value
+  when "screenseeker"         then actor.screenseeker = value
+  when "skyexplode"           then actor.skyexplode = value
+  when "noexplodefloor"       then actor.noexplodefloor = value
+  when "strifedamage"         then actor.strifedamage = value
+  when "extremedeath"         then actor.extremedeath = value
+  when "noextremedeath"       then actor.noextremedeath = value
+  when "dehexplosion"         then actor.dehexplosion = value
+  when "piercearmor"          then actor.piercearmor = value
+  when "forceradiusdmg"       then actor.forceradiusdmg = value
+  when "forcezeroradiusdmg"   then actor.forcezeroradiusdmg = value
+  when "spawnsoundsource"     then actor.spawnsoundsource = value
+  when "painless"             then actor.painless = value
+  when "forcepain"            then actor.forcepain = value
+  when "causepain"            then actor.causepain = value
+  when "dontseekinvisible"    then actor.dontseekinvisible = value
+  when "stepmissile"          then actor.stepmissile = value
+  when "additivepoisondamage"    then actor.additivepoisondamage = value
+  when "additivepoisonduration"  then actor.additivepoisonduration = value
+  when "poisonalways"         then actor.poisonalways = value
+  when "hittarget"            then actor.hittarget = value
+  when "hitmaster"            then actor.hitmaster = value
+  when "hittracer"            then actor.hittracer = value
+  when "hitowner"             then actor.hitowner = value
+  when "bounceonwalls"        then actor.bounceonwalls = value
+  when "bounceonfloors"       then actor.bounceonfloors = value
+  when "bounceonceilings"     then actor.bounceonceilings = value
+  when "allowbounceonactors"  then actor.allowbounceonactors = value
+  when "bounceautooff"        then actor.bounceautooff = value
+  when "bounceautooffflooronly" then actor.bounceautooffflooronly = value
+  when "bouncelikeheretic"    then actor.bouncelikeheretic = value
+  when "bounceonactors"       then actor.bounceonactors = value
+  when "bounceonunrippables"  then actor.bounceonunrippables = value
+  when "explodeonwater"       then actor.explodeonwater = value
+  when "canbouncewater"       then actor.canbouncewater = value
+  when "mbfbouncer"           then actor.mbfbouncer = value
+  when "usebouncestate"       then actor.usebouncestate = value
+  when "dontbounceonshootables" then actor.dontbounceonshootables = value
+  when "dontbounceonsky"      then actor.dontbounceonsky = value
+  when "iceshatter"           then actor.iceshatter = value
+  when "dropped"              then actor.dropped = value
+  when "ismonster"            then actor.ismonster = value
+  when "corpse"               then actor.corpse = value
+  when "countitem"            then actor.countitem = value
+  when "countkill"            then actor.countkill = value
+  when "countsecret"          then actor.countsecret = value
+  when "notdmatch"            then actor.notdmatch = value
+  when "nonshootable"         then actor.nonshootable = value
+  when "dropoff"              then actor.dropoff = value
+  when "puffonactors"         then actor.puffonactors = value
+  when "allowparticles"       then actor.allowparticles = value
+  when "alwayspuff"           then actor.alwayspuff = value
+  when "puffgetsowner"        then actor.puffgetsowner = value
+  when "forcedecal"           then actor.forcedecal = value
+  when "nodecal"              then actor.nodecal = value
+  when "synchronized"         then actor.synchronized = value
+  when "alwaysfast"           then actor.alwaysfast = value
+  when "neverfast"            then actor.neverfast = value
+  when "oldradiusdmg"         then actor.oldradiusdmg = value
+  when "usespecial"           then actor.usespecial = value
+  when "bumpspecial"          then actor.bumpspecial = value
+  when "bossdeath"            then actor.bossdeath = value
+  when "nointeraction"        then actor.nointeraction = value
+  when "notautoaimed"         then actor.notautoaimed = value
+  when "nomenu"               then actor.nomenu = value
+  when "pickup"               then actor.pickup = value
+  when "touchy"               then actor.touchy = value
+  when "vulnerable"           then actor.vulnerable = value
+  when "notonautomap"         then actor.notonautomap = value
+  when "weaponspawn"          then actor.weaponspawn = value
+  when "getowner"             then actor.getowner = value
+  when "seesdaggers"          then actor.seesdaggers = value
+  when "incombat"             then actor.incombat = value
+  when "noclip"               then actor.noclip = value
+  when "nosector"             then actor.nosector = value
+  when "icecorpse"            then actor.icecorpse = value
+  when "justhit"              then actor.justhit = value
+  when "justattacked"         then actor.justattacked = value
+  when "teleport"             then actor.teleport = value
+  when "e1m8boss"             then actor.e1m8boss = value
+  when "e2m8boss"             then actor.e2m8boss = value
+  when "e3m8boss"             then actor.e3m8boss = value
+  when "e4m6boss"             then actor.e4m6boss = value
+  when "e4m8boss"             then actor.e4m8boss = value
+  when "inchase"              then actor.inchase = value
+  when "unmorphed"            then actor.unmorphed = value
+  when "fly"                  then actor.fly = value
+  when "onmobj"               then actor.onmobj = value
+  when "argsdefined"          then actor.argsdefined = value
+  when "nosightcheck"         then actor.nosightcheck = value
+  when "crashed"              then actor.crashed = value
+  when "warnbot"              then actor.warnbot = value
+  when "huntplayers"          then actor.huntplayers = value
+  when "nohateplayers"        then actor.nohateplayers = value
+  when "scrollmove"           then actor.scrollmove = value
+  when "vfriction"            then actor.vfriction = value
+  when "bossspawned"          then actor.bossspawned = value
+  when "avoidingdropoff"      then actor.avoidingdropoff = value
+  when "chasegoal"            then actor.chasegoal = value
+  when "inconversation"       then actor.inconversation = value
+  when "armed"                then actor.armed = value
+  when "falling"              then actor.falling = value
+  when "linedone"             then actor.linedone = value
+  when "shattering"           then actor.shattering = value
+  when "killed"               then actor.killed = value
+  when "bosscube"             then actor.bosscube = value
+  when "intrymove"            then actor.intrymove = value
+  when "handlenodelay"        then actor.handlenodelay = value
+  when "flycheat"             then actor.flycheat = value
+  when "respawninvul"         then actor.respawninvul = value
+  when "lowgravity"           then actor.lowgravity = value
+  when "quartergravity"       then actor.quartergravity = value
+  when "longmeleerange"       then actor.longmeleerange = value
+  when "shortmissilerange"    then actor.shortmissilerange = value
+  when "highermprob"          then actor.highermprob = value
+  when "fireresist"           then actor.fireresist = value
+  when "donthurtspecies"      then actor.donthurtspecies = value
+  when "firedamage"           then actor.firedamage = value
+  when "icedamage"            then actor.icedamage = value
+  when "hereticbounce"        then actor.hereticbounce = value
+  when "hexenbounce"          then actor.hexenbounce = value
+  when "doombounce"           then actor.doombounce = value
+  when "faster"               then actor.faster = value
+  when "fastmelee"            then actor.fastmelee = value
+  when "explodeondeath"       then actor.explodeondeath = value
+  when "allowclientspawn"     then actor.allowclientspawn = value
+  when "clientsideonly"       then actor.clientsideonly = value
+  when "nonetid"              then actor.nonetid = value
+  when "dontidentifytarget"   then actor.dontidentifytarget = value
+  when "scorepillar"          then actor.scorepillar = value
+  when "serversideonly"       then actor.serversideonly = value
+  when "blueteam"             then actor.blueteam = value
+  when "redteam"              then actor.redteam = value
+  when "node"                 then actor.node = value
+  when "basehealth"           then actor.basehealth = value
+  when "superhealth"          then actor.superhealth = value
+  when "basearmor"            then actor.basearmor = value
+  when "superarmor"           then actor.superarmor = value
+  # Sub-object flags (inventory, weapon, etc.)
+  when "inventory.quiet"               then actor.inventory.quiet = value
+  when "inventory.autoactivate"        then actor.inventory.autoactivate = value
+  when "inventory.undroppable", "undroppable"  then actor.inventory.undroppable = value
+  when "inventory.unclearable"         then actor.inventory.unclearable = value
+  when "inventory.invbar", "invbar"    then actor.inventory.invbar = value
+  when "inventory.hubpower"            then actor.inventory.hubpower = value
+  when "inventory.persistentpower"     then actor.inventory.persistentpower = value
+  when "inventory.interhubstrip"       then actor.inventory.interhubstrip = value
+  # Note: inventory.pickupflash is a String property (actor name), not a Bool flag.
+  # The +INVENTORY.PICKUPFLASH flag form is extremely rare and handled via property.
+  when "inventory.alwayspickup"        then actor.inventory.alwayspickup = value
+  when "inventory.fancypickupsound", "fancypickupsound" then actor.inventory.fancypickupsound = value
+  when "inventory.noattenpickupsound"  then actor.inventory.noattenpickupsound = value
+  when "inventory.bigpowerup"          then actor.inventory.bigpowerup = value
+  when "inventory.neverrespawn"        then actor.inventory.neverrespawn = value
+  when "inventory.keepdepleted"        then actor.inventory.keepdepleted = value
+  when "inventory.ignoreskill"         then actor.inventory.ignoreskill = value
+  when "inventory.additivetime"        then actor.inventory.additivetime = value
+  when "inventory.untossable"          then actor.inventory.untossable = value
+  when "inventory.restrictabsolutely"  then actor.inventory.restrictabsolutely = value
+  when "inventory.noscreenflash"       then actor.inventory.noscreenflash = value
+  when "inventory.tossed"              then actor.inventory.tossed = value
+  when "inventory.alwaysrespawn"       then actor.inventory.alwaysrespawn = value
+  when "inventory.transfer"            then actor.inventory.transfer = value
+  when "inventory.noteleportfreeze"    then actor.inventory.noteleportfreeze = value
+  when "inventory.noscreenblink"       then actor.inventory.noscreenblink = value
+  when "inventory.ishealth"            then actor.inventory.ishealth = value
+  when "inventory.isarmor"             then actor.inventory.isarmor = value
+  when "inventory.forcerespawninsurvival" then actor.inventory.forcerespawninsurvival = value
+  when "weapon.noautofire"             then actor.weapon.noautofire = value
+  when "weapon.readysndhalf"           then actor.weapon.readysndhalf = value
+  when "weapon.dontbob"                then actor.weapon.dontbob = value
+  when "weapon.axeblood"               then actor.weapon.axeblood = value
+  when "weapon.noalert"                then actor.weapon.noalert = value
+  when "weapon.ammo_optional"          then actor.weapon.ammo_optional = value
+  when "weapon.alt_ammo_optional"      then actor.weapon.alt_ammo_optional = value
+  when "weapon.ammo_checkboth"         then actor.weapon.ammo_checkboth = value
+  when "weapon.primary_uses_both"      then actor.weapon.primary_uses_both = value
+  when "weapon.alt_uses_both"          then actor.weapon.alt_uses_both = value
+  when "weapon.wimpy_weapon", "wimpy_weapon"   then actor.weapon.wimpy_weapon = value
+  when "weapon.powered_up", "powered_up"       then actor.weapon.powered_up = value
+  when "weapon.staff2_kickback"        then actor.weapon.staff2_kickback = value
+  when "weapon.explosive"              then actor.weapon.explosive = value
+  when "weapon.meleeweapon", "meleeweapon"     then actor.weapon.meleeweapon = value
+  when "weapon.bfg"                    then actor.weapon.bfg = value
+  when "weapon.cheatnotweapon"         then actor.weapon.cheatnotweapon = value
+  when "weapon.noautoswitchto"         then actor.weapon.noautoswitchto = value
+  when "weapon.noautoaim"              then actor.weapon.noautoaim = value
+  when "weapon.nodeathdeselect"        then actor.weapon.nodeathdeselect = value
+  when "weapon.nodeathinput"           then actor.weapon.nodeathinput = value
+  when "weapon.allow_with_respawn_invul" then actor.weapon.allow_with_respawn_invul = value
+  when "weapon.nolms"                  then actor.weapon.nolms = value
+  when "powerspeed.notrail"            then actor.powerspeed.notrail = value
+  when "playerpawn.nothrustwheninvul", "nothrustwheninvul"  then actor.player.nothrustwheninvul = value
+  when "playerpawn.cansupermorph", "cansupermorph"          then actor.player.cansupermorph = value
+  when "playerpawn.crouchablemorph"    then actor.player.crouchablemorph = value
+  when "playerpawn.weaponlevel2ended"  then actor.player.weaponlevel2ended = value
   else
-    # else -> Script is a BUILT_IN actor
-    # no touchy means we skip all that and just open the file for reading
-
-    # strip leading whitespace
-    input_text = input_text.gsub(/^\s*/, "")
-    # file paths are a little different...
-    # We want to set the "decorate_source_file" as
-    puts "file_path: #{file_path}"
-    decorate_source_file = file_path.split("#{fs}").last
+    return false
   end
+  true
+end
 
-  # remove "//" comments
-  input_text = input_text.gsub(%r{//[^\n]*}, "")
+# Sets a property value on an actor. Returns true if recognized.
+def set_actor_property(actor : Actor, prop_name : String, line : String) : Bool
+  # Strip trailing semicolons — ZSCRIPT uses them as line terminators
+  clean_line = line.rstrip.rstrip(';').rstrip
+  words = clean_line.split
+  val1 = words[1]?
+  rest = words[1..]?.try(&.join(' ')) || ""
 
-  # remove /* through */ comments
-  input_text = input_text.gsub(/\/\*[\s\S]*\*\//m, "")
-
-  # put curly braces on their own line
-  input_text = input_text.gsub('{', "\n{\n")
-  input_text = input_text.gsub('}', "\n}\n")
-
-  # removing any leading or trailing spaces on each line - cleanup
-  input_text = input_text.split("\n").map { |line| line.lstrip.strip }.join("\n")
-
-  # remove any blank lines
-  input_text = input_text.split("\n").reject { |line| line.strip.empty? }.join("\n")
-
-  # We need to treat ZSCRIPT differently than DECORATE
-  # ZSCRIPT will have classes, and we need to treat them like actors... probably
-  # in ZSCRIPT there is a "Default {}" section that holds the properties and flags
-  #
-  # DECORATE:
-  # actor blah : blah2 replaces blah 12345
-  # {
-  #   <properties and flags here>
-  #   states
-  #   { <states here> }
-  # }
-  #
-  # ZSCRIPT:
-  # class blah : blah2 replaces blah 12345
-  # {
-  #   Default
-  #   {
-  #     <properties and flags>
-  #   }
-  #   States
-  #   { <states here> }
-  # }
-  if script_type[file_path] == "ZSCRIPT" || script_type[file_path] == "BUILT_IN"
-    actors = input_text.scan(/^\h*class\N*\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi)
-  elsif script_type[file_path] == "DECORATE"
-    actors = input_text.scan(/^\h*actor\N*\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi)
-  end
-
-  # transform regex match to strings
-  actors = actors.nil? ? [] of String : actors.map {|match| match.to_s }
-
-  puts "Actors:"
-  actors.each do |actor|
-   puts actor
-   puts "------"
-  end
-
-  # Remove empty strings from the resulting array
-  actors.reject! { |actor| actor.strip.empty? }
-
-  actors.each_with_index do |actor, actor_index|
-    # parse the actor's states, if any
-
-    ## this is the old way
-    ## states_raw = actor.gsub(/^states\n/im, "SPECIALDELIMITERstates\n")
-    ## states_raw_split = states_raw.split("SPECIALDELIMITER")
-
-    states_raw_split = actor.scan(/^\h*states\N*\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi)
-    states_raw_split = states_raw_split.nil? ? [] of String : states_raw_split.map {|match| match.to_s }
-
-    # THIS BLOCK I AM CONSIDERING REFACTORING AS I THINK WE CAN DO BETTER
-    # AND I DON'T THINK THERE IS ANYTHING DEPENDENT ON IT
-    ###################################################################
-    states = Hash(String, String).new
-    states_text = nil
-    states_array = nil
-    if states_raw_split.size > 1
-      states_unformatted = states_raw_split[1]
-      unless states_unformatted.nil?
-        states_unformatted = states_unformatted.split("{")[1]
-        states_unformatted = states_unformatted.split("}")[0]
-        states_text = states_unformatted.lstrip
+  begin
+    case prop_name
+    when "health"
+      # Avoid collision with the "Health" actor name
+      return false if actor.name.downcase.strip == "health"
+      # Clamp to Int32 range — some mods use absurdly large values
+      health_val = val1.not_nil!.to_i64?
+      if health_val
+        actor.health = health_val.clamp(Int32::MIN.to_i64, Int32::MAX.to_i64).to_i32
       else
-        states_text = nil
+        log(1, "Cannot parse health value: #{val1}")
       end
+    when "gibhealth"         then actor.gib_health = val1.not_nil!.to_i
+    when "woundhealth"       then actor.wound_health = val1.not_nil!.to_i
+    when "reactiontime"      then actor.reaction_time = val1.not_nil!.to_i
+    when "painchance"        then actor.pain_chance = "#{val1},#{words[2]?}"
+    when "painthreshold"     then actor.pain_threshold = val1.not_nil!.to_i
+    when "damagefactor"      then actor.damage_factor = rest
+    when "selfdamagefactor"  then actor.self_damage_factor = val1.not_nil!.to_f
+    when "damagemultiply"    then actor.damage_multiply = val1.not_nil!.to_f
+    when "damage"            then actor.damage = val1.to_s
+    when "poisondamage"      then actor.poison_damage = rest
+    when "poisondamagetype"  then actor.poison_damage_type = rest
+    when "radiusdamagefactor" then actor.radius_damage_factor = val1.not_nil!.to_f
+    when "ripperlevel"       then actor.ripper_level = val1.not_nil!.to_i
+    when "riplevelmin"       then actor.rip_level_min = val1.not_nil!.to_i
+    when "riplevelmax"       then actor.rip_level_max = val1.not_nil!.to_i
+    when "designatedteam"    then actor.designated_team = val1.not_nil!.to_i
+    when "speed"             then actor.speed = val1.not_nil!.to_f
+    when "vspeed"            then actor.v_speed = val1.not_nil!.to_f
+    when "fastspeed"         then actor.fast_speed = val1.not_nil!.to_i
+    when "floatspeed"        then actor.float_speed = val1.not_nil!.to_i
+    when "species"           then actor.species = val1.to_s
+    when "accuracy"          then actor.accuracy = val1.not_nil!.to_i
+    when "stamina"           then actor.stamina = val1.not_nil!.to_i
+    when "activation"        then actor.activation = rest
+    when "telefogsourcetype"  then actor.tele_fog_source_type = val1.to_s
+    when "telefogdesttype"   then actor.tele_fog_dest_type = val1.to_s
+    when "threshold"         then actor.threshold = val1.not_nil!.to_i
+    when "defthreshold"      then actor.def_threshold = val1.not_nil!.to_i
+    when "friendlyseeblocks" then actor.friendly_see_blocks = val1.not_nil!.to_i
+    when "shadowaimfactor"   then actor.shadow_aim_factor = val1.not_nil!.to_f
+    when "shadowpenaltyfactor" then actor.shadow_penalty_factor = val1.not_nil!.to_f
+    when "radius"            then actor.radius = val1.not_nil!.to_f
+    when "height"            then actor.height = val1.not_nil!.to_i
+    when "deathheight"       then actor.death_height = val1.not_nil!.to_i
+    when "burnheight"        then actor.burn_height = val1.not_nil!.to_i
+    when "projectilepassheight" then actor.projectile_pass_height = val1.not_nil!.to_i
+    when "gravity"           then actor.gravity = val1.not_nil!.to_f
+    when "friction"          then actor.friction = val1.not_nil!.to_f
+    when "mass"              then actor.mass = val1.to_s
+    when "maxstepheight"     then actor.max_step_height = val1.not_nil!.to_i
+    when "maxdropoffheight"  then actor.max_drop_off_height = val1.not_nil!.to_i
+    when "maxslopesteepness" then actor.max_slope_steepness = val1.not_nil!.to_f
+    when "bouncetype"        then actor.bounce_type = val1.to_s
+    when "bouncefactor"      then actor.bounce_factor = val1.not_nil!.to_f
+    when "wallbouncefactor"  then actor.wall_bounce_factor = val1.not_nil!.to_f
+    when "bouncecount"       then actor.bounce_count = val1.not_nil!.to_i
+    when "projectilekickback" then actor.projectile_kick_back = val1.not_nil!.to_i
+    when "pushfactor"        then actor.push_factor = val1.not_nil!.to_f
+    when "weaveindexxy"      then actor.weave_index_xy = val1.not_nil!.to_i
+    when "weaveindexz"       then actor.weave_index_z = val1.not_nil!.to_i
+    when "thrubits"          then actor.thru_bits = val1.not_nil!.to_i
+    when "activesound"       then actor.active_sound = val1.to_s
+    when "attacksound"       then actor.attack_sound = val1.to_s
+    when "bouncesound"       then actor.bounce_sound = val1.to_s
+    when "crushpainsound"    then actor.crush_pain_sound = val1.to_s
+    when "deathsound"        then actor.death_sound = val1.to_s
+    when "howlsound"         then actor.howl_sound = val1.to_s
+    when "painsound"         then actor.pain_sound = val1.to_s
+    when "ripsound"          then actor.rip_sound = val1.to_s
+    when "seesound"          then actor.see_sound = val1.to_s
+    when "wallbouncesound"   then actor.wall_bounce_sound = val1.to_s
+    when "pushsound"         then actor.push_sound = val1.to_s
+    when "renderstyle"       then actor.render_style = val1.to_s
+    when "alpha"             then actor.alpha = val1.not_nil!.to_f
+    when "defaultalpha"      then actor.default_alpha = true
+    when "stealthalpha"      then actor.stealth_alpha = val1.not_nil!.to_f
+    when "xscale"            then actor.x_scale = val1.not_nil!.to_f
+    when "yscale"            then actor.y_scale = val1.not_nil!.to_f
+    when "scale"             then actor.scale = val1.not_nil!.to_f
+    when "lightlevel"        then actor.light_level = val1.not_nil!.to_i
+    when "translation"       then actor.translation = rest
+    when "bloodcolor"        then actor.blood_color = rest
+    when "bloodtype"         then actor.blood_type = rest
+    when "decal"             then actor.decal = val1.to_s
+    when "stencilcolor"      then actor.stencil_color = val1.to_s
+    when "floatbobphase"     then actor.float_bob_phase = val1.not_nil!.to_i
+    when "floatbobstrength"  then actor.float_bob_strength = val1.not_nil!.to_i
+    when "distancecheck"     then actor.distance_check = val1.to_s
+    when "spriteangle"       then actor.sprite_angle = val1.not_nil!.to_i
+    when "spriterotation"    then actor.sprite_rotation = val1.not_nil!.to_i
+    when "visibleangles"     then actor.visible_angles = rest
+    when "visiblepitch"      then actor.visible_pitch = rest
+    when "renderradius"      then actor.render_radius = val1.not_nil!.to_f
+    when "cameraheight"      then actor.camera_height = val1.not_nil!.to_i
+    when "camerafov"         then actor.camera_fov = val1.not_nil!.to_f
+    when "hitobituary"       then actor.hit_obituary = val1.to_s
+    when "obituary"          then actor.obituary = val1.to_s
+    when "minmissilechance"  then actor.min_missile_chance = val1.not_nil!.to_i
+    when "damagetype"        then actor.damage_type = val1.to_s
+    when "deathtype"         then actor.death_type = val1.to_s
+    when "meleethreshold"    then actor.melee_threshold = val1.not_nil!.to_i
+    when "meleerange"        then actor.melee_range = val1.not_nil!.to_i
+    when "maxtargetrange"    then actor.max_target_range = val1.not_nil!.to_i
+    when "meleedamage"       then actor.melee_damage = val1.not_nil!.to_i
+    when "meleesound"        then actor.melee_sound = val1.to_s
+    when "missileheight"     then actor.missile_height = val1.not_nil!.to_i
+    when "missiletype"       then actor.missile_type = val1.to_s
+    when "explosionradius"   then actor.explosion_radius = val1.not_nil!.to_i
+    when "explosiondamage"   then actor.explosion_damage = val1.not_nil!.to_i
+    when "donthurtshooter"   then actor.dont_hurt_shooter = true
+    when "paintype"          then actor.pain_type = val1.to_s
+    when "projectile"        then actor.projectile = true
+    when "game"              then actor.game = val1.to_s
+    when "spawnid"           then actor.spawn_id = val1.not_nil!.to_i
+    when "conversationid"    then actor.conversation_id = rest
+    when "tag"               then actor.tag = rest
+    when "args"              then actor.args = rest
+    when "clearflags"        then actor.clear_flags = true
+    when "dropitem"          then actor.drop_item = rest
+    when "skip_super"        then actor.skip_super = true
+    when "visibletoteam"     then actor.visible_to_team = val1.not_nil!.to_i
+    # Inventory properties
+    when "inventory.amount"           then actor.inventory.amount = val1.not_nil!.to_i
+    when "inventory.defmaxamount"     then actor.inventory.defmaxamount = true
+    when "inventory.maxamount"        then actor.inventory.maxamount = val1.to_s.gsub("\"", "")
+    when "inventory.interhubamount"   then actor.inventory.interhubamount = val1.not_nil!.to_i
+    when "inventory.icon"             then actor.inventory.icon = val1.to_s
+    when "inventory.althudicon"       then actor.inventory.althudicon = val1.to_s
+    when "inventory.pickupmessage"    then actor.inventory.pickupmessage = rest
+    when "inventory.pickupsound"      then actor.inventory.pickupsound = val1.to_s
+    when "inventory.pickupflash"      then actor.inventory.pickupflash = val1.to_s
+    when "inventory.usesound"         then actor.inventory.usesound = val1.to_s
+    when "inventory.respawntics"      then actor.inventory.respawntics = val1.not_nil!.to_i
+    when "inventory.givequest"        then actor.inventory.givequest = val1.not_nil!.to_i
+    when "inventory.forbiddento"      then actor.inventory.forbiddento = val1.to_s
+    when "inventory.restrictedto"     then actor.inventory.restrictedto = val1.to_s
+    # Weapon properties
+    when "weapon.ammogive", "weapon.ammogive1"  then actor.weapon.ammogive = val1.not_nil!.to_i
+    when "weapon.ammogive2"           then actor.weapon.ammogive2 = val1.not_nil!.to_i
+    when "weapon.ammotype", "weapon.ammotype1"  then actor.weapon.ammotype = val1.to_s
+    when "weapon.ammotype2"           then actor.weapon.ammotype2 = val1.to_s
+    when "weapon.ammouse", "weapon.ammouse1"    then actor.weapon.ammouse = val1.not_nil!.to_i
+    when "weapon.ammouse2"            then actor.weapon.ammouse2 = val1.not_nil!.to_i
+    when "weapon.minselectionammo1"   then actor.weapon.minselectionammo1 = val1.not_nil!.to_i
+    when "weapon.minselectionammo2"   then actor.weapon.minselectionammo2 = val1.not_nil!.to_i
+    when "weapon.bobpivot3d"          then actor.weapon.bobpivot3d = rest
+    when "weapon.bobrangex"           then actor.weapon.bobrangex = val1.not_nil!.to_f
+    when "weapon.bobrangey"           then actor.weapon.bobrangey = val1.not_nil!.to_f
+    when "weapon.bobspeed"            then actor.weapon.bobspeed = val1.not_nil!.to_f
+    when "weapon.bobstyle"            then actor.weapon.bobstyle = rest
+    when "weapon.kickback"            then actor.weapon.kickback = val1.not_nil!.to_i
+    when "weapon.defaultkickback"     then actor.weapon.defaultkickback = true
+    when "weapon.readysound"          then actor.weapon.readysound = rest
+    when "weapon.selectionorder"      then actor.weapon.selectionorder = val1.not_nil!.to_i
+    when "weapon.sisterweapon"        then actor.weapon.sisterweapon = rest
+    when "weapon.slotnumber"          then actor.weapon.slotnumber = val1.not_nil!.to_i
+    when "weapon.slotpriority"        then actor.weapon.slotpriority = val1.not_nil!.to_f
+    when "weapon.upsound"             then actor.weapon.upsound = rest
+    when "weapon.weaponscalex"        then actor.weapon.weaponscalex = val1.not_nil!.to_f
+    when "weapon.weaponscaley"        then actor.weapon.weaponscaley = val1.not_nil!.to_f
+    when "weapon.yadjust"             then actor.weapon.yadjust = val1.not_nil!.to_i
+    when "weapon.lookscale"           then actor.weapon.lookscale = val1.not_nil!.to_f
+    # Ammo
+    when "ammo.backpackamount"        then actor.ammo.backpackamount = val1.not_nil!.to_i
+    when "ammo.backpackmaxamount"     then actor.ammo.backpackmaxamount = val1.not_nil!.to_i
+    when "ammo.dropamount"            then actor.ammo.dropamount = val1.not_nil!.to_i
+    # WeaponPiece
+    when "weaponpiece.number"         then actor.weaponpiece.number = val1.not_nil!.to_i
+    when "weaponpiece.weapon"         then actor.weaponpiece.weapon = rest
+    # Health class
+    when "health.lowmessage"          then actor.healthclass.lowmessage = rest
+    # PuzzleItem
+    when "puzzleitem.number"          then actor.puzzleitem.number = val1.not_nil!.to_i
+    when "puzzleitem.failmessage"     then actor.puzzleitem.failmessage = rest
+    when "puzzleitem.failsound"       then actor.puzzleitem.failsound = val1.to_s
+    # PlayerPawn
+    when "player.aircapacity"         then actor.player.aircapacity = val1.not_nil!.to_f
+    when "player.attackzoffset"       then actor.player.attackzoffset = val1.not_nil!.to_i
+    when "player.clearcolorset"       then actor.player.clearcolorset = val1.not_nil!.to_i
+    when "player.colorrange"          then actor.player.colorrange = rest
+    when "player.colorset"            then actor.player.colorset = val1.to_s
+    when "player.colorsetfile"        then actor.player.colorsetfile = rest
+    when "player.crouchsprite"        then actor.player.crouchsprite = val1.to_s
+    when "player.damagescreencolor"   then actor.player.damagescreencolor = rest
+    when "player.displayname"         then actor.player.displayname = val1.to_s
+    when "player.face"                then actor.player.face = val1.to_s
+    when "player.fallingscreamspeed"  then actor.player.fallingscreamspeed = rest
+    when "player.flechettetype"       then actor.player.flechettetype = val1.to_s
+    when "player.flybob"              then actor.player.flybob = val1.not_nil!.to_f
+    when "player.forwardmove"         then actor.player.forwardmove = rest
+    when "player.gruntspeed"          then actor.player.gruntspeed = val1.not_nil!.to_f
+    when "player.healradiustype"      then actor.player.healradiustype = val1.to_s
+    when "player.hexenarmor"          then actor.player.hexenarmor = val1.to_s
+    when "player.invulnerabilitymode" then actor.player.invulnerabilitymode = val1.to_s
+    when "player.jumpz"              then actor.player.jumpz = val1.not_nil!.to_f
+    when "player.maxhealth"          then actor.player.maxhealth = val1.not_nil!.to_i
+    when "player.morphweapon"        then actor.player.morphweapon = val1.to_s
+    when "player.mugshotmaxhealth"   then actor.player.mugshotmaxhealth = val1.not_nil!.to_i
+    when "player.runhealth"          then actor.player.runhealth = val1.not_nil!.to_i
+    when "player.scoreicon"          then actor.player.scoreicon = val1.to_s
+    when "player.sidemove"           then actor.player.sidemove = rest
+    when "player.soundclass"         then actor.player.soundclass = val1.to_s
+    when "player.spawnclass"         then actor.player.spawnclass = val1.to_s
+    when "player.startitem"          then actor.player.startitem = rest
+    when "player.viewbob"            then actor.player.viewbob = val1.not_nil!.to_f
+    when "player.viewheight"         then actor.player.viewheight = val1.not_nil!.to_i
+    when "player.waterclimbspeed"    then actor.player.waterclimbspeed = val1.not_nil!.to_f
+    when "player.weaponslot"         then actor.player.weaponslot = rest
+    # Powerup
+    when "powerup.color"             then actor.powerup.color = rest
+    when "powerup.colormap"          then actor.powerup.colormap = rest
+    when "powerup.duration"          then actor.powerup.duration = val1.to_s
+    when "powerup.mode"              then actor.powerup.mode = val1.to_s
+    when "powerup.strength"          then actor.powerup.strength = val1.not_nil!.to_f
+    when "powerup.type"              then actor.powerup.type = val1.to_s
+    # HealthPickup
+    when "healthpickup.autouse"      then actor.healthpickup.autouse = val1.not_nil!.to_i
+    # MorphProjectile
+    when "morphprojectile.playerclass"    then actor.morphprojectile.playerclass = val1.to_s
+    when "morphprojectile.monsterclass"   then actor.morphprojectile.monsterclass = val1.to_s
+    when "morphprojectile.duration"       then actor.morphprojectile.duration = val1.not_nil!.to_i
+    when "morphprojectile.morphstyle"     then actor.morphprojectile.morphstyle = rest
+    when "morphprojectile.morphflash"     then actor.morphprojectile.morphflash = rest
+    when "morphprojectile.unmorphflash"   then actor.morphprojectile.unmorphflash = rest
     else
-      states_text = nil
+      return false
     end
-    # now we will split out each state into an array
-    unless states_text.nil?
-      states_array = states_text.split(/^(\S*)\:/m)
-      # delete blank first element
-      states_array.delete_at(0)
-    end
-    # now we turn states_array into states hash
-    unless states_array.nil?
-      (0..states_array.size - 1).step(2) do |i|
-        key = states_array[i].downcase
-        j = i + 1
-        value = states_array[j]
-        states[key] = value
-      end
-    end
-    #####################################################################
+  rescue ex
+    log(1, "Failed to parse property '#{prop_name}' from line: #{line} (#{ex.message})")
+    return false
+  end
+  true
+end
 
-    puts "States before:"
-    puts states_text
-    puts "States after:"
-    puts states
+###############################################################################
+# MAIN PARSING LOOP
+###############################################################################
 
-    puts "======================="
-    # there are a few options here and we need to account for all of them
-    # DECORATE
-    # 0     1    2        3        4        5       6       7
-    # actor blah
-    # actor blah 1234
-    # actor blah replaces oldblah
-    # actor blah replaces oldblah 1234
-    # actor blah :        oldblah
-    # actor blah :        oldblah 1234
-    # actor blah :        oldblah replaces oldblah
-    # actor blah :        oldblah replaces oldblah 1234
-    #
-    # ZSCRIPT does not assign doomednums, which simplifies things
-    # 0     1    2        3        4        5       6       7
-    # class blah
-    # class blah :        actor
-    # class blah replaces oldblah
-    # class blah :        actor    replaces oldblah
-    #
-    # either type can have "native" at the end, but that gets ignored
-    # so I think the sorting logic should work for both DECORATE and ZSCRIPT
+full_dir_list.each do |file_path|
+  is_built_in = (no_touchy[file_path] == true)
 
-    #this has the full actor text in case we need to search it later
-    actor_with_states = actor
+  # Determine wad folder name and source file
+  path_parts = file_path.split("/")
+  if is_built_in
+    wad_folder_name = path_parts[2]? || "unknown"
+    decorate_source_file = path_parts[3]? || "unknown"
+  else
+    wad_folder_name = path_parts[2]? || "unknown"
+    decorate_source_file = path_parts[4]? || "unknown"
+  end
 
-    if script_type[file_path] == "DECORATE"
-      actor_no_states = actor.to_s.gsub(/states\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi, "")
-    elsif script_type[file_path] == "BUILT_IN" || script_type[file_path] == "ZSCRIPT"
-      # we need to grab the match which will return the results with curly braces included
-      # we also need the first line of the actor so that we can evaluate
-      # actor name, inheritance, replaces
-      actor_no_states_match = actor.match(/^\h*default\N*\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi)
-      if actor_no_states_match
-        actor_no_states = actor.to_s.lines.first + "\n" + actor_no_states_match[1].to_s
-      else
-        actor_no_states = actor.to_s.lines.first
-      end
-    end
+  log(3, "Processing: #{wad_folder_name} (#{file_path})")
 
-    break if actor_no_states.nil?
-
-    # remove any semicolons, and add a line break in case there are multiple
-    # directives on one line... empty lines get removed anyway
-    actor_no_states = actor_no_states.gsub(";", "\n")
-
-    # split the actor_without_states into separate lines
-    lines = actor_no_states.lines
-
-    # get a case sensitive version
-    lines_with_case = lines.map { |line| line.lstrip.strip }
-    lines_with_case.reject! { |line| line.empty? }
-    lines_with_case.compact!
-    actor_with_case = lines_with_case.join("\n")
-    first_line_with_case = lines_with_case.first
-    name_with_case = first_line_with_case.split[1]
-
-    # strip leading whitespace, trailing whitespace, and downcase
-    lines.map! { |line| line.lstrip.strip.downcase }
-    lines.reject! { |line| line.empty? }
-    lines.compact!
-    actor = lines.join("\n")
-
-    first_line = lines.first
-    words = first_line.split
-    # parse partial comments on the actor line and remove
-    partial_comment = -1
-    native = false
-
-    # if the last field of the "actor" line is "native" we need to parse that out and note the actor property
-    words.each_with_index do |value, word_index|
-      if value == "native"
-        native = true
-        # partial comment will be set to the lowest word number because all the
-        # words after it are a comment as well
-        if partial_comment < 0
-          partial_comment = word_index
+  unless is_built_in
+    # [BUGFIX] V1 had include file handling that used Ruby's $1 syntax.
+    # Now we properly resolve includes and add them to the processing queue.
+    input_file = safe_read(file_path)
+    input_file.each_line do |line|
+      if line.strip =~ /^#include/i
+        if md = line.match(/"([^"]+)"/i)
+          include_name = md[1].upcase
+          new_path = File.join(File.dirname(file_path), "#{include_name}.raw")
+          unless full_dir_list.includes?(new_path)
+            full_dir_list << new_path
+            no_touchy[new_path] = false
+          end
         end
       end
     end
+  end
 
-    if partial_comment > 0
-      words = words[0..partial_comment - 1]
-      puts "Partial comment detected. Updated words array:"
-      words.each do |word|
-        puts word
-      end
+  # Read and clean the file
+  input_text = safe_read(file_path)
+  next if input_text.empty?
+
+  # Strip leading whitespace per line
+  input_text = input_text.gsub(/^\s*/, "")
+
+  # Remove // comments
+  input_text = input_text.gsub(%r{//[^\n]*}, "")
+
+  # Remove /* ... */ block comments (non-greedy)
+  input_text = input_text.gsub(/\/\*[\s\S]*?\*\//m, "")
+
+  # Put braces on their own lines
+  input_text = input_text.gsub('{', "\n{\n")
+  input_text = input_text.gsub('}', "\n}\n")
+
+  # Clean up: strip each line, remove blank lines
+  input_text = input_text.split("\n").map(&.strip).reject(&.empty?).join("\n")
+
+  # Split on actor definitions
+  input_text = input_text.gsub(/^actor\s+/im, "SPECIALDELIMITER__actor ")
+  actors = input_text.split("SPECIALDELIMITER__")
+  actors.reject!(&.strip.empty?)
+
+  actors.each_with_index do |actor_text, actor_index|
+    # Extract states before processing
+    states_text = extract_states_text(actor_text)
+    states = parse_states(states_text)
+    actor_no_states = remove_states_block(actor_text)
+
+    # Get case-sensitive version
+    lines_with_case = actor_no_states.lines.map(&.strip).reject(&.empty?)
+    next if lines_with_case.empty?
+    first_line_with_case = lines_with_case.first
+    name_with_case = first_line_with_case.split[1]?
+    next unless name_with_case
+
+    # Lowercase version for parsing
+    lines = actor_no_states.lines.map { |l| l.strip.downcase }.reject(&.empty?)
+    next if lines.empty?
+
+    first_line = lines.first
+    words = first_line.split
+
+    # Remove "native" keyword from actor line if present
+    native = false
+    native_idx = words.index("native")
+    if native_idx
+      native = true
+      words = words[0...native_idx]
     end
 
-    number_of_words = words.size
-    puts "Actor: \"#{words[1]}\""
-    puts "File: \"#{file_path}\""
+    num_words = words.size
+    log(3, "Actor: \"#{words[1]?}\" from #{file_path}")
 
-    # Create new actor object and populate the information we already collected
-    new_actor = Actor.new("#{words[1]}", actor_index)
+    # Create new actor
+    new_actor = Actor.new("#{words[1]?}", actor_index)
     new_actor.name_with_case = name_with_case
     new_actor.source_wad_folder = wad_folder_name
     new_actor.source_file = decorate_source_file
     new_actor.file_path = file_path
     new_actor.native = native
     new_actor.states = states
-    # actor_text is used for checking actor flags and properties
     new_actor.actor_text = actor_no_states
-    # full_actor_text is used for comparing actors with each other to find duplicates
-    new_actor.full_actor_text = actor_with_states
+    new_actor.full_actor_text = actor_text
+    new_actor.built_in = is_built_in
 
-    # number of words == 3 means that word[2] == a number
-    if number_of_words == 3
-      new_actor.doomednum = words[2].to_i
-    end
+    # Parse actor line: actor name [: parent] [replaces target] [doomednum]
+    # Possible forms:
+    #   actor name                                    (2 words)
+    #   actor name doomednum                          (3 words)
+    #   actor name : parent                           (4 words)
+    #   actor name replaces target                    (4 words)
+    #   actor name : parent doomednum                 (5 words)
+    #   actor name replaces target doomednum          (5 words)
+    #   actor name : parent replaces target           (6 words)
+    #   actor name : parent replaces target doomednum (7 words)
+    #
+    # [BUGFIX] V1 had wrong field indices for 6/7 word forms:
+    #   V1 used words[4] for inherits and words[6] for replaces (wrong)
+    #   Correct: words[3] for inherits, words[5] for replaces
 
-    # there are 2 possibilities: colon (inheritance), or replaces
-    if number_of_words == 4 || number_of_words == 5
+    case num_words
+    when 3
+      new_actor.doomednum = words[2].to_i? || -1
+    when 4
       if words[2] == ":"
         new_actor.inherits = words[3]
       elsif words[2] == "replaces"
         new_actor.replaces = words[3]
       else
-        puts "Error: word: #{words[2]} is not a colon, or 'replaces'"
+        log(1, "Unexpected word '#{words[2]}' in actor line: #{first_line}")
       end
-
-      # if there are 4 words, the last must be doomednum
-      if number_of_words == 5
-        puts words
-        new_actor.doomednum = words[4].to_i
+    when 5
+      if words[2] == ":"
+        new_actor.inherits = words[3]
+        new_actor.doomednum = words[4].to_i? || -1
+      elsif words[2] == "replaces"
+        new_actor.replaces = words[3]
+        new_actor.doomednum = words[4].to_i? || -1
       end
+    when 6
+      # actor name : parent replaces target
+      new_actor.inherits = words[3] if words[2] == ":"
+      new_actor.replaces = words[5] if words[4] == "replaces"
+    when 7
+      # actor name : parent replaces target doomednum
+      new_actor.inherits = words[3] if words[2] == ":"
+      new_actor.replaces = words[5] if words[4] == "replaces"
+      new_actor.doomednum = words[6].to_i? || -1
     end
 
-    # if there are 5-6 words, it means inherit and replace, and 6 is doomednum
-    if number_of_words == 6 || number_of_words == 7
-      new_actor.inherits = words[4]
-      new_actor.replaces = words[6]
-      if number_of_words == 7
-        new_actor.doomednum = words[7].to_i
-      end
-    end
+    # Parse each property/flag line
+    lines.each_with_index do |line, index|
+      next if index.zero? # skip actor definition line
 
-    actor.each_line.with_index do |line, index|
-      # ignore first line - we already read it above
-      next if index.zero?
-      # flag the built in actors
-      if script_type[file_path] == "BUILT_IN"
-        new_actor.built_in = true
-      end
+      property_name = line.split[0]?.to_s.downcase
+      next if property_name.empty?
 
-      ##############################################
-      # PROPERTY DEFINITIONS
-      ##############################################
-      # I realize that these are not alphabetical.
-      # This is because I am keeping them in the order
-      # of the ZDoom wiki. It will make things easier
-      # doing it this way.
-      ##############################################
-
-      # this should give us the first word in the line, which is the property name
-      property_name = line.split[0]?.to_s
-
-      if property_name =~ /^[\+|\-]/
-        line.split.each do |flag|
-          new_actor.flags_applied << flag
-        end
-      elsif property_name != "{" && property_name != "}" && property_name != "action" && property_name != "const" && property_name != "var" && property_name != "#include"
+      # Track applied properties/flags
+      if property_name =~ /^[\+\-]/
+        line.split.each { |flag| new_actor.flags_applied << flag }
+      elsif !%w[{ } action const var #include].includes?(property_name)
         new_actor.properties_applied << property_name
       end
 
-      # action refers to a function definition in DECORATE or ZSCRIPT
-      # we can probably just ignore these
-      if property_name == "action"
-        if line.split[1]?.to_s == "native"
-          puts "  - Action Native: #{line.split[2..-1]?.to_s}"
-        else
-          puts "  - Action: #{line.split[1..-1]?.to_s}"
-        end
-      # const = constants, we might need to evaluate these in some rare cases but for now, ignore them
-      elsif property_name == "const"
-        puts "  - Const: #{line.split[1..-1]?.to_s}"
-      # properties that start with '+' or '-' are boolean flags
-      elsif property_name =~ /^\s*[\+|\-]/m
-        # there may be many flags on one line, so we need to split and process
-        # replace any '+' characters with space after them as '+' to remove the whitespace and put a leading space
-        line = line.gsub(/\+\s*/, " +")
-        # same with '-' characters
-        line = line.gsub(/\-\s*/, " -")
-        # strip the leading space, so the first character is a '+' or '-'
-        line = line.lstrip
-        puts "Flag Line (processed): #{line}"
-        line.split.each do |flag|
-          flag_boolean = false
-          if flag.char_at(0) == '+'
-            flag_boolean = true
-          elsif flag.char_at(0) == '-'
-            flag_boolean == false
-          end
-          flag_name = flag.lchop
-          puts "  - Flag: #{flag_name} = #{flag_boolean}"
+      # Handle special keywords
+      if property_name == "action" || property_name == "const"
+        log(3, "  - #{property_name}: #{line}")
+        next
+      end
 
-          if flag_name == "interpolateangles"
-            puts "  - Flag: #{flag}"
-            new_actor.interpolateangles = flag_boolean
-          elsif flag_name == "flatsprite"
-            puts "  - Flag: #{flag}"
-            new_actor.flatsprite = flag_boolean
-          elsif flag_name == "rollsprite"
-            puts "  - Flag: #{flag}"
-            new_actor.rollsprite = flag_boolean
-          elsif flag_name == "wallsprite"
-            puts "  - Flag: #{flag}"
-            new_actor.wallsprite = flag_boolean
-          elsif flag_name == "rollcenter"
-            puts "  - Flag: #{flag}"
-            new_actor.rollcenter = flag_boolean
-          elsif flag_name == "spriteangle"
-            puts "  - Flag: #{flag}"
-            new_actor.spriteangle = flag_boolean
-          elsif flag_name == "spriteflip"
-            puts "  - Flag: #{flag}"
-            new_actor.spriteflip = flag_boolean
-          elsif flag_name == "xflip"
-            puts "  - Flag: #{flag}"
-            new_actor.xflip = flag_boolean
-          elsif flag_name == "yflip"
-            puts "  - Flag: #{flag}"
-            new_actor.yflip = flag_boolean
-          elsif flag_name == "maskrotation"
-            puts "  - Flag: #{flag}"
-            new_actor.maskrotation = flag_boolean
-          elsif flag_name == "absmaskangle"
-            puts "  - Flag: #{flag}"
-            new_actor.absmaskangle = flag_boolean
-          elsif flag_name == "absmaskpitch"
-            puts "  - Flag: #{flag}"
-            new_actor.absmaskpitch = flag_boolean
-          elsif flag_name == "dontinterpolate"
-            puts "  - Flag: #{flag}"
-            new_actor.dontinterpolate = flag_boolean
-          elsif flag_name == "zdoomtrans"
-            puts "  - Flag: #{flag}"
-            new_actor.zdoomtrans = flag_boolean
-          elsif flag_name == "absviewangles"
-            puts "  - Flag: #{flag}"
-            new_actor.absviewangles = flag_boolean
-          elsif flag_name == "castspriteshadow"
-            puts "  - Flag: #{flag}"
-            new_actor.castspriteshadow = flag_boolean
-          elsif flag_name == "nospriteshadow"
-            puts "  - Flag: #{flag}"
-            new_actor.nospriteshadow = flag_boolean
-          elsif flag_name == "masternosee"
-            puts "  - Flag: #{flag}"
-            new_actor.masternosee = flag_boolean
-          elsif flag_name == "addlightlevel"
-            puts "  - Flag: #{flag}"
-            new_actor.addlightlevel = flag_boolean
-          elsif flag_name == "invisibleinmirrors"
-            puts "  - Flag: #{flag}"
-            new_actor.invisibleinmirrors = flag_boolean
-          elsif flag_name == "onlyvisibleinmirrors"
-            puts "  - Flag: #{flag}"
-            new_actor.onlyvisibleinmirrors = flag_boolean
-          elsif flag_name == "solid"
-            puts "  - Flag: #{flag}"
-            new_actor.solid = flag_boolean
-          elsif flag_name == "shootable"
-            puts "  - Flag: #{flag}"
-            new_actor.shootable = flag_boolean
-          elsif flag_name == "float"
-            puts "  - Flag: #{flag}"
-            new_actor.float = flag_boolean
-          elsif flag_name == "nogravity"
-            puts "  - Flag: #{flag}"
-            new_actor.nogravity = flag_boolean
-          elsif flag_name == "windthrust"
-            puts "  - Flag: #{flag}"
-            new_actor.windthrust = flag_boolean
-          elsif flag_name == "pushable"
-            puts "  - Flag: #{flag}"
-            new_actor.pushable = flag_boolean
-          elsif flag_name == "dontfall"
-            puts "  - Flag: #{flag}"
-            new_actor.dontfall = flag_boolean
-          elsif flag_name == "canpass"
-            puts "  - Flag: #{flag}"
-            new_actor.canpass = flag_boolean
-          elsif flag_name == "actlikebridge"
-            puts "  - Flag: #{flag}"
-            new_actor.actlikebridge = flag_boolean
-          elsif flag_name == "noblockmap"
-            puts "  - Flag: #{flag}"
-            new_actor.noblockmap = flag_boolean
-          elsif flag_name == "movewithsector"
-            puts "  - Flag: #{flag}"
-            new_actor.movewithsector = flag_boolean
-          elsif flag_name == "relativetofloor"
-            puts "  - Flag: #{flag}"
-            new_actor.relativetofloor = flag_boolean
-          elsif flag_name == "noliftdrop"
-            puts "  - Flag: #{flag}"
-            new_actor.noliftdrop = flag_boolean
-          elsif flag_name == "slidesonwalls"
-            puts "  - Flag: #{flag}"
-            new_actor.slidesonwalls = flag_boolean
-          elsif flag_name == "nodropoff"
-            puts "  - Flag: #{flag}"
-            new_actor.nodropoff = flag_boolean
-          elsif flag_name == "noforwardfall"
-            puts "  - Flag: #{flag}"
-            new_actor.noforwardfall = flag_boolean
-          elsif flag_name == "notrigger"
-            puts "  - Flag: #{flag}"
-            new_actor.notrigger = flag_boolean
-          elsif flag_name == "blockedbysolidactors"
-            puts "  - Flag: #{flag}"
-            new_actor.blockedbysolidactors = flag_boolean
-          elsif flag_name == "blockasplayer"
-            puts "  - Flag: #{flag}"
-            new_actor.blockasplayer = flag_boolean
-          elsif flag_name == "nofriction"
-            puts "  - Flag: #{flag}"
-            new_actor.nofriction = flag_boolean
-          elsif flag_name == "nofrictionbounce"
-            puts "  - Flag: #{flag}"
-            new_actor.nofrictionbounce = flag_boolean
-          elsif flag_name == "falldamage"
-            puts "  - Flag: #{flag}"
-            new_actor.falldamage = flag_boolean
-          elsif flag_name == "allowthrubits"
-            puts "  - Flag: #{flag}"
-            new_actor.allowthrubits = flag_boolean
-          elsif flag_name == "crosslinecheck"
-            puts "  - Flag: #{flag}"
-            new_actor.crosslinecheck = flag_boolean
-          elsif flag_name == "alwaysrespawn"
-            puts "  - Flag: #{flag}"
-            new_actor.alwaysrespawn = flag_boolean
-          elsif flag_name == "ambush"
-            puts "  - Flag: #{flag}"
-            new_actor.ambush = flag_boolean
-          elsif flag_name == "avoidmelee"
-            puts "  - Flag: #{flag}"
-            new_actor.avoidmelee = flag_boolean
-          elsif flag_name == "boss"
-            puts "  - Flag: #{flag}"
-            new_actor.boss = flag_boolean
-          elsif flag_name == "dontcorpse"
-            puts "  - Flag: #{flag}"
-            new_actor.dontcorpse = flag_boolean
-          elsif flag_name == "dontfacetalker"
-            puts "  - Flag: #{flag}"
-            new_actor.dontfacetalker = flag_boolean
-          elsif flag_name == "dormant"
-            puts "  - Flag: #{flag}"
-            new_actor.dormant = flag_boolean
-          elsif flag_name == "friendly"
-            puts "  - Flag: #{flag}"
-            new_actor.friendly = flag_boolean
-          elsif flag_name == "jumpdown"
-            puts "  - Flag: #{flag}"
-            new_actor.jumpdown = flag_boolean
-          elsif flag_name == "lookallaround"
-            puts "  - Flag: #{flag}"
-            new_actor.lookallaround = flag_boolean
-          elsif flag_name == "missileevenmore"
-            puts "  - Flag: #{flag}"
-            new_actor.missileevenmore = flag_boolean
-          elsif flag_name == "missilemore"
-            puts "  - Flag: #{flag}"
-            new_actor.missilemore = flag_boolean
-          elsif flag_name == "neverrespawn"
-            puts "  - Flag: #{flag}"
-            new_actor.neverrespawn = flag_boolean
-          elsif flag_name == "nosplashalert"
-            puts "  - Flag: #{flag}"
-            new_actor.nosplashalert = flag_boolean
-          elsif flag_name == "notargetswitch"
-            puts "  - Flag: #{flag}"
-            new_actor.notargetswitch = flag_boolean
-          elsif flag_name == "noverticalmeleerange"
-            puts "  - Flag: #{flag}"
-            new_actor.noverticalmeleerange = flag_boolean
-          elsif flag_name == "quicktoretaliate"
-            puts "  - Flag: #{flag}"
-            new_actor.quicktoretaliate = flag_boolean
-          elsif flag_name == "standstill"
-            puts "  - Flag: #{flag}"
-            new_actor.standstill = flag_boolean
-          elsif flag_name == "avoidhazards"
-            puts "  - Flag: #{flag}"
-            new_actor.avoidhazards = flag_boolean
-          elsif flag_name == "stayonlift"
-            puts "  - Flag: #{flag}"
-            new_actor.stayonlift = flag_boolean
-          elsif flag_name == "dontfollowplayers"
-            puts "  - Flag: #{flag}"
-            new_actor.dontfollowplayers = flag_boolean
-          elsif flag_name == "seefriendlymonsters"
-            puts "  - Flag: #{flag}"
-            new_actor.seefriendlymonsters = flag_boolean
-          elsif flag_name == "cannotpush"
-            puts "  - Flag: #{flag}"
-            new_actor.cannotpush = flag_boolean
-          elsif flag_name == "noteleport"
-            puts "  - Flag: #{flag}"
-            new_actor.noteleport = flag_boolean
-          elsif flag_name == "activateimpact"
-            puts "  - Flag: #{flag}"
-            new_actor.activateimpact = flag_boolean
-          elsif flag_name == "canpushwalls"
-            puts "  - Flag: #{flag}"
-            new_actor.canpushwalls = flag_boolean
-          elsif flag_name == "canusewalls"
-            puts "  - Flag: #{flag}"
-            new_actor.canusewalls = flag_boolean
-          elsif flag_name == "activatemcross"
-            puts "  - Flag: #{flag}"
-            new_actor.activatemcross = flag_boolean
-          elsif flag_name == "activatepcross"
-            puts "  - Flag: #{flag}"
-            new_actor.activatepcross = flag_boolean
-          elsif flag_name == "cantleavefloorpic"
-            puts "  - Flag: #{flag}"
-            new_actor.cantleavefloorpic = flag_boolean
-          elsif flag_name == "telestomp"
-            puts "  - Flag: #{flag}"
-            new_actor.telestomp = flag_boolean
-          elsif flag_name == "notelestomp"
-            puts "  - Flag: #{flag}"
-            new_actor.notelestomp = flag_boolean
-          elsif flag_name == "staymorphed"
-            puts "  - Flag: #{flag}"
-            new_actor.staymorphed = flag_boolean
-          elsif flag_name == "canblast"
-            puts "  - Flag: #{flag}"
-            new_actor.canblast = flag_boolean
-          elsif flag_name == "noblockmonst"
-            puts "  - Flag: #{flag}"
-            new_actor.noblockmonst = flag_boolean
-          elsif flag_name == "allowthruflags"
-            puts "  - Flag: #{flag}"
-            new_actor.allowthruflags = flag_boolean
-          elsif flag_name == "thrughost"
-            puts "  - Flag: #{flag}"
-            new_actor.thrughost = flag_boolean
-          elsif flag_name == "thruactors"
-            puts "  - Flag: #{flag}"
-            new_actor.thruactors = flag_boolean
-          elsif flag_name == "thruspecies"
-            puts "  - Flag: #{flag}"
-            new_actor.thruspecies = flag_boolean
-          elsif flag_name == "mthruspecies"
-            puts "  - Flag: #{flag}"
-            new_actor.mthruspecies = flag_boolean
-          elsif flag_name == "spectral"
-            puts "  - Flag: #{flag}"
-            new_actor.spectral = flag_boolean
-          elsif flag_name == "frightened"
-            puts "  - Flag: #{flag}"
-            new_actor.frightened = flag_boolean
-          elsif flag_name == "frightening"
-            puts "  - Flag: #{flag}"
-            new_actor.frightening = flag_boolean
-          elsif flag_name == "notarget"
-            puts "  - Flag: #{flag}"
-            new_actor.notarget = flag_boolean
-          elsif flag_name == "nevertarget"
-            puts "  - Flag: #{flag}"
-            new_actor.nevertarget = flag_boolean
-          elsif flag_name == "noinfightspecies"
-            puts "  - Flag: #{flag}"
-            new_actor.noinfightspecies = flag_boolean
-          elsif flag_name == "forceinfighting"
-            puts "  - Flag: #{flag}"
-            new_actor.forceinfighting = flag_boolean
-          elsif flag_name == "noinfighting"
-            puts "  - Flag: #{flag}"
-            new_actor.noinfighting = flag_boolean
-          elsif flag_name == "notimefreeze"
-            puts "  - Flag: #{flag}"
-            new_actor.notimefreeze = flag_boolean
-          elsif flag_name == "nofear"
-            puts "  - Flag: #{flag}"
-            new_actor.nofear = flag_boolean
-          elsif flag_name == "cantseek"
-            puts "  - Flag: #{flag}"
-            new_actor.cantseek = flag_boolean
-          elsif flag_name == "seeinvisible"
-            puts "  - Flag: #{flag}"
-            new_actor.seeinvisible = flag_boolean
-          elsif flag_name == "dontthrust"
-            puts "  - Flag: #{flag}"
-            new_actor.dontthrust = flag_boolean
-          elsif flag_name == "allowpain"
-            puts "  - Flag: #{flag}"
-            new_actor.allowpain = flag_boolean
-          elsif flag_name == "usekillscripts"
-            puts "  - Flag: #{flag}"
-            new_actor.usekillscripts = flag_boolean
-          elsif flag_name == "nokillscripts"
-            puts "  - Flag: #{flag}"
-            new_actor.nokillscripts = flag_boolean
-          elsif flag_name == "stoprails"
-            puts "  - Flag: #{flag}"
-            new_actor.stoprails = flag_boolean
-          elsif flag_name == "minvisible"
-            puts "  - Flag: #{flag}"
-            new_actor.minvisible = flag_boolean
-          elsif flag_name == "mvisblocked"
-            puts "  - Flag: #{flag}"
-            new_actor.mvisblocked = flag_boolean
-          elsif flag_name == "shadowaim"
-            puts "  - Flag: #{flag}"
-            new_actor.shadowaim = flag_boolean
-          elsif flag_name == "doshadowblock"
-            puts "  - Flag: #{flag}"
-            new_actor.doshadowblock = flag_boolean
-          elsif flag_name == "shadowaimvert"
-            puts "  - Flag: #{flag}"
-            new_actor.shadowaimvert = flag_boolean
-          elsif flag_name == "invulnerable"
-            puts "  - Flag: #{flag}"
-            new_actor.invulnerable = flag_boolean
-          elsif flag_name == "buddha"
-            puts "  - Flag: #{flag}"
-            new_actor.buddha = flag_boolean
-          elsif flag_name == "reflective"
-            puts "  - Flag: #{flag}"
-            new_actor.reflective = flag_boolean
-          elsif flag_name == "shieldreflect"
-            puts "  - Flag: #{flag}"
-            new_actor.shieldreflect = flag_boolean
-          elsif flag_name == "deflect"
-            puts "  - Flag: #{flag}"
-            new_actor.deflect = flag_boolean
-          elsif flag_name == "mirrorreflect"
-            puts "  - Flag: #{flag}"
-            new_actor.mirrorreflect = flag_boolean
-          elsif flag_name == "aimreflect"
-            puts "  - Flag: #{flag}"
-            new_actor.aimreflect = flag_boolean
-          elsif flag_name == "thrureflect"
-            puts "  - Flag: #{flag}"
-            new_actor.thrureflect = flag_boolean
-          elsif flag_name == "noradiusdmg"
-            puts "  - Flag: #{flag}"
-            new_actor.noradiusdmg = flag_boolean
-          elsif flag_name == "dontblast"
-            puts "  - Flag: #{flag}"
-            new_actor.dontblast = flag_boolean
-          elsif flag_name == "shadow"
-            puts "  - Flag: #{flag}"
-            new_actor.shadow = flag_boolean
-          elsif flag_name == "ghost"
-            puts "  - Flag: #{flag}"
-            new_actor.ghost = flag_boolean
-          elsif flag_name == "dontmorph"
-            puts "  - Flag: #{flag}"
-            new_actor.dontmorph = flag_boolean
-          elsif flag_name == "dontsquash"
-            puts "  - Flag: #{flag}"
-            new_actor.dontsquash = flag_boolean
-          elsif flag_name == "noteleother"
-            puts "  - Flag: #{flag}"
-            new_actor.noteleother = flag_boolean
-          elsif flag_name == "harmfriends"
-            puts "  - Flag: #{flag}"
-            new_actor.harmfriends = flag_boolean
-          elsif flag_name == "doharmspecies"
-            puts "  - Flag: #{flag}"
-            new_actor.doharmspecies = flag_boolean
-          elsif flag_name == "dontharmclass"
-            puts "  - Flag: #{flag}"
-            new_actor.dontharmclass = flag_boolean
-          elsif flag_name == "dontharmspecies"
-            puts "  - Flag: #{flag}"
-            new_actor.dontharmspecies = flag_boolean
-          elsif flag_name == "nodamage"
-            puts "  - Flag: #{flag}"
-            new_actor.nodamage = flag_boolean
-          elsif flag_name == "dontrip"
-            puts "  - Flag: #{flag}"
-            new_actor.dontrip = flag_boolean
-          elsif flag_name == "notelefrag"
-            puts "  - Flag: #{flag}"
-            new_actor.notelefrag = flag_boolean
-          elsif flag_name == "alwaystelefrag"
-            puts "  - Flag: #{flag}"
-            new_actor.alwaystelefrag = flag_boolean
-          elsif flag_name == "dontdrain"
-            puts "  - Flag: #{flag}"
-            new_actor.dontdrain = flag_boolean
-          elsif flag_name == "laxtelefragdmg"
-            puts "  - Flag: #{flag}"
-            new_actor.laxtelefragdmg = flag_boolean
-          elsif flag_name == "shadowblock"
-            puts "  - Flag: #{flag}"
-            new_actor.shadowblock = flag_boolean
-          elsif flag_name == "bright"
-            puts "  - Flag: #{flag}"
-            new_actor.bright = flag_boolean
-          elsif flag_name == "invisible"
-            puts "  - Flag: #{flag}"
-            new_actor.invisible = flag_boolean
-          elsif flag_name == "noblood"
-            puts "  - Flag: #{flag}"
-            new_actor.noblood = flag_boolean
-          elsif flag_name == "noblooddecals"
-            puts "  - Flag: #{flag}"
-            new_actor.noblooddecals = flag_boolean
-          elsif flag_name == "stealth"
-            puts "  - Flag: #{flag}"
-            new_actor.stealth = flag_boolean
-          elsif flag_name == "floorclip"
-            puts "  - Flag: #{flag}"
-            new_actor.floorclip = flag_boolean
-          elsif flag_name == "spawnfloat"
-            puts "  - Flag: #{flag}"
-            new_actor.spawnfloat = flag_boolean
-          elsif flag_name == "spawnceiling"
-            puts "  - Flag: #{flag}"
-            new_actor.spawnceiling = flag_boolean
-          elsif flag_name == "floatbob"
-            puts "  - Flag: #{flag}"
-            new_actor.floatbob = flag_boolean
-          elsif flag_name == "noicedeath"
-            puts "  - Flag: #{flag}"
-            new_actor.noicedeath = flag_boolean
-          elsif flag_name == "dontgib"
-            puts "  - Flag: #{flag}"
-            new_actor.dontgib = flag_boolean
-          elsif flag_name == "dontsplash"
-            puts "  - Flag: #{flag}"
-            new_actor.dontsplash = flag_boolean
-          elsif flag_name == "dontoverlap"
-            puts "  - Flag: #{flag}"
-            new_actor.dontoverlap = flag_boolean
-          elsif flag_name == "randomize"
-            puts "  - Flag: #{flag}"
-            new_actor.randomize = flag_boolean
-          elsif flag_name == "fixmapthingpos"
-            puts "  - Flag: #{flag}"
-            new_actor.fixmapthingpos = flag_boolean
-          elsif flag_name == "fullvolactive"
-            puts "  - Flag: #{flag}"
-            new_actor.fullvolactive = flag_boolean
-          elsif flag_name == "fullvoldeath"
-            puts "  - Flag: #{flag}"
-            new_actor.fullvoldeath = flag_boolean
-          elsif flag_name == "fullvolsee"
-            puts "  - Flag: #{flag}"
-            new_actor.fullvolsee = flag_boolean
-          elsif flag_name == "nowallbouncesnd"
-            puts "  - Flag: #{flag}"
-            new_actor.nowallbouncesnd = flag_boolean
-          elsif flag_name == "visibilitypulse"
-            puts "  - Flag: #{flag}"
-            new_actor.visibilitypulse = flag_boolean
-          elsif flag_name == "rockettrail"
-            puts "  - Flag: #{flag}"
-            new_actor.rockettrail = flag_boolean
-          elsif flag_name == "grenadetrail"
-            puts "  - Flag: #{flag}"
-            new_actor.grenadetrail = flag_boolean
-          elsif flag_name == "nobouncesound"
-            puts "  - Flag: #{flag}"
-            new_actor.nobouncesound = flag_boolean
-          elsif flag_name == "noskin"
-            puts "  - Flag: #{flag}"
-            new_actor.noskin = flag_boolean
-          elsif flag_name == "donttranslate"
-            puts "  - Flag: #{flag}"
-            new_actor.donttranslate = flag_boolean
-          elsif flag_name == "nopain"
-            puts "  - Flag: #{flag}"
-            new_actor.nopain = flag_boolean
-          elsif flag_name == "forceybillboard"
-            puts "  - Flag: #{flag}"
-            new_actor.forceybillboard = flag_boolean
-          elsif flag_name == "forcexybillboard"
-            puts "  - Flag: #{flag}"
-            new_actor.forcexybillboard = flag_boolean
-          elsif flag_name == "missile"
-            puts "  - Flag: #{flag}"
-            new_actor.missile = flag_boolean
-          elsif flag_name == "ripper"
-            puts "  - Flag: #{flag}"
-            new_actor.ripper = flag_boolean
-          elsif flag_name == "nobossrip"
-            puts "  - Flag: #{flag}"
-            new_actor.nobossrip = flag_boolean
-          elsif flag_name == "nodamagethrust"
-            puts "  - Flag: #{flag}"
-            new_actor.nodamagethrust = flag_boolean
-          elsif flag_name == "dontreflect"
-            puts "  - Flag: #{flag}"
-            new_actor.dontreflect = flag_boolean
-          elsif flag_name == "noshieldreflect"
-            puts "  - Flag: #{flag}"
-            new_actor.noshieldreflect = flag_boolean
-          elsif flag_name == "noshieldreflect"
-            puts "  - Flag: #{flag}"
-            new_actor.noshieldreflect = flag_boolean
-          elsif flag_name == "floorhugger"
-            puts "  - Flag: #{flag}"
-            new_actor.floorhugger = flag_boolean
-          elsif flag_name == "ceilinghugger"
-            puts "  - Flag: #{flag}"
-            new_actor.ceilinghugger = flag_boolean
-          elsif flag_name == "bloodlessimpact"
-            puts "  - Flag: #{flag}"
-            new_actor.bloodlessimpact = flag_boolean
-          elsif flag_name == "bloodsplatter"
-            puts "  - Flag: #{flag}"
-            new_actor.bloodsplatter = flag_boolean
-          elsif flag_name == "foilinvul"
-            puts "  - Flag: #{flag}"
-            new_actor.foilinvul = flag_boolean
-          elsif flag_name == "foilbuddha"
-            puts "  - Flag: #{flag}"
-            new_actor.foilbuddha = flag_boolean
-          elsif flag_name == "seekermissile"
-            puts "  - Flag: #{flag}"
-            new_actor.seekermissile = flag_boolean
-          elsif flag_name == "screenseeker"
-            puts "  - Flag: #{flag}"
-            new_actor.screenseeker = flag_boolean
-          elsif flag_name == "skyexplode"
-            puts "  - Flag: #{flag}"
-            new_actor.skyexplode = flag_boolean
-          elsif flag_name == "noexplodefloor"
-            puts "  - Flag: #{flag}"
-            new_actor.noexplodefloor = flag_boolean
-          elsif flag_name == "strifedamage"
-            puts "  - Flag: #{flag}"
-            new_actor.strifedamage = flag_boolean
-          elsif flag_name == "extremedeath"
-            puts "  - Flag: #{flag}"
-            new_actor.extremedeath = flag_boolean
-          elsif flag_name == "noextremedeath"
-            puts "  - Flag: #{flag}"
-            new_actor.noextremedeath = flag_boolean
-          elsif flag_name == "dehexplosion"
-            puts "  - Flag: #{flag}"
-            new_actor.dehexplosion = flag_boolean
-          elsif flag_name == "piercearmor"
-            puts "  - Flag: #{flag}"
-            new_actor.piercearmor = flag_boolean
-          elsif flag_name == "forceradiusdmg"
-            puts "  - Flag: #{flag}"
-            new_actor.forceradiusdmg = flag_boolean
-          elsif flag_name == "forcezeroradiusdmg"
-            puts "  - Flag: #{flag}"
-            new_actor.forcezeroradiusdmg = flag_boolean
-          elsif flag_name == "spawnsoundsource"
-            puts "  - Flag: #{flag}"
-            new_actor.spawnsoundsource = flag_boolean
-          elsif flag_name == "painless"
-            puts "  - Flag: #{flag}"
-            new_actor.painless = flag_boolean
-          elsif flag_name == "forcepain"
-            puts "  - Flag: #{flag}"
-            new_actor.forcepain = flag_boolean
-          elsif flag_name == "causepain"
-            puts "  - Flag: #{flag}"
-            new_actor.causepain = flag_boolean
-          elsif flag_name == "dontseekinvisible"
-            puts "  - Flag: #{flag}"
-            new_actor.dontseekinvisible = flag_boolean
-          elsif flag_name == "stepmissile"
-            puts "  - Flag: #{flag}"
-            new_actor.stepmissile = flag_boolean
-          elsif flag_name == "additivepoisondamage"
-            puts "  - Flag: #{flag}"
-            new_actor.additivepoisondamage = flag_boolean
-          elsif flag_name == "additivepoisonduration"
-            puts "  - Flag: #{flag}"
-            new_actor.additivepoisonduration = flag_boolean
-          elsif flag_name == "poisonalways"
-            puts "  - Flag: #{flag}"
-            new_actor.poisonalways = flag_boolean
-          elsif flag_name == "hittarget"
-            puts "  - Flag: #{flag}"
-            new_actor.hittarget = flag_boolean
-          elsif flag_name == "hitmaster"
-            puts "  - Flag: #{flag}"
-            new_actor.hitmaster = flag_boolean
-          elsif flag_name == "hittracer"
-            puts "  - Flag: #{flag}"
-            new_actor.hittracer = flag_boolean
-          elsif flag_name == "hitowner"
-            puts "  - Flag: #{flag}"
-            new_actor.hitowner = flag_boolean
-          elsif flag_name == "bounceonwalls"
-            puts "  - Flag: #{flag}"
-            new_actor.bounceonwalls = flag_boolean
-          elsif flag_name == "bounceonfloors"
-            puts "  - Flag: #{flag}"
-            new_actor.bounceonfloors = flag_boolean
-          elsif flag_name == "bounceonceilings"
-            puts "  - Flag: #{flag}"
-            new_actor.bounceonceilings = flag_boolean
-          elsif flag_name == "allowbounceonactors"
-            puts "  - Flag: #{flag}"
-            new_actor.allowbounceonactors = flag_boolean
-          elsif flag_name == "bounceautooff"
-            puts "  - Flag: #{flag}"
-            new_actor.bounceautooff = flag_boolean
-          elsif flag_name == "bounceautooffflooronly"
-            puts "  - Flag: #{flag}"
-            new_actor.bounceautooffflooronly = flag_boolean
-          elsif flag_name == "bouncelikeheretic"
-            puts "  - Flag: #{flag}"
-            new_actor.bouncelikeheretic = flag_boolean
-          elsif flag_name == "bounceonactors"
-            puts "  - Flag: #{flag}"
-            new_actor.bounceonactors = flag_boolean
-          elsif flag_name == "bounceonunrippables"
-            puts "  - Flag: #{flag}"
-            new_actor.bounceonunrippables = flag_boolean
-          elsif flag_name == "nowallbouncesnd"
-            puts "  - Flag: #{flag}"
-            new_actor.nowallbouncesnd = flag_boolean
-          elsif flag_name == "nobouncesound"
-            puts "  - Flag: #{flag}"
-            new_actor.nobouncesound = flag_boolean
-          elsif flag_name == "explodeonwater"
-            puts "  - Flag: #{flag}"
-            new_actor.explodeonwater = flag_boolean
-          elsif flag_name == "canbouncewater"
-            puts "  - Flag: #{flag}"
-            new_actor.canbouncewater = flag_boolean
-          elsif flag_name == "mbfbouncer"
-            puts "  - Flag: #{flag}"
-            new_actor.mbfbouncer = flag_boolean
-          elsif flag_name == "usebouncestate"
-            puts "  - Flag: #{flag}"
-            new_actor.usebouncestate = flag_boolean
-          elsif flag_name == "dontbounceonshootables"
-            puts "  - Flag: #{flag}"
-            new_actor.dontbounceonshootables = flag_boolean
-          elsif flag_name == "dontbounceonsky"
-            puts "  - Flag: #{flag}"
-            new_actor.dontbounceonsky = flag_boolean
-          elsif flag_name == "iceshatter"
-            puts "  - Flag: #{flag}"
-            new_actor.iceshatter = flag_boolean
-          elsif flag_name == "dropped"
-            puts "  - Flag: #{flag}"
-            new_actor.dropped = flag_boolean
-          elsif flag_name == "ismonster"
-            puts "  - Flag: #{flag}"
-            new_actor.ismonster = flag_boolean
-          elsif flag_name == "corpse"
-            puts "  - Flag: #{flag}"
-            new_actor.corpse = flag_boolean
-          elsif flag_name == "countitem"
-            puts "  - Flag: #{flag}"
-            new_actor.countitem = flag_boolean
-          elsif flag_name == "countkill"
-            puts "  - Flag: #{flag}"
-            new_actor.countkill = flag_boolean
-          elsif flag_name == "countsecret"
-            puts "  - Flag: #{flag}"
-            new_actor.countsecret = flag_boolean
-          elsif flag_name == "notdmatch"
-            puts "  - Flag: #{flag}"
-            new_actor.notdmatch = flag_boolean
-          elsif flag_name == "nonshootable"
-            puts "  - Flag: #{flag}"
-            new_actor.nonshootable = flag_boolean
-          elsif flag_name == "dropoff"
-            puts "  - Flag: #{flag}"
-            new_actor.dropoff = flag_boolean
-          elsif flag_name == "puffonactors"
-            puts "  - Flag: #{flag}"
-            new_actor.puffonactors = flag_boolean
-          elsif flag_name == "allowparticles"
-            puts "  - Flag: #{flag}"
-            new_actor.allowparticles = flag_boolean
-          elsif flag_name == "alwayspuff"
-            puts "  - Flag: #{flag}"
-            new_actor.alwayspuff = flag_boolean
-          elsif flag_name == "puffgetsowner"
-            puts "  - Flag: #{flag}"
-            new_actor.puffgetsowner = flag_boolean
-          elsif flag_name == "forcedecal"
-            puts "  - Flag: #{flag}"
-            new_actor.forcedecal = flag_boolean
-          elsif flag_name == "nodecal"
-            puts "  - Flag: #{flag}"
-            new_actor.nodecal = flag_boolean
-          elsif flag_name == "synchronized"
-            puts "  - Flag: #{flag}"
-            new_actor.synchronized = flag_boolean
-          elsif flag_name == "alwaysfast"
-            puts "  - Flag: #{flag}"
-            new_actor.alwaysfast = flag_boolean
-          elsif flag_name == "neverfast"
-            puts "  - Flag: #{flag}"
-            new_actor.neverfast = flag_boolean
-          elsif flag_name == "oldradiusdmg"
-            puts "  - Flag: #{flag}"
-            new_actor.oldradiusdmg = flag_boolean
-          elsif flag_name == "usespecial"
-            puts "  - Flag: #{flag}"
-            new_actor.usespecial = flag_boolean
-          elsif flag_name == "bumpspecial"
-            puts "  - Flag: #{flag}"
-            new_actor.bumpspecial = flag_boolean
-          elsif flag_name == "bossdeath"
-            puts "  - Flag: #{flag}"
-            new_actor.bossdeath = flag_boolean
-          elsif flag_name == "nointeraction"
-            puts "  - Flag: #{flag}"
-            new_actor.nointeraction = flag_boolean
-          elsif flag_name == "notautoaimed"
-            puts "  - Flag: #{flag}"
-            new_actor.notautoaimed = flag_boolean
-          elsif flag_name == "nomenu"
-            puts "  - Flag: #{flag}"
-            new_actor.nomenu = flag_boolean
-          elsif flag_name == "pickup"
-            puts "  - Flag: #{flag}"
-            new_actor.pickup = flag_boolean
-          elsif flag_name == "touchy"
-            puts "  - Flag: #{flag}"
-            new_actor.touchy = flag_boolean
-          elsif flag_name == "vulnerable"
-            puts "  - Flag: #{flag}"
-            new_actor.vulnerable = flag_boolean
-          elsif flag_name == "notonautomap"
-            puts "  - Flag: #{flag}"
-            new_actor.notonautomap = flag_boolean
-          elsif flag_name == "weaponspawn"
-            puts "  - Flag: #{flag}"
-            new_actor.weaponspawn = flag_boolean
-          elsif flag_name == "getowner"
-            puts "  - Flag: #{flag}"
-            new_actor.getowner = flag_boolean
-          elsif flag_name == "seesdaggers"
-            puts "  - Flag: #{flag}"
-            new_actor.seesdaggers = flag_boolean
-          elsif flag_name == "incombat"
-            puts "  - Flag: #{flag}"
-            new_actor.incombat = flag_boolean
-          elsif flag_name == "noclip"
-            puts "  - Flag: #{flag}"
-            new_actor.noclip = flag_boolean
-          elsif flag_name == "nosector"
-            puts "  - Flag: #{flag}"
-            new_actor.nosector = flag_boolean
-          elsif flag_name == "icecorpse"
-            puts "  - Flag: #{flag}"
-            new_actor.icecorpse = flag_boolean
-          elsif flag_name == "justhit"
-            puts "  - Flag: #{flag}"
-            new_actor.justhit = flag_boolean
-          elsif flag_name == "justattacked"
-            puts "  - Flag: #{flag}"
-            new_actor.justattacked = flag_boolean
-          elsif flag_name == "teleport"
-            puts "  - Flag: #{flag}"
-            new_actor.teleport = flag_boolean
-          elsif flag_name == "blasted"
-            puts "  - Flag: #{flag}"
-            new_actor.blasted = flag_boolean
-          elsif flag_name == "explocount"
-            puts "  - Flag: #{flag}"
-            new_actor.explocount = flag_boolean
-          elsif flag_name == "skullfly"
-            puts "  - Flag: #{flag}"
-            new_actor.skullfly = flag_boolean
-          elsif flag_name == "retargetafterslam"
-            puts "  - Flag: #{flag}"
-            new_actor.retargetafterslam = flag_boolean
-          elsif flag_name == "onlyslamsolid"
-            puts "  - Flag: #{flag}"
-            new_actor.onlyslamsolid = flag_boolean
-          elsif flag_name == "specialfiredamage"
-            puts "  - Flag: #{flag}"
-            new_actor.specialfiredamage = flag_boolean
-          elsif flag_name == "specialfloorclip"
-            puts "  - Flag: #{flag}"
-            new_actor.specialfloorclip = flag_boolean
-          elsif flag_name == "summonedmonster"
-            puts "  - Flag: #{flag}"
-            new_actor.summonedmonster = flag_boolean
-          elsif flag_name == "special"
-            puts "  - Flag: #{flag}"
-            new_actor.special = flag_boolean
-          elsif flag_name == "nosavegame"
-            puts "  - Flag: #{flag}"
-            new_actor.nosavegame = flag_boolean
-          elsif flag_name == "e1m8boss"
-            puts "  - Flag: #{flag}"
-            new_actor.e1m8boss = flag_boolean
-          elsif flag_name == "e2m8boss"
-            puts "  - Flag: #{flag}"
-            new_actor.e2m8boss = flag_boolean
-          elsif flag_name == "e3m8boss"
-            puts "  - Flag: #{flag}"
-            new_actor.e3m8boss = flag_boolean
-          elsif flag_name == "e4m6boss"
-            puts "  - Flag: #{flag}"
-            new_actor.e4m6boss = flag_boolean
-          elsif flag_name == "e4m8boss"
-            puts "  - Flag: #{flag}"
-            new_actor.e4m8boss = flag_boolean
-          elsif flag_name == "inchase"
-            puts "  - Flag: #{flag}"
-            new_actor.inchase = flag_boolean
-          elsif flag_name == "unmorphed"
-            puts "  - Flag: #{flag}"
-            new_actor.unmorphed = flag_boolean
-          elsif flag_name == "fly"
-            puts "  - Flag: #{flag}"
-            new_actor.fly = flag_boolean
-          elsif flag_name == "onmobj"
-            puts "  - Flag: #{flag}"
-            new_actor.onmobj = flag_boolean
-          elsif flag_name == "argsdefined"
-            puts "  - Flag: #{flag}"
-            new_actor.argsdefined = flag_boolean
-          elsif flag_name == "nosightcheck"
-            puts "  - Flag: #{flag}"
-            new_actor.nosightcheck = flag_boolean
-          elsif flag_name == "crashed"
-            puts "  - Flag: #{flag}"
-            new_actor.crashed = flag_boolean
-          elsif flag_name == "warnbot"
-            puts "  - Flag: #{flag}"
-            new_actor.warnbot = flag_boolean
-          elsif flag_name == "huntplayers"
-            puts "  - Flag: #{flag}"
-            new_actor.huntplayers = flag_boolean
-          elsif flag_name == "nohateplayers"
-            puts "  - Flag: #{flag}"
-            new_actor.nohateplayers = flag_boolean
-          elsif flag_name == "scrollmove"
-            puts "  - Flag: #{flag}"
-            new_actor.scrollmove = flag_boolean
-          elsif flag_name == "vfriction"
-            puts "  - Flag: #{flag}"
-            new_actor.vfriction = flag_boolean
-          elsif flag_name == "bossspawned"
-            puts "  - Flag: #{flag}"
-            new_actor.bossspawned = flag_boolean
-          elsif flag_name == "avoidingdropoff"
-            puts "  - Flag: #{flag}"
-            new_actor.avoidingdropoff = flag_boolean
-          elsif flag_name == "chasegoal"
-            puts "  - Flag: #{flag}"
-            new_actor.chasegoal = flag_boolean
-          elsif flag_name == "inconversation"
-            puts "  - Flag: #{flag}"
-            new_actor.inconversation = flag_boolean
-          elsif flag_name == "armed"
-            puts "  - Flag: #{flag}"
-            new_actor.armed = flag_boolean
-          elsif flag_name == "falling"
-            puts "  - Flag: #{flag}"
-            new_actor.falling = flag_boolean
-          elsif flag_name == "linedone"
-            puts "  - Flag: #{flag}"
-            new_actor.linedone = flag_boolean
-          elsif flag_name == "shattering"
-            puts "  - Flag: #{flag}"
-            new_actor.shattering = flag_boolean
-          elsif flag_name == "killed"
-            puts "  - Flag: #{flag}"
-            new_actor.killed = flag_boolean
-          elsif flag_name == "bosscube"
-            puts "  - Flag: #{flag}"
-            new_actor.bosscube = flag_boolean
-          elsif flag_name == "intrymove"
-            puts "  - Flag: #{flag}"
-            new_actor.intrymove = flag_boolean
-          elsif flag_name == "handlenodelay"
-            puts "  - Flag: #{flag}"
-            new_actor.handlenodelay = flag_boolean
-          elsif flag_name == "flycheat"
-            puts "  - Flag: #{flag}"
-            new_actor.flycheat = flag_boolean
-          elsif flag_name == "respawninvul"
-            puts "  - Flag: #{flag}"
-            new_actor.respawninvul = flag_boolean
-          elsif flag_name == "lowgravity"
-            puts "  - Flag: #{flag}"
-            new_actor.lowgravity = flag_boolean
-          elsif flag_name == "quartergravity"
-            puts "  - Flag: #{flag}"
-            new_actor.quartergravity = flag_boolean
-          elsif flag_name == "longmeleerange"
-            puts "  - Flag: #{flag}"
-            new_actor.longmeleerange = flag_boolean
-          elsif flag_name == "shortmissilerange"
-            puts "  - Flag: #{flag}"
-            new_actor.shortmissilerange = flag_boolean
-          elsif flag_name == "highermprob"
-            puts "  - Flag: #{flag}"
-            new_actor.highermprob = flag_boolean
-          elsif flag_name == "fireresist"
-            puts "  - Flag: #{flag}"
-            new_actor.fireresist = flag_boolean
-          elsif flag_name == "donthurtspecies"
-            puts "  - Flag: #{flag}"
-            new_actor.donthurtspecies = flag_boolean
-          elsif flag_name == "firedamage"
-            puts "  - Flag: #{flag}"
-            new_actor.firedamage = flag_boolean
-          elsif flag_name == "icedamage"
-            puts "  - Flag: #{flag}"
-            new_actor.icedamage = flag_boolean
-          elsif flag_name == "hereticbounce"
-            puts "  - Flag: #{flag}"
-            new_actor.hereticbounce = flag_boolean
-          elsif flag_name == "hexenbounce"
-            puts "  - Flag: #{flag}"
-            new_actor.hexenbounce = flag_boolean
-          elsif flag_name == "doombounce"
-            puts "  - Flag: #{flag}"
-            new_actor.doombounce = flag_boolean
-          elsif flag_name == "faster"
-            puts "  - Flag: #{flag}"
-            new_actor.faster = flag_boolean
-          elsif flag_name == "fastmelee"
-            puts "  - Flag: #{flag}"
-            new_actor.fastmelee = flag_boolean
-          elsif flag_name == "inventory.quiet"
-            puts "  - Flag: #{flag}"
-            new_actor.inventory.quiet = flag_boolean
-          elsif flag_name == "inventory.autoactivate"
-            puts "  - Flag: #{flag}"
-            new_actor.inventory.autoactivate = flag_boolean
-          elsif flag_name == "inventory.undroppable" || flag_name == "undroppable"
-            puts "  - Flag: #{flag}"
-            new_actor.inventory.undroppable = flag_boolean
-          elsif flag_name == "inventory.unclearable"
-            puts "  - Flag: #{flag}"
-            new_actor.inventory.unclearable = flag_boolean
-          elsif flag_name == "inventory.invbar" || flag_name == "invbar"
-            puts "  - Flag: #{flag}"
-            new_actor.inventory.invbar = flag_boolean
-          elsif flag_name == "inventory.hubpower"
-            puts "  - Flag: #{flag}"
-            new_actor.inventory.hubpower = flag_boolean
-          elsif flag_name == "inventory.persistentpower"
-            puts "  - Flag: #{flag}"
-            new_actor.inventory.persistentpower = flag_boolean
-          elsif flag_name == "inventory.interhubstrip"
-            puts "  - Flag: #{flag}"
-            new_actor.inventory.interhubstrip = flag_boolean
-          elsif flag_name == "inventory.pickupflash"
-            puts "  - Flag: #{flag}"
-            new_actor.inventory.pickupflash = flag_boolean
-          elsif flag_name == "inventory.alwayspickup"
-            puts "  - Flag: #{flag}"
-            new_actor.inventory.alwayspickup = flag_boolean
-          elsif flag_name == "inventory.fancypickupsound" || flag_name == "fancypickupsound"
-            puts "  - Flag: #{flag}"
-            new_actor.inventory.fancypickupsound = flag_boolean
-          elsif flag_name == "inventory.noattenpickupsound"
-            puts "  - Flag: #{flag}"
-            new_actor.inventory.noattenpickupsound = flag_boolean
-          elsif flag_name == "inventory.bigpowerup"
-            puts "  - Flag: #{flag}"
-            new_actor.inventory.bigpowerup = flag_boolean
-          elsif flag_name == "inventory.neverrespawn"
-            puts "  - Flag: #{flag}"
-            new_actor.inventory.neverrespawn = flag_boolean
-          elsif flag_name == "inventory.keepdepleted"
-            puts "  - Flag: #{flag}"
-            new_actor.inventory.keepdepleted = flag_boolean
-          elsif flag_name == "inventory.ignoreskill"
-            puts "  - Flag: #{flag}"
-            new_actor.inventory.ignoreskill = flag_boolean
-          elsif flag_name == "inventory.additivetime"
-            puts "  - Flag: #{flag}"
-            new_actor.inventory.additivetime = flag_boolean
-          elsif flag_name == "inventory.untossable"
-            puts "  - Flag: #{flag}"
-            new_actor.inventory.untossable = flag_boolean
-          elsif flag_name == "inventory.restrictabsolutely"
-            puts "  - Flag: #{flag}"
-            new_actor.inventory.restrictabsolutely = flag_boolean
-          elsif flag_name == "inventory.noscreenflash"
-            puts "  - Flag: #{flag}"
-            new_actor.inventory.noscreenflash = flag_boolean
-          elsif flag_name == "inventory.tossed"
-            puts "  - Flag: #{flag}"
-            new_actor.inventory.tossed = flag_boolean
-          elsif flag_name == "inventory.alwaysrespawn"
-            puts "  - Flag: #{flag}"
-            new_actor.inventory.alwaysrespawn = flag_boolean
-          elsif flag_name == "inventory.transfer"
-            puts "  - Flag: #{flag}"
-            new_actor.inventory.transfer = flag_boolean
-          elsif flag_name == "inventory.noteleportfreeze"
-            puts "  - Flag: #{flag}"
-            new_actor.inventory.noteleportfreeze = flag_boolean
-          elsif flag_name == "inventory.noscreenblink"
-            puts "  - Flag: #{flag}"
-            new_actor.inventory.noscreenblink = flag_boolean
-          elsif flag_name == "inventory.ishealth"
-            puts "  - Flag: #{flag}"
-            new_actor.inventory.ishealth = flag_boolean
-          elsif flag_name == "inventory.isarmor"
-            puts "  - Flag: #{flag}"
-            new_actor.inventory.isarmor = flag_boolean
-          elsif flag_name == "weapon.noautofire"
-            puts "  - Flag: #{flag}"
-            new_actor.weapon.noautofire = flag_boolean
-          elsif flag_name == "weapon.readysndhalf"
-            puts "  - Flag: #{flag}"
-            new_actor.weapon.readysndhalf = flag_boolean
-          elsif flag_name == "weapon.dontbob"
-            puts "  - Flag: #{flag}"
-            new_actor.weapon.dontbob = flag_boolean
-          elsif flag_name == "weapon.axeblood"
-            puts "  - Flag: #{flag}"
-            new_actor.weapon.axeblood = flag_boolean
-          elsif flag_name == "weapon.noalert"
-            puts "  - Flag: #{flag}"
-            new_actor.weapon.noalert = flag_boolean
-          elsif flag_name == "weapon.ammo_optional"
-            puts "  - Flag: #{flag}"
-            new_actor.weapon.ammo_optional = flag_boolean
-          elsif flag_name == "weapon.alt_ammo_optional"
-            puts "  - Flag: #{flag}"
-            new_actor.weapon.alt_ammo_optional = flag_boolean
-          elsif flag_name == "weapon.ammo_checkboth"
-            puts "  - Flag: #{flag}"
-            new_actor.weapon.ammo_checkboth = flag_boolean
-          elsif flag_name == "weapon.primary_uses_both"
-            puts "  - Flag: #{flag}"
-            new_actor.weapon.primary_uses_both = flag_boolean
-          elsif flag_name == "weapon.alt_uses_both"
-            puts "  - Flag: #{flag}"
-            new_actor.weapon.alt_uses_both = flag_boolean
-          elsif flag_name == "weapon.wimpy_weapon" || flag_name == "wimpy_weapon"
-            puts "  - Flag: #{flag}"
-            new_actor.weapon.wimpy_weapon = flag_boolean
-          elsif flag_name == "weapon.powered_up" || flag_name == "powered_up"
-            puts "  - Flag: #{flag}"
-            new_actor.weapon.powered_up = flag_boolean
-          elsif flag_name == "weapon.staff2_kickback"
-            puts "  - Flag: #{flag}"
-            new_actor.weapon.staff2_kickback = flag_boolean
-          elsif flag_name == "weapon.explosive"
-            puts "  - Flag: #{flag}"
-            new_actor.weapon.explosive = flag_boolean
-          elsif flag_name == "weapon.meleeweapon" || flag_name == "meleeweapon"
-            puts "  - Flag: #{flag}"
-            new_actor.weapon.meleeweapon = flag_boolean
-          elsif flag_name == "weapon.bfg"
-            puts "  - Flag: #{flag}"
-            new_actor.weapon.bfg = flag_boolean
-          elsif flag_name == "weapon.cheatnotweapon"
-            puts "  - Flag: #{flag}"
-            new_actor.weapon.cheatnotweapon = flag_boolean
-          elsif flag_name == "weapon.noautoswitchto"
-            puts "  - Flag: #{flag}"
-            new_actor.weapon.noautoswitchto = flag_boolean
-          elsif flag_name == "weapon.noautoaim"
-            puts "  - Flag: #{flag}"
-            new_actor.weapon.noautoaim = flag_boolean
-          elsif flag_name == "weapon.nodeathdeselect"
-            puts "  - Flag: #{flag}"
-            new_actor.weapon.nodeathdeselect = flag_boolean
-          elsif flag_name == "weapon.nodeathinput"
-            puts "  - Flag: #{flag}"
-            new_actor.weapon.nodeathinput = flag_boolean
-          elsif flag_name == "powerspeed.notrail"
-            puts "  - Flag: #{flag}"
-            new_actor.powerspeed.notrail = flag_boolean
-          elsif flag_name == "playerpawn.nothrustwheninvul" || flag_name == "nothrustwheninvul"
-            puts "  - Flag: #{flag}"
-            new_actor.player.nothrustwheninvul = flag_boolean
-          elsif flag_name == "playerpawn.cansupermorph" || flag_name == "cansupermorph"
-            puts "  - Flag: #{flag}"
-            new_actor.player.cansupermorph = flag_boolean
-          elsif flag_name == "playerpawn.crouchablemorph"
-            puts "  - Flag: #{flag}"
-            new_actor.player.crouchablemorph = flag_boolean
-          elsif flag_name == "playerpawn.weaponlevel2ended"
-            puts "  - Flag: #{flag}"
-            new_actor.player.weaponlevel2ended = flag_boolean
-          elsif flag_name == "allowclientspawn"
-            puts "  - Flag: #{flag}"
-            new_actor.allowclientspawn = flag_boolean
-          elsif flag_name == "clientsideonly"
-            puts "  - Flag: #{flag}"
-            new_actor.clientsideonly = flag_boolean
-          elsif flag_name == "nonetid"
-            puts "  - Flag: #{flag}"
-            new_actor.nonetid = flag_boolean
-          elsif flag_name == "dontidentifytarget"
-            puts "  - Flag: #{flag}"
-            new_actor.dontidentifytarget = flag_boolean
-          elsif flag_name == "scorepillar"
-            puts "  - Flag: #{flag}"
-            new_actor.scorepillar = flag_boolean
-          elsif flag_name == "serversideonly"
-            puts "  - Flag: #{flag}"
-            new_actor.serversideonly = flag_boolean
-          elsif flag_name == "inventory.forcerespawninsurvival"
-            puts "  - Flag: #{flag}"
-            new_actor.inventory.forcerespawninsurvival = flag_boolean
-          elsif flag_name == "weapon.allow_with_respawn_invul"
-            puts "  - Flag: #{flag}"
-            new_actor.weapon.allow_with_respawn_invul = flag_boolean
-          elsif flag_name == "weapon.nolms"
-            puts "  - Flag: #{flag}"
-            new_actor.weapon.nolms = flag_boolean
-          elsif flag_name == "piercearmor"
-            puts "  - Flag: #{flag}"
-            new_actor.piercearmor = flag_boolean
-          elsif flag_name == "blueteam"
-            puts "  - Flag: #{flag}"
-            new_actor.blueteam = flag_boolean
-          elsif flag_name == "redteam"
-            puts "  - Flag: #{flag}"
-            new_actor.redteam = flag_boolean
-          elsif flag_name == "node"
-            puts "  - Flag: #{flag}"
-            new_actor.node = flag_boolean
-          elsif flag_name == "basehealth"
-            puts "  - Flag: #{flag}"
-            new_actor.basehealth = flag_boolean
-          elsif flag_name == "superhealth"
-            puts "  - Flag: #{flag}"
-            new_actor.superhealth = flag_boolean
-          elsif flag_name == "basearmor"
-            puts "  - Flag: #{flag}"
-            new_actor.basearmor = flag_boolean
-          elsif flag_name == "superarmor"
-            puts "  - Flag: #{flag}"
-            new_actor.superarmor = flag_boolean
-          elsif flag_name == "explodeondeath"
-            puts "  - Flag: #{flag}"
-            new_actor.explodeondeath = flag_boolean
-
-          # Catchall for missing stuff to double check things
-          else
-            if missing_actor_flags.fetch(flag_name, nil)
-              missing_flag = missing_actor_flags[flag_name]
-            else
-              missing_flag = Array(String).new
-            end
-            missing_flag << new_actor.source_wad_folder
-            missing_actor_flags[flag_name] = missing_flag
-            missing_actor_flags[flag_name].uniq!
-          end
-        end
-      # Variables need to be accounted for
-      elsif property_name == "var"
-        puts "  - Var: " + line.split[1..-1]?.to_s
+      # Handle variable declarations
+      if property_name == "var"
         var_type = line.split[1]?.to_s
         var_name = line.split[2]?.to_s
         new_actor.user_vars[var_name] = var_type
-      elsif property_name == "game"
-        puts "  - Game: " + line.split[1]?.to_s
-        new_actor.game = line.split[1]?.to_s
-      elsif property_name == "spawnid"
-        puts "  - SpawnID: " + line.split[1]?.to_s
-        new_actor.spawn_id = line.split[1].to_i
-      elsif property_name == "conversationid"
-        puts "  - ConversationID: " + line.split[1..-1].join(' ')
-        new_actor.conversation_id = line.split[1..-1].join(' ')
-      elsif property_name == "tag"
-        puts "  - Tag: " + line.split[1..-1].join(' ')
-        new_actor.tag = line.split[1..-1].join(' ')
-      elsif property_name == "health" && new_actor.name.downcase.strip != "health"
-        puts "  - Health: " + line.split[1]?.to_s
-        # adding {0} default value as hacky solution to enums for health value
-        new_actor.health = line.split[1].to_i {0}
-      elsif property_name == "gibhealth"
-        puts "  - GibHealth: " + line.split[1]?.to_s
-        new_actor.gib_health = line.split[1].to_i
-      elsif property_name == "woundhealth"
-        puts "  - WoundHealth: " + line.split[1]?.to_s
-        new_actor.wound_health = line.split[1].to_i
-      elsif property_name == "reactiontime"
-        puts "  - ReactionTime: " + line.split[1]?.to_s
-        new_actor.reaction_time = line.split[1].to_i
-      elsif property_name == "painchance"
-        puts "  - PainChance: " + line.split[1]?.to_s
-        new_actor.pain_chance = "#{line.split[1]?.to_s},#{line.split[2]?.to_s}"
-      elsif property_name == "painthreshold"
-        puts "  - PainThreshold: " + line.split[1]?.to_s
-        new_actor.pain_threshold = line.split[1].to_i
-      elsif property_name == "damagefactor"
-        puts "  - DamageFactor: " + line.split[1..-1].join(' ')
-        new_actor.damage_factor = line.split[1..-1].join(' ')
-      elsif property_name == "selfdamagefactor"
-        puts "  - SelfDamageFactor: " + line.split[1]?.to_s
-        new_actor.self_damage_factor = line.split[1].to_f
-      elsif property_name == "damagemultiply"
-        puts "  - DamageMultiply: " + line.split[1]?.to_s
-        new_actor.damage_multiply = line.split[1].to_f
-      elsif property_name == "damage"
-        puts "  - Damage: " + line.split[1]?.to_s
-        new_actor.damage = line.split[1]?.to_s
-      # DamageFunction goes here but it is ZScript specific
-      elsif property_name == "poisondamage"
-        puts "  - PoisonDamage: " + line.split[1..-1].join(' ')
-        new_actor.poison_damage = line.split[1..-1].join(' ')
-      elsif property_name == "poisondamagetype"
-        puts "  - PoisonDamageType: " + line.split[1..-1].join(' ')
-        new_actor.poison_damage_type = line.split[1..-1].join(' ')
-      elsif property_name == "radiusdamagefactor"
-        puts "  - RadiusDamageFactor: " + line.split[1]?.to_s
-        new_actor.radius_damage_factor = line.split[1].to_f
-      elsif property_name == "ripperlevel"
-        puts "  - RipperLevel: " + line.split[1]?.to_s
-        new_actor.ripper_level = line.split[1].to_i
-      elsif property_name == "riplevelmin"
-        puts "  - RipLevelMin: " + line.split[1]?.to_s
-        new_actor.rip_level_min = line.split[1].to_i
-      elsif property_name == "riplevelmax"
-        puts "  - RipLevelMax: " + line.split[1]?.to_s
-        new_actor.rip_level_max = line.split[1].to_i
-      elsif property_name == "designatedteam"
-        puts "  - DesignatedTeam: " + line.split[1]?.to_s
-        new_actor.designated_team = line.split[1].to_i
-      elsif property_name == "speed"
-        puts "  - Speed: " + line.split[1]?.to_s
-        new_actor.speed = line.split[1].to_f
-      elsif property_name == "vspeed"
-        puts "  - VSpeed: " + line.split[1]?.to_s
-        new_actor.v_speed = line.split[1].to_f
-      elsif property_name == "fastspeed"
-        puts "  - FastSpeed: " + line.split[1]?.to_s
-        new_actor.fast_speed = line.split[1].to_i
-      elsif property_name == "floatspeed"
-        puts "  - FloatSpeed: " + line.split[1]?.to_s
-        new_actor.float_speed = line.split[1].to_i
-      elsif property_name == "species"
-        puts "  - Species: " + line.split[1]?.to_s
-        new_actor.species = line.split[1].to_s
-      elsif property_name == "accuracy"
-        puts "  - Accuracy: " + line.split[1]?.to_s
-        new_actor.accuracy = line.split[1].to_i
-      elsif property_name == "stamina"
-        puts "  - Stamina: " + line.split[1]?.to_s
-        new_actor.stamina = line.split[1].to_i
-      elsif property_name == "activation"
-        puts "  - Activation: " + line.split[1..-1].join(' ')
-        new_actor.activation = line.split[1..-1].join(' ')
-      elsif property_name == "telefogsourcetype"
-        puts "  - TeleFogSourceType: " + line.split[1]?.to_s
-        new_actor.tele_fog_source_type = line.split[1].to_s
-      elsif property_name == "telefogdesttype"
-        puts "  - TeleFogDestType: " + line.split[1]?.to_s
-        new_actor.tele_fog_dest_type = line.split[1].to_s
-      elsif property_name == "threshold"
-        puts "  - Threshold: " + line.split[1]?.to_s
-        new_actor.threshold = line.split[1].to_i
-      elsif property_name == "defthreshold"
-        puts "  - DefThreshold: " + line.split[1]?.to_s
-        new_actor.def_threshold = line.split[1].to_i
-      elsif property_name == "friendlyseeblocks"
-        puts "  - FriendlySeeBlocks: " + line.split[1]?.to_s
-        new_actor.friendly_see_blocks = line.split[1].to_i
-      elsif property_name == "shadowaimfactor"
-        puts "  - ShadowAimFactor: " + line.split[1]?.to_s
-        new_actor.shadow_aim_factor = line.split[1].to_f
-      elsif property_name == "shadowpenaltyfactor"
-        puts "  - ShadowPenaltyFactor: " + line.split[1]?.to_s
-        new_actor.shadow_penalty_factor = line.split[1].to_f
-      elsif property_name == "radius"
-        puts "  - Radius: " + line.split[1]?.to_s
-        new_actor.radius = line.split[1].to_f
-      elsif property_name == "height"
-        puts "  - Height: " + line.split[1]?.to_s
-        new_actor.height = line.split[1].to_i
-      elsif property_name == "deathheight"
-        puts "  - DeathHeight: " + line.split[1]?.to_s
-        new_actor.death_height = line.split[1].to_i
-      elsif property_name == "burnheight"
-        puts "  - BurnHeight: " + line.split[1]?.to_s
-        new_actor.burn_height = line.split[1].to_i
-      elsif property_name == "projectilepassheight"
-        puts "  - ProjectilePassHeight: " + line.split[1]?.to_s
-        new_actor.projectile_pass_height = line.split[1].to_i
-      elsif property_name == "gravity"
-        puts "  - Gravity: " + line.split[1]?.to_s
-        new_actor.gravity = line.split[1].to_f
-      elsif property_name == "friction"
-        puts "  - Height: " + line.split[1]?.to_s
-        new_actor.friction = line.split[1].to_f
-      elsif property_name == "mass"
-        puts "  - Mass: " + line.split[1]?.to_s
-        new_actor.mass = line.split[1].to_s
-      elsif property_name == "maxstepheight"
-        puts "  - MaxStepHeight: " + line.split[1]?.to_s
-        new_actor.max_step_height = line.split[1].to_i
-      elsif property_name == "maxdropoffheight"
-        puts "  - MaxDropOffHeight: " + line.split[1]?.to_s
-        new_actor.max_drop_off_height = line.split[1].to_i
-      elsif property_name == "maxslopesteepness"
-        puts "  - MaxSlopeSteepness: " + line.split[1]?.to_s
-        new_actor.max_slope_steepness = line.split[1].to_f
-      elsif property_name == "bouncetype"
-        puts "  - BounceType: " + line.split[1]?.to_s
-        new_actor.bounce_type = line.split[1].to_s
-      elsif property_name == "bouncefactor"
-        puts "  - BounceFactor: " + line.split[1]?.to_s
-        new_actor.bounce_factor = line.split[1].to_f
-      elsif property_name == "wallbouncefactor"
-        puts "  - WallBounceFactor: " + line.split[1]?.to_s
-        new_actor.wall_bounce_factor = line.split[1].to_f
-      elsif property_name == "bouncecount"
-        puts "  - BounceCount: " + line.split[1]?.to_s
-        new_actor.bounce_count = line.split[1].to_i
-      elsif property_name == "projectilekickback"
-        puts "  - ProjectileKickBack: " + line.split[1]?.to_s
-        new_actor.projectile_kick_back = line.split[1].to_i
-      elsif property_name == "pushfactor"
-        puts "  - PushFactor: " + line.split[1]?.to_s
-        new_actor.push_factor = line.split[1].to_f
-      elsif property_name == "weaveindexxy"
-        puts "  - WeaveIndexXY: " + line.split[1]?.to_s
-        new_actor.weave_index_xy = line.split[1].to_i
-      elsif property_name == "weaveindexz"
-        puts "  - WeaveIndexZ: " + line.split[1]?.to_s
-        new_actor.weave_index_z = line.split[1].to_i
-      elsif property_name == "thrubits"
-        puts "  - ThruBits: " + line.split[1]?.to_s
-        new_actor.thru_bits = line.split[1].to_i
-      elsif property_name == "activesound"
-        puts "  - ActiveSound: " + line.split[1]?.to_s
-        new_actor.active_sound = line.split[1].to_s
-      elsif property_name == "attacksound"
-        puts "  - AttackSound: " + line.split[1]?.to_s
-        new_actor.attack_sound = line.split[1].to_s
-      elsif property_name == "bouncesound"
-        puts "  - BounceSound: " + line.split[1]?.to_s
-        new_actor.bounce_sound = line.split[1].to_s
-      elsif property_name == "crushpainsound"
-        puts "  - CrushPainSound: " + line.split[1]?.to_s
-        new_actor.crush_pain_sound = line.split[1].to_s
-      elsif property_name == "deathsound"
-        puts "  - DeathSound: " + line.split[1]?.to_s
-        new_actor.death_sound = line.split[1].to_s
-      elsif property_name == "howlsound"
-        puts "  - HowlSound: " + line.split[1]?.to_s
-        new_actor.howl_sound = line.split[1].to_s
-      elsif property_name == "painsound"
-        puts "  - PainSound: " + line.split[1]?.to_s
-        new_actor.pain_sound = line.split[1].to_s
-      elsif property_name == "ripsound"
-        puts "  - RipSound: " + line.split[1]?.to_s
-        new_actor.rip_sound = line.split[1].to_s
-      elsif property_name == "seesound"
-        puts "  - SeeSound: " + line.split[1]?.to_s
-        new_actor.see_sound = line.split[1].to_s
-      elsif property_name == "wallbouncesound"
-        puts "  - WallBounceSound: " + line.split[1]?.to_s
-        new_actor.wall_bounce_sound = line.split[1].to_s
-      elsif property_name == "pushsound"
-        puts "  - PushSound: " + line.split[1]?.to_s
-        new_actor.push_sound = line.split[1].to_s
-      elsif property_name == "renderstyle"
-        puts "  - RenderStyle: " + line.split[1]?.to_s
-        new_actor.render_style = line.split[1].to_s
-      elsif property_name == "alpha"
-        puts "  - Alpha: " + line.split[1]?.to_s
-        new_actor.alpha = line.split[1].to_f
-      elsif property_name == "defaultalpha"
-        puts "  - DefaultAlpha: " + line.split[1]?.to_s
-        new_actor.default_alpha = true
-      elsif property_name == "stealthalpha"
-        puts "  - StealthAlpha: " + line.split[1]?.to_s
-        new_actor.stealth_alpha = line.split[1].to_f
-      elsif property_name == "xscale"
-        puts "  - XScale: " + line.split[1]?.to_s
-        new_actor.x_scale = line.split[1].to_f
-      elsif property_name == "yscale"
-        puts "  - YScale: " + line.split[1]?.to_s
-        new_actor.y_scale = line.split[1].to_f
-      elsif property_name == "scale"
-        puts "  - Scale: " + line.split[1]?.to_s
-        new_actor.scale = line.split[1].to_f
-      elsif property_name == "lightlevel"
-        puts "  - LightLevel: " + line.split[1]?.to_s
-        new_actor.light_level = line.split[1].to_i
-      elsif property_name == "translation"
-        puts "  - Translation: " + line.split[1..-1].join(' ')
-        new_actor.translation = line.split[1..-1].join(' ')
-      elsif property_name == "bloodcolor"
-        puts "  - BloodColor: " + line.split[1..-1].join(' ')
-        new_actor.blood_color = line.split[1..-1].join(' ')
-      elsif property_name == "bloodtype"
-        puts "  - BloodType: " + line.split[1..-1].join(' ')
-        new_actor.blood_type = line.split[1..-1].join(' ')
-      elsif property_name == "decal"
-        puts "  - Decal: " + line.split[1]?.to_s
-        new_actor.decal = line.split[1].to_s
-      elsif property_name == "stencilcolor"
-        puts "  - StencilColor: " + line.split[1]?.to_s
-        new_actor.stencil_color = line.split[1].to_s
-      elsif property_name == "floatbobphase"
-        puts "  - FloatBobPhase: " + line.split[1]?.to_s
-        new_actor.float_bob_phase = line.split[1].to_i
-      elsif property_name == "floatbobstrength"
-        puts "  - FloatBobStrength: " + line.split[1]?.to_s
-        new_actor.float_bob_strength = line.split[1].to_i
-      elsif property_name == "distancecheck"
-        puts "  - DistanceCheck: " + line.split[1]?.to_s
-        new_actor.distance_check = line.split[1]?.to_s
-      elsif property_name == "spriteangle"
-        puts "  - SpriteAngle: " + line.split[1]?.to_s
-        new_actor.sprite_angle = line.split[1].to_i
-      elsif property_name == "spriterotation"
-        puts "  - SpriteRotation: " + line.split[1]?.to_s
-        new_actor.sprite_rotation = line.split[1].to_i
-      elsif property_name == "visibleangles"
-        puts "  - VisibleAngles: " + line.split[1..-1].join(' ')
-        new_actor.visible_angles = line.split[1..-1].join(' ')
-      elsif property_name == "visiblepitch"
-        puts "  - VisiblePitch: " + line.split[1..-1].join(' ')
-        new_actor.visible_pitch = line.split[1..-1].join(' ')
-      elsif property_name == "renderradius"
-        puts "  - RenderRadius: " + line.split[1]?.to_s
-        new_actor.render_radius = line.split[1].to_f
-      elsif property_name == "cameraheight"
-        puts "  - CameraHeight: " + line.split[1]?.to_s
-        new_actor.camera_height = line.split[1].to_i
-      elsif property_name == "camerafov"
-        puts "  - CameraFOV: " + line.split[1]?.to_s
-        new_actor.camera_fov = line.split[1].to_f
-      elsif property_name == "hitobituary"
-        puts "  - HitObituary: " + line.split[1]?.to_s
-        new_actor.hit_obituary = line.split[1].to_s
-      elsif property_name == "obituary"
-        puts "  - Obituary: " + line.split[1]?.to_s
-        new_actor.obituary = line.split[1].to_s
-      elsif property_name == "minmissilechance"
-        puts "  - MinMissileChance: " + line.split[1]?.to_s
-        new_actor.min_missile_chance = line.split[1].to_i
-      elsif property_name == "damagetype"
-        puts "  - DamageType: " + line.split[1]?.to_s
-        new_actor.damage_type = line.split[1].to_s
-      elsif property_name == "deathtype"
-        puts "  - DeathType: " + line.split[1]?.to_s
-        new_actor.death_type = line.split[1].to_s
-      elsif property_name == "meleethreshold"
-        puts "  - MeleeThreshold: " + line.split[1]?.to_s
-        new_actor.melee_threshold = line.split[1].to_i
-      elsif property_name == "meleerange"
-        puts "  - MeleeRange: " + line.split[1]?.to_s
-        new_actor.melee_range = line.split[1].to_i
-      elsif property_name == "maxtargetrange"
-        puts "  - MaxTargetRange: " + line.split[1]?.to_s
-        new_actor.max_target_range = line.split[1].to_i
-      elsif property_name == "meleedamage"
-        puts "  - MeleeDamage: " + line.split[1]?.to_s
-        new_actor.melee_damage = line.split[1].to_i
-      elsif property_name == "meleesound"
-        puts "  - MeleeSound: " + line.split[1]?.to_s
-        new_actor.melee_sound = line.split[1].to_s
-      elsif property_name == "missileheight"
-        puts "  - MissileHeight: " + line.split[1]?.to_s
-        new_actor.missile_height = line.split[1].to_i
-      elsif property_name == "missiletype"
-        puts "  - MissileType: " + line.split[1]?.to_s
-        new_actor.missile_type = line.split[1].to_s
-      elsif property_name == "explosionradius"
-        puts "  - ExplosionRadius: " + line.split[1]?.to_s
-        new_actor.explosion_radius = line.split[1].to_i
-      elsif property_name == "explosiondamage"
-        puts "  - ExplosionDamage: " + line.split[1]?.to_s
-        new_actor.explosion_damage = line.split[1].to_i
-      elsif property_name == "donthurtshooter"
-        puts "  - DontHurtShooter: " + line.split[1]?.to_s
-        new_actor.dont_hurt_shooter = true
-      elsif property_name == "paintype"
-        puts "  - PainType: " + line.split[1]?.to_s
-        new_actor.pain_type = line.split[1].to_s
-      elsif property_name == "projectile"
-        puts "  - Projectile"
-        new_actor.projectile = true
-      # this one needs white glove treatment :-/ lines that start with "monster"
-      elsif property_name =~ /^monster/
-        puts "  - Monster"
+        next
+      end
+
+      # Handle "monster" keyword (which also enables ISMONSTER flag and more)
+      if property_name =~ /^monster/
         new_actor.monster = true
-        # Sometimes "monster" gets thrown in with flags because people don't know any better
-        # And to be honest, it does set flags, so I can understand the confusion.
-        # You can put multiple flags with no regard for whitespace and the interpreter
-        # enables their bad coding behavior.
-        # So we need to parse out the rest of the line after 'monster'
-        # remove "monster" from the beginning and remove whitespace any leading whitespace after "monster"
-        # e.g. "monster +blah" --> "+blah", "monster+boss" --> "+boss"
-        remaining_line = line.lchop("monster").lstrip
-        if remaining_line != ""
-          puts "Remaining line detected: #{remaining_line}"
-          # add the line to the end of the actor so we can process it
-          actor = actor + "\n" + remaining_line
+        # Handle flags concatenated after "monster" (e.g., "monster+boss")
+        remaining = line.lchop("monster").lstrip
+        if !remaining.empty?
+          # Process remaining flags by re-normalizing
+          remaining = remaining.gsub(/\+\s*/, " +").gsub(/\-\s*/, " -").lstrip
+          remaining.split.each do |flag|
+            # [BUGFIX] V1 used == instead of = for flag_boolean = false
+            flag_val = (flag[0] == '+')
+            fname = flag.lchop
+            unless set_actor_flag(new_actor, fname, flag_val)
+              log(3, "  Unrecognized flag after monster: #{fname}")
+            end
+          end
         end
-      elsif property_name == "+ismonster"
-        puts "  - Monster"
-        #new_actor.monster = true
+        next
+      end
+
+      # Handle boolean flags (+FLAG / -FLAG)
+      if property_name =~ /^[\+\-]/
+        # Normalize spacing: "+FLAG -FLAG2" etc.
+        normalized = line.gsub(/\+\s*/, " +").gsub(/\-\s*/, " -").lstrip
+        normalized.split.each do |flag|
+          # [BUGFIX] V1: `flag_boolean == false` was comparison, not assignment
+          flag_val = (flag[0] == '+')
+          fname = flag.lchop.downcase
+
+          unless set_actor_flag(new_actor, fname, flag_val)
+            # Track missing flags
+            missing_actor_flags[fname] ||= Array(String).new
+            missing_actor_flags[fname] << new_actor.source_wad_folder
+            missing_actor_flags[fname].uniq!
+          end
+        end
+        next
+      end
+
+      # Handle "+ismonster" as a property name (special case)
+      if property_name == "+ismonster"
         new_actor.ismonster = true
-      elsif property_name == "{" || property_name == "}"
-      elsif property_name == "args"
-        puts "  - Args: " + line.split[1..-1].join(' ')
-        new_actor.args = line.split[1..-1].join(' ')
-      elsif property_name == "clearflags"
-        # I don't know what we need to do with this one but it might be
-        # fairly complicated. I think this means clear all inherited flags.
-        puts "  - ClearFlags: " + line.split[1]?.to_s
-        new_actor.clear_flags = true
-      elsif property_name == "dropitem"
-        puts "  - DropItem: " + line.split[1..-1].join(' ')
-        new_actor.drop_item = line.split[1..-1].join(' ')
-      #Deprecated properties go here:
-      # - Spawn
-      # - See
-      # - Melee
-      # - Pain
-      # - Death
-      # - XDeath
-      # - Burn
-      # - Ice
-      # - Disintegrate
-      # - Raise
-      # - Crash
-      # - Wound
-      # - Crush
-      # - Heal
-      elsif property_name == "skip_super"
-        puts "  - Skip_Super"
-        new_actor.skip_super = true
-      elsif property_name == "visibletoteam"
-        puts "  - VisibleToTeam: " + line.split[1]?.to_s
-        new_actor.visible_to_team = line.split[1].to_i
-      elsif property_name == "visibletoplayerclass"
-        puts "  - VisibleToPlayerClass: " + line.split[1..-1].join(' ')
-        new_actor.visible_to_player_class = line.split[1..-1].join(' ')
-      elsif property_name == "inventory.amount"
-        puts "  - Inventory.Amount: " + line.split[1]?.to_s
-        new_actor.inventory.amount = line.split[1].to_i
-      elsif property_name == "inventory.defmaxamount"
-        puts "  - Inventory.DefMaxAmount"
-        new_actor.inventory.def_max_amount = true
-      elsif property_name == "inventory.maxamount"
-        puts "  - Inventory.MaxAmount: " + line.split[1]?.to_s
-        new_actor.inventory.max_amount = line.split[1].to_s
-      elsif property_name == "inventory.interhubamount"
-        puts "  - Inventory.InterHubAmount: " + line.split[1]?.to_s
-        new_actor.inventory.inter_hub_amount = line.split[1].to_i
-      elsif property_name == "inventory.icon"
-        puts "  - Inventory.Icon: " + line.split[1]?.to_s
-        new_actor.inventory.icon = line.split[1].to_s
-      elsif property_name == "inventory.althudicon"
-        puts "  - Inventory.AltHUDIcon: " + line.split[1]?.to_s
-        new_actor.inventory.alt_hud_icon = line.split[1].to_s
-      elsif property_name == "inventory.pickupmessage"
-        puts "  - Inventory.PickupMessage: " + line.split[1..-1].join(' ')
-        new_actor.inventory.pickup_message = line.split[1..-1].join(' ')
-      elsif property_name == "inventory.pickupsound"
-        puts "  - Inventory.PickupSound: " + line.split[1..-1].join(' ')
-        new_actor.inventory.pickup_sound = line.split[1..-1].join(' ')
-      elsif property_name == "inventory.pickupflash"
-        puts "  - Inventory.PickupFlash: " + line.split[1]?.to_s
-        new_actor.inventory.pickup_flash = line.split[1].to_s
-      elsif property_name == "inventory.usesound"
-        puts "  - Inventory.UseSound: " + line.split[1]?.to_s
-        new_actor.inventory.use_sound = line.split[1].to_s
-      elsif property_name == "inventory.respawntics"
-        puts "  - Inventory.RespawnTics: " + line.split[1]?.to_s
-        new_actor.inventory.respawn_tics = line.split[1].to_i
-      elsif property_name == "inventory.givequest"
-        puts "  - Inventory.GiveQuest: " + line.split[1]?.to_s
-        new_actor.inventory.give_quest = line.split[1].to_i
-      elsif property_name == "inventory.forbiddento"
-        puts "  - Inventory.ForbiddenTo: " + line.split[1..-1].join(' ')
-        new_actor.inventory.forbidden_to = line.split[1..-1].join(' ')
-      elsif property_name == "inventory.restrictedto"
-        puts "  - Inventory.RestrictedTo: " + line.split[1..-1].join(' ')
-        new_actor.inventory.restricted_to = line.split[1..-1].join(' ')
+        next
+      end
 
-      elsif property_name == "fakeinventory.respawns"
-        puts "  - FakeInventory.Respawns"
-        new_actor.fakeinventory.respawns = true
+      # Skip structural tokens
+      next if property_name == "{" || property_name == "}" || property_name == "#include"
 
-      elsif property_name == "armor.saveamount"
-        puts "  - Armor.SaveAmount: " + line.split[1..-1].join(' ')
-        new_actor.armor.saveamount = line.split[1].to_i
-      elsif property_name == "armor.savepercent"
-        puts "  - Armor.SavePercent: " + line.split[1..-1].join(' ')
-        new_actor.armor.savepercent = line.split[1].to_f
-      elsif property_name == "armor.maxfullabsorb"
-        puts "  - Armor.MaxFullAbsorb: " + line.split[1..-1].join(' ')
-        new_actor.armor.maxfullabsorb = line.split[1].to_i
-      elsif property_name == "armor.maxabsorb"
-        puts "  - Armor.MaxAbsorb: " + line.split[1..-1].join(' ')
-        new_actor.armor.maxabsorb = line.split[1].to_i
-      elsif property_name == "armor.maxsaveamount"
-        puts "  - Armor.MaxSaveAmount: " + line.split[1..-1].join(' ')
-        new_actor.armor.maxsaveamount = line.split[1].to_i
-      elsif property_name == "armor.maxbonus"
-        puts "  - Armor.maxbonus: " + line.split[1..-1].join(' ')
-        new_actor.armor.maxbonus = line.split[1].to_i
-      elsif property_name == "armor.maxbonusmax"
-        puts "  - Armor.MaxBonusMax: " + line.split[1..-1].join(' ')
-        new_actor.armor.maxbonusmax = line.split[1].to_i
-
-      elsif property_name == "weapon.ammogive"
-        puts "  - Weapon.AmmoGive: " + line.split[1..-1].join(' ')
-        new_actor.weapon.ammogive = line.split[1].to_i
-      elsif property_name == "weapon.ammogive1"
-        puts "  - Weapon.AmmoGive1: " + line.split[1..-1].join(' ')
-        new_actor.weapon.ammogive1 = line.split[1].to_i
-      elsif property_name == "weapon.ammogive2"
-        puts "  - Weapon.AmmoGive2: " + line.split[1..-1].join(' ')
-        new_actor.weapon.ammogive2 = line.split[1].to_i
-      elsif property_name == "weapon.ammotype"
-        puts "  - Weapon.AmmoType: " + line.split[1..-1].join(' ')
-        new_actor.weapon.ammotype = line.split[1..-1]?.to_s
-      elsif property_name == "weapon.ammotype1"
-        puts "  - Weapon.AmmoType1: " + line.split[1..-1].join(' ')
-        new_actor.weapon.ammotype1 = line.split[1..-1]?.to_s
-      elsif property_name == "weapon.ammotype2"
-        puts "  - Weapon.AmmoType2: " + line.split[1..-1].join(' ')
-        new_actor.weapon.ammotype2 = line.split[1..-1]?.to_s
-      elsif property_name == "weapon.ammouse"
-        puts "  - Weapon.AmmoUse: " + line.split[1..-1].join(' ')
-        new_actor.weapon.ammouse = line.split[1].to_i
-      elsif property_name == "weapon.ammouse1"
-        puts "  - Weapon.AmmoUse1: " + line.split[1..-1].join(' ')
-        new_actor.weapon.ammouse1 = line.split[1].to_i
-      elsif property_name == "weapon.ammouse2"
-        puts "  - Weapon.AmmoUse2: " + line.split[1..-1].join(' ')
-        new_actor.weapon.ammouse2 = line.split[1].to_i
-      elsif property_name == "weapon.minselectionammo1"
-        puts "  - Weapon.MinSelectionAmmo1: " + line.split[1..-1].join(' ')
-        new_actor.weapon.minselectionammo1 = line.split[1].to_i
-      elsif property_name == "weapon.minselectionammo2"
-        puts "  - Weapon.MinSelectionAmmo2: " + line.split[1..-1].join(' ')
-        new_actor.weapon.minselectionammo2 = line.split[1].to_i
-      elsif property_name == "weapon.bobpivot3d"
-        puts "  - Weapon.BobPivot3D: " + line.split[1..-1].join(' ')
-        new_actor.weapon.bobpivot3d = line.split[1..-1]?.to_s
-      elsif property_name == "weapon.bobrangex"
-        puts "  - Weapon.BobRangeX: " + line.split[1..-1].join(' ')
-        new_actor.weapon.bobrangex = line.split[1].to_f
-      elsif property_name == "weapon.bobrangey"
-        puts "  - Weapon.BobRangeY: " + line.split[1..-1].join(' ')
-        new_actor.weapon.bobrangey = line.split[1].to_f
-      elsif property_name == "weapon.bobspeed"
-        puts "  - Weapon.BobSpeed: " + line.split[1..-1].join(' ')
-        new_actor.weapon.bobspeed = line.split[1].to_f
-      elsif property_name == "weapon.bobstyle"
-        puts "  - Weapon.BobStyle: " + line.split[1..-1].join(' ')
-        new_actor.weapon.bobstyle = line.split[1..-1]?.to_s
-      elsif property_name == "weapon.kickback"
-        puts "  - Weapon.KickBack: " + line.split[1..-1].join(' ')
-        new_actor.weapon.kickback = line.split[1].to_i
-      elsif property_name == "weapon.defaultkickback"
-        puts "  - Weapon.DefaultKickBack: " + line.split[1..-1].join(' ')
-        new_actor.weapon.defaultkickback = true
-      elsif property_name == "weapon.readysound"
-        puts "  - Weapon.ReadySound: " + line.split[1..-1].join(' ')
-        new_actor.weapon.readysound = line.split[1..-1]?.to_s
-      elsif property_name == "weapon.selectionorder"
-        puts "  - Weapon.SelectionOrder: " + line.split[1..-1].join(' ')
-        new_actor.weapon.selectionorder = line.split[1].to_i
-      elsif property_name == "weapon.sisterweapon"
-        puts "  - Weapon.SisterWeapon: " + line.split[1..-1].join(' ')
-        new_actor.weapon.sisterweapon = line.split[1..-1]?.to_s
-      elsif property_name == "weapon.slotnumber"
-        puts "  - Weapon.SlotNumber: " + line.split[1..-1].join(' ')
-        new_actor.weapon.slotnumber = line.split[1].to_i
-      elsif property_name == "weapon.slotpriority"
-        puts "  - Weapon.SlotPriority: " + line.split[1..-1].join(' ')
-        new_actor.weapon.slotpriority = line.split[1].to_f
-      elsif property_name == "weapon.upsound"
-        puts "  - Weapon.UpSound: " + line.split[1..-1].join(' ')
-        new_actor.weapon.upsound = line.split[1..-1]?.to_s
-      elsif property_name == "weapon.weaponscalex"
-        puts "  - Weapon.WeaponScaleX: " + line.split[1..-1].join(' ')
-        new_actor.weapon.weaponscalex = line.split[1].to_f
-      elsif property_name == "weapon.weaponscaley"
-        puts "  - Weapon.WeaponScaleY: " + line.split[1..-1].join(' ')
-        new_actor.weapon.weaponscaley = line.split[1].to_f
-      elsif property_name == "weapon.yadjust"
-        puts "  - Weapon.YAdjust: " + line.split[1..-1].join(' ')
-        new_actor.weapon.yadjust = line.split[1].to_i
-      elsif property_name == "weapon.lookscale"
-        puts "  - Weapon.LookScale: " + line.split[1..-1].join(' ')
-        new_actor.weapon.lookscale = line.split[1].to_f
-
-      # Ammo
-      elsif property_name == "ammo.backpackamount"
-        puts "  - Ammo.BackpackAmount: " + line.split[1..-1].join(' ')
-        new_actor.ammo.backpackamount = line.split[1].to_i
-      elsif property_name == "ammo.backpackmaxamount"
-        puts "  - Ammo.BackpackMaxAmount: " + line.split[1..-1].join(' ')
-        new_actor.ammo.backpackmaxamount = line.split[1].to_i
-      elsif property_name == "ammo.dropamount"
-        puts "  - Ammo.DropAmount: " + line.split[1..-1].join(' ')
-        new_actor.ammo.dropamount = line.split[1].to_i
-
-      # Weapon Piece
-      elsif property_name == "weaponpiece.number"
-        puts "  - WeaponPiece.Number: " + line.split[1..-1].join(' ')
-        new_actor.weaponpiece.number = line.split[1].to_i
-      elsif property_name == "weaponpiece.weapon"
-        puts "  - WeaponPiece.Weapon: " + line.split[1..-1].join(' ')
-        new_actor.weaponpiece.weapon = line.split[1..-1]?.to_s
-
-      # Health (note: health is named healthclass to differentiate from health property)
-      elsif property_name == "health.lowmessage"
-        puts "  - Health.LowMessage: " + line.split[1..-1].join(' ')
-        new_actor.healthclass.lowmessage = line.split[1..-1]?.to_s
-
-      # Puzzle Item
-      elsif property_name == "puzzleitem.number"
-        puts "  - PuzzleItem.Number: " + line.split[1..-1].join(' ')
-        new_actor.puzzleitem.number = line.split[1].to_i
-      elsif property_name == "puzzleitem.failmessage"
-        puts "  - PuzzleItem.FailMessage: " + line.split[1..-1].join(' ')
-        new_actor.puzzleitem.failmessage = line.split[1..-1]?.to_s
-      elsif property_name == "puzzleitem.failsound"
-        puts "  - PuzzleItem.FailSound: " + line.split[1..-1].join(' ')
-        new_actor.puzzleitem.failsound = line.split[1]?.to_s
-
-      # PlayerPawn
-      elsif property_name == "player.aircapacity"
-        puts "    - player.aircapacity: " + line.split[1..-1].join(' ')
-        new_actor.player.aircapacity = line.split[1].to_f
-      elsif property_name == "player.attackzoffset"
-        puts "    - player.attackzoffset: " + line.split[1..-1].join(' ')
-        new_actor.player.attackzoffset = line.split[1].to_i
-      elsif property_name == "player.clearcolorset"
-        puts "    - player.clearcolorset: " + line.split[1..-1].join(' ')
-        new_actor.player.clearcolorset = line.split[1].to_i
-      elsif property_name == "player.colorrange"
-        puts "    - player.colorrange: " + line.split[1..-1].join(' ')
-        new_actor.player.colorrange = line.split[1..-1].join(' ')
-      elsif property_name == "player.colorset"
-        puts "    - player.colorset: " + line.split[1..-1].join(' ')
-        new_actor.player.colorset = line.split[1]?.to_s
-      elsif property_name == "player.colorsetfile"
-        puts "    - player.colorsetfile: " + line.split[1..-1].join(' ')
-        new_actor.player.colorsetfile = line.split[1..-1].join(' ')
-      elsif property_name == "player.crouchsprite"
-        puts "    - player.crouchsprite: " + line.split[1..-1].join(' ')
-        new_actor.player.crouchsprite = line.split[1]?.to_s
-      elsif property_name == "player.damagescreencolor"
-        puts "    - player.damagescreencolor: " + line.split[1..-1].join(' ')
-        new_actor.player.damagescreencolor = line.split[1..-1].join(' ')
-      elsif property_name == "player.displayname"
-        puts "    - player.displayname: " + line.split[1..-1].join(' ')
-        new_actor.player.displayname = line.split[1]?.to_s
-      elsif property_name == "player.face"
-        puts "    - player.face: " + line.split[1..-1].join(' ')
-        new_actor.player.face = line.split[1]?.to_s
-      elsif property_name == "player.fallingscreamspeed"
-        puts "    - player.fallingscreamspeed: " + line.split[1..-1].join(' ')
-        new_actor.player.fallingscreamspeed = line.split[1..-1].join(' ')
-      elsif property_name == "player.flechettetype"
-        puts "    - player.flechettetype: " + line.split[1..-1].join(' ')
-        new_actor.player.flechettetype = line.split[1]?.to_s
-      elsif property_name == "player.flybob"
-        puts "    - player.flybob: " + line.split[1..-1].join(' ')
-        new_actor.player.flybob = line.split[1].to_f
-      elsif property_name == "player.forwardmove"
-        puts "    - player.forwardmove: " + line.split[1..-1].join(' ')
-        new_actor.player.forwardmove = line.split[1..-1].join(' ')
-      elsif property_name == "player.gruntspeed"
-        puts "    - player.gruntspeed: " + line.split[1..-1].join(' ')
-        new_actor.player.gruntspeed = line.split[1].to_f
-      elsif property_name == "player.healradiustype"
-        puts "    - player.healradiustype: " + line.split[1..-1].join(' ')
-        new_actor.player.healradiustype = line.split[1]?.to_s
-      elsif property_name == "player.hexenarmor"
-        puts "    - player.hexenarmor: " + line.split[1..-1].join(' ')
-        new_actor.player.hexenarmor = line.split[1]?.to_s
-      elsif property_name == "player.invulnerabilitymode"
-        puts "    - player.invulnerabilitymode: " + line.split[1..-1].join(' ')
-        new_actor.player.invulnerabilitymode = line.split[1]?.to_s
-      elsif property_name == "player.jumpz"
-        puts "    - player.jumpz: " + line.split[1..-1].join(' ')
-        new_actor.player.jumpz = line.split[1].to_f
-      elsif property_name == "player.maxhealth"
-        puts "    - player.maxhealth: " + line.split[1..-1].join(' ')
-        new_actor.player.maxhealth = line.split[1].to_i
-      elsif property_name == "player.morphweapon"
-        puts "    - player.morphweapon: " + line.split[1..-1].join(' ')
-        new_actor.player.morphweapon = line.split[1]?.to_s
-      elsif property_name == "player.mugshotmaxhealth"
-        puts "    - player.mugshotmaxhealth: " + line.split[1..-1].join(' ')
-        new_actor.player.mugshotmaxhealth = line.split[1].to_i
-      elsif property_name == "player.portrait"
-        puts "    - player.portrait: " + line.split[1..-1].join(' ')
-        new_actor.player.portrait = line.split[1]?.to_s
-      elsif property_name == "player.runhealth"
-        puts "    - player.runhealth: " + line.split[1..-1].join(' ')
-        new_actor.player.runhealth = line.split[1].to_i
-      elsif property_name == "player.scoreicon"
-        puts "    - player.scoreicon: " + line.split[1..-1].join(' ')
-        new_actor.player.scoreicon = line.split[1]?.to_s
-      elsif property_name == "player.sidemove"
-        puts "    - player.sidemove: " + line.split[1..-1].join(' ')
-        new_actor.player.sidemove = line.split[1..-1].join(' ')
-      elsif property_name == "player.soundclass"
-        puts "    - player.soundclass: " + line.split[1..-1].join(' ')
-        new_actor.player.soundclass = line.split[1]?.to_s
-      elsif property_name == "player.spawnclass"
-        puts "    - player.spawnclass: " + line.split[1..-1].join(' ')
-        new_actor.player.spawnclass = line.split[1]?.to_s
-      elsif property_name == "player.startitem"
-        puts "    - player.startitem: " + line.split[1..-1].join(' ')
-        new_actor.player.startitem = line.split[1..-1].join(' ')
-      elsif property_name == "player.teleportfreezetime"
-        puts "    - player.teleportfreezetime: " + line.split[1..-1].join(' ')
-        new_actor.player.teleportfreezetime = line.split[1].to_i
-      elsif property_name == "player.userange"
-        puts "    - player.userange: " + line.split[1..-1].join(' ')
-        new_actor.player.userange = line.split[1].to_f
-      elsif property_name == "player.viewbob"
-        puts "    - player.viewbob: " + line.split[1..-1].join(' ')
-        new_actor.player.viewbob = line.split[1].to_f
-      elsif property_name == "player.viewbobspeed"
-        puts "    - player.viewbobspeed: " + line.split[1..-1].join(' ')
-        new_actor.player.viewbobspeed = line.split[1].to_f
-      elsif property_name == "player.viewheight"
-        puts "    - player.viewheight: " + line.split[1..-1].join(' ')
-        new_actor.player.viewheight = line.split[1].to_f
-      elsif property_name == "player.waterclimbspeed"
-        puts "    - player.waterclimbspeed: " + line.split[1..-1].join(' ')
-        new_actor.player.waterclimbspeed = line.split[1].to_f
-      elsif property_name == "player.weaponslot"
-        puts "    - player.weaponslot: " + line.split[1..-1].join(' ')
-        new_actor.player.weaponslot = line.split[1..-1].join(' ')
-
-      # Powerup
-      elsif property_name == "powerup.color"
-        puts "    - powerup.color: " + line.split[1..-1].join(' ')
-        new_actor.powerup.color = line.split[1]?.to_s
-      elsif property_name == "powerup.colormap"
-        puts "    - powerup.colormap: " + line.split[1..-1].join(' ')
-        new_actor.powerup.colormap = line.split[1..-1].join(' ')
-      elsif property_name == "powerup.duration"
-        puts "    - powerup.duration: " + line.split[1..-1].join(' ')
-        new_actor.powerup.duration = line.split[1]?.to_s
-      elsif property_name == "powerup.mode"
-        puts "    - powerup.mode: " + line.split[1..-1].join(' ')
-        new_actor.powerup.mode = line.split[1]?.to_s
-      elsif property_name == "powerup.strength"
-        puts "    - powerup.strength: " + line.split[1..-1].join(' ')
-        new_actor.powerup.strength = line.split[1].to_f
-
-      # PowerSpeed
-      elsif property_name == "powerspeed.notrail"
-        puts "    - powerspeed.notrail: " + line.split[1..-1].join(' ')
-        if line.split[1].to_i == 1
-          new_actor.powerspeed.notrail = true
-        elsif line.split[1].to_i == 0
-          new_actor.powerspeed.notrail = false
-        end
-
-      # PowerupGiver
-      elsif property_name == "powerup.type"
-        puts "    - powerup.type: " + line.split[1..-1].join(' ')
-        new_actor.powerup.type = line.split[1]?.to_s
-
-      # HealthPickup
-      elsif property_name == "healthpickup.autouse"
-        puts "    - healthpickup.autouse: " + line.split[1..-1].join(' ')
-        new_actor.healthpickup.autouse = line.split[1].to_i
-
-      # MorphProjectile
-      elsif property_name == "morphprojectile.playerclass"
-        puts "    - morphprojectile.playerclass: " + line.split[1..-1].join(' ')
-        new_actor.morphprojectile.playerclass = line.split[1]?.to_s
-      elsif property_name == "morphprojectile.monsterclass"
-        puts "    - morphprojectile.monsterclass: " + line.split[1..-1].join(' ')
-        new_actor.morphprojectile.monsterclass = line.split[1]?.to_s
-      elsif property_name == "morphprojectile.duration"
-        puts "    - morphprojectile.duration: " + line.split[1..-1].join(' ')
-        new_actor.morphprojectile.duration = line.split[1].to_i
-      elsif property_name == "morphprojectile.morphstyle"
-        puts "    - morphprojectile.morphstyle: " + line.split[1..-1].join(' ')
-        new_actor.morphprojectile.morphstyle = line.split[1..-1].join(' ')
-      elsif property_name == "morphprojectile.morphflash"
-        puts "    - morphprojectile.morphflash: " + line.split[1..-1].join(' ')
-        new_actor.morphprojectile.morphflash = line.split[1..-1].join(' ')
-      elsif property_name == "morphprojectile.unmorphflash"
-        puts "    - morphprojectile.unmorphflash: " + line.split[1..-1].join(' ')
-        new_actor.morphprojectile.unmorphflash = line.split[1..-1].join(' ')
-
-      # Exclude any rouge curly brackets or include statements
-      elsif property_name == "{" || property_name == "}" || property_name == "#include"
-        # ignore these and do nothing
-      # Log any missing property names so that we can address them
-      else
-        if missing_property_names.fetch(property_name, nil)
-          list_of_actors_missing_this_property = missing_property_names[property_name]
-        else
-          list_of_actors_missing_this_property = Array(String).new
-        end
-        list_of_actors_missing_this_property << new_actor.source_wad_folder
-        missing_property_names[property_name] = list_of_actors_missing_this_property
+      # Try setting as a known property
+      unless set_actor_property(new_actor, property_name, line)
+        # Track missing properties
+        missing_property_names[property_name] ||= Array(String).new
+        missing_property_names[property_name] << new_actor.source_wad_folder
       end
     end
-    # write out the new_actor to actordb
+
     actordb << new_actor
-    puts "======================="
   end
 end
 
-actordb.each do |actor|
-  puts "Actor: #{actor.name}"
-  puts "Properties:"
-  puts actor.properties_applied
-  puts "Flags"
-  puts actor.flags_applied
-end
+log(2, "Parsing complete. Total actors loaded: #{actordb.size}")
 
-puts "=================="
-puts "Missing Properties"
-puts "=================="
-missing_property_names.each do |key, value|
-  puts "Missing Property: #{key}"
-  puts "Offending Actors:"
-  value.each do |actor_name|
-    puts actor_name
+# Report missing properties/flags
+if LOG_LEVEL >= 2
+  unless missing_property_names.empty?
+    log(2, "=== Missing Properties ===")
+    missing_property_names.each { |k, v| log(2, "  #{k}: #{v.uniq.join(", ")}") }
   end
-end
-puts "=================="
-
-puts "=================="
-puts "Missing Flags"
-puts "=================="
-missing_actor_flags.each do |key, value|
-  puts "Missing Flag: #{key}"
-  puts "Offending Actors:"
-  value.each do |actor_name|
-    puts actor_name
+  unless missing_actor_flags.empty?
+    log(2, "=== Missing Flags ===")
+    missing_actor_flags.each { |k, v| log(2, "  #{k}: #{v.uniq.join(", ")}") }
   end
 end
 
-puts "=========================="
-puts "END FILE READING"
+###############################################################################
+# REMOVING IDENTICAL ACTORS
+###############################################################################
 
-puts "=========================="
-puts "Removing Identical Actors"
-puts "=========================="
-# actor_counter is the UUID for renamed actors
-# before: ZombieMan
-# after: ZombieMan_MonsterMash_0
+log(2, "=== Removing Identical Actors ===")
+
 actor_counter = 0
-# first step is evaluate the list of files that are in scope
-# DECORATE.raw is always going to be in scope, but any include file
-# is also going to be in scope
-# file_list = Array(String).new
 
-# find identical actors and mark them for deletion
-
-# Find actors with identical actor_text properties
-# this includes the actor line including only the actor name and inheritance
-# and the full actor text without any comments
-# e.g.
-#  actor blah [: blah2] <removed text>
-#  {
-#  <stuff here ...>
-#  }
+# Group actors by their normalized content (name + inheritance + body)
 identical_actors = actordb.group_by { |actor|
   lines = actor.full_actor_text.lines
-  first_line = lines[0]
+  first_line = lines[0]? || ""
   inherits = first_line.partition(/\:\s+[^\s]*/)
   first_line = first_line.split[0..1].join(' ')
-  if inherits[1] != ""
-    first_line = first_line + " " + inherits[1]
-  end
-  puts "First Line: #{first_line}"
-  lines = first_line + "\n" + lines[1..-1].join("\n")
-  lines = lines.lines
-  lines.map! { |line| line.lstrip.strip.downcase }
-  lines.reject! { |line| line.empty? }
-  lines.compact!
-  formatted_actor_text = lines.join("\n")
-  formatted_actor_text }
-  # actors size > 1 means that there is a duplicate entry
-  .select { |_, actors| actors.size > 1 }
-  .flat_map { |_, actors| actors }
+  first_line = first_line + " " + inherits[1] if inherits[1] != ""
+  rest = lines[1..]?.try(&.join("\n")) || ""
+  formatted = (first_line + "\n" + rest).lines.map(&.strip.downcase).reject(&.empty?).join("\n")
+  formatted
+}.select { |_, actors| actors.size > 1 }
+ .flat_map { |_, actors| actors }
 
-# Print actors with identical actor_text properties
-identical_actors.each do |actor|
-  puts "Actor with identical actor_text: #{actor.name}"
-  #puts "Inherited Actor #{actor.inherits}"
-  #puts "Wad: #{actor.source_wad_folder}"
-  #puts "#{actor.full_actor_text}"
-end
-
-
-# Remove the offending actors from their respective wad file
-# ------------------------------------------------------------
-# Here is the logic in plain english
-# - we compare the following: actor name, full_actor_text
-# - we don't care about replaces; those will be removed
-# - we DO care about inheritance, if there are duplicate actors with the same name but inheriting different actors
-#   they will be renamed
-#
-# Once we determine which actors will need to be removed, we will need to collect the following
-# - actor.name
-# - actor.source_wad_folder
-# - actor.
-# Regex:  ^actor\s+greenpoisonball\s+[^{]*\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})
-# where "greenpoisonball" is the offending actor... we will use a variable for that
-
+# Mark first of each group as primary, remove the rest
 identical_actor_name = "UNDEFINED"
-identical_actors.each_with_index do |actor, actor_index|
-  # if the identical_actor_name != actor.name, it means the actor changed
-  # They come into the list grouped by name like this:
-  # actor1, actor1, actor1, actor2, actor2, actor3, actor3, actor4, actor4...
-  # since we DO want one of each (we are only deleting DUPLICATES),
-  # we will go to next iteration when this occurs
+identical_actors.each do |actor|
   if identical_actor_name != actor.name
     identical_actor_name = actor.name
-    # mark the actor as primary in actordb - this way we will not touch it later
-    actordb[actor.index].primary = true
+    actordb.each { |a| a.primary = true if a.index == actor.index && a.file_path == actor.file_path }
     next
   end
 
-  puts "Identical Actors Index: #{actor_index}"
-  file_text = File.read(actor.file_path)
+  log(3, "Removing duplicate actor: #{actor.name} from #{actor.source_wad_folder}")
 
-  if script_type[actor.file_path] == "ZSCRIPT"
-    regex = /^\h*class\s+#{actor.name}\s+[^{]*\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi
-  elsif script_type[actor.file_path] == "DECORATE"
-    regex = /^\h*actor\s+#{actor.name}\s+[^{]*\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi
-  elsif script_type[actor.file_path] == "BUILT_IN"
-    #take no action, since this is a built in actor
-    puts "Built In Actor: #{actor.name_with_case}. Skipping..."
-    next
-  else
-    next
-  end
-
-  puts "Removing Actor:"
-  puts file_text.partition(regex)[1]
-
-  file_text_post = file_text.gsub(regex, "// duplicate actor removed: #{actor.name}")
-
-  File.write(actor.file_path, file_text_post)
-
-  puts "---------------------------------------------------------"
-  puts "Removing Actor Name: #{actor.name}, Index: #{actor.index}"
-  puts "---------------------------------------------------------"
-  deletion_indexes = Array(Int32).new
-  actordb.each_with_index do |actor_del, actor_del_index|
-    if actor_del.index == actor.index && actor_del.file_path == actor.file_path
-      puts "actor_del name: #{actor_del.name}, actor name: #{actor.name}"
-      deletion_indexes << actor_del_index
+  # Remove from the file using balanced brace matching
+  file_text = safe_read(actor.file_path)
+  regex = /^[\ \t]*actor\s+#{Regex.escape(actor.name)}\s+[^{]*\{/mi
+  if md = file_text.match(regex)
+    match_start = md.begin(0).not_nil!
+    brace_start = file_text.index('{', match_start)
+    if brace_start
+      # Find the "actor" keyword position
+      actor_keyword_pos = file_text.rindex("actor", brace_start) || match_start
+      matched = extract_balanced_braces(file_text, brace_start)
+      if matched
+        actor_end = brace_start + matched.size
+        file_text = file_text[0...actor_keyword_pos] +
+                    "// duplicate actor removed: #{actor.name}" +
+                    file_text[actor_end..]
+        File.write(actor.file_path, file_text)
+      end
     end
   end
-  #reverse order so that it doesn't delete the wrong actors
-  # e.g. it should delete the element 12 before deleting element 10
-  # otherwise it would delete element 10 and then delete former element 13 (I think)
-  deletion_indexes.reverse!
-  deletion_indexes.each do |deletion_index|
-    puts "Deleting #{actordb[deletion_index].name}..."
-    actordb.delete_at(deletion_index)
-  end
+
+  # Remove from actordb
+  actordb.reject! { |a| a.index == actor.index && a.file_path == actor.file_path }
 end
 
-puts "=========================="
-puts "CHECKING DUPLICATES"
-puts "=========================="
+###############################################################################
+# RENAMING DUPLICATE ACTOR NAMES
+###############################################################################
 
-# Experiments with a new duplicate detection method...
-# We are sorting by the different fields that we want to query by...
-# e.g. actors_by_name["doomimp"] will return an array of Actors that are named "doomimp"
-actors_by_name = actordb.reduce(Hash(String, Array(Actor)).new) do |acc, actor|
-  acc ||= Hash(String, Array(Actor)).new
-  if acc.fetch(actor.name, nil)
-    iteration_array = acc[actor.name]
-  else
-    iteration_array = Array(Actor).new
-  end
-  iteration_array << actor
-  acc[actor.name] = iteration_array
+log(2, "=== Renaming Duplicate Actor Names ===")
 
-  acc
-end
+# Build name index
+actors_by_name = actordb.group_by(&.name)
 
-
-# this code doesn't do anything useful
-#puts "==================================="
-#puts "Actor Dupe Count"
-#puts "==================================="
-#if actors_by_name.size > 0
-#  actors_by_name.each_key do |key|
-#    puts "Actor Name: #{key}"
-#    puts "Actor Count: #{actors_by_name[key].size}"
-#    if actors_by_inherits.fetch(key, nil)
-#      puts "Inherit Count: #{actors_by_inherits[key].size}"
-#    end
-#    if actors_by_replaces.fetch(key, nil)
-#      puts "Replace Count: #{actors_by_replaces[key].size}"
-#    end
-#    puts "----------------------------------"
-#  end
-#end
-
-puts "===================================="
-puts "Renaming Duplicate Actor Names"
-puts "===================================="
-# process out any built-ins out of the list because they ruin our counts
+# Remove built-in actors from name groups (don't rename them)
 actors_by_name.each_key do |key|
-  deletion_indexes = Array(Int32).new
-  actors_by_name[key].each_with_index do |actor, actor_index|
-    if actor.file_path.split("#{fs}")[1] == "Built_In_Actors"
-      puts "Actor is Built In: #{actor.name}"
-      deletion_indexes << actor_index
-    end
-  end
-  # reverse the array so it goes largest to smallest
-  deletion_indexes.reverse!
-  deletion_indexes.each do |deletion|
-    actors_by_name[key].delete_at(deletion)
-  end
+  actors_by_name[key].reject! { |a| a.file_path.split("/")[1]? == "Built_In_Actors" }
 end
 
-# do the renames
-actors_by_name.each_key do |key|
-  if actors_by_name[key].size > 1
-    puts "Actor: #{key} Count: #{actors_by_name[key].size}"
-    actor_counter = 0
-    actors_by_name[key].each_with_index do |actor, actor_index|
-      if actor_index == 0
-        puts "Primary:"
-      end
-      puts "Actor File: #{actor.file_path}"
+# Perform renames for any names with count > 1
+# [BUGFIX] V1 had actor_counter increment in wrong scope
+actors_by_name.each do |key, actors|
+  next unless actors.size > 1
+  log(2, "Duplicate actor name: #{key} (#{actors.size} copies)")
 
-      # do a gsub for every file in the defs folder of that wad
-      # (?<=[\s"])WyvernBall(?=[\s"])
-      # remove the last field of the file path, which is the file name
-      wad_folder = actor.file_path.split("#{fs}")[0..-2].join("#{fs}") + "#{fs}"
-      puts "Wad Folder: #{wad_folder}"
-      if actor_index == 0
-         puts "Renames:"
-         next
-      end
-      Dir.children(wad_folder).each do |file|
-        file_text = File.read(wad_folder + file)
-        #puts "@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
-        #puts "File Text Pre:"
-        #puts "@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
-        #puts file_text
-        renamed_actor = "#{actor.name_with_case}_MM#{actor_counter.to_s}"
-        # the actor name should either be surrounded by spaces
-        # ' actorname '
-        # or by quotes
-        # '"actorname"'
-        # which is what [\s"] accomplishes in the regex
-        file_text = file_text.gsub(/(?<=[\s"])#{actor.name_with_case}(?=[\s"])/, renamed_actor)
-        #puts "@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
-        #puts "File Text Post:"
-        #puts "@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
-        #puts file_text
-        File.write(wad_folder + file, file_text)
-      end
-      puts "------------------------------"
+  actors.each_with_index do |actor, idx|
+    next if idx == 0 # Keep the first as primary
+
+    wad_folder = actor.file_path.split("/")[0..-2].join("/") + "/"
+    renamed_actor = "#{actor.name_with_case}_MM#{actor_counter}"
+
+    log(3, "  Renaming #{actor.name_with_case} → #{renamed_actor} in #{wad_folder}")
+
+    Dir.children(wad_folder).each do |file|
+      file_text = File.read(wad_folder + file)
+      file_text = file_text.gsub(/(?<=[\s"])#{Regex.escape(actor.name_with_case)}(?=[\s"])/, renamed_actor)
+      File.write(wad_folder + file, file_text)
     end
+
     actor_counter += 1
   end
 end
-# All duplicate names should be addressed by this point.
 
-# Update actordb and perform deletions if they are gone
-deletion_indexes = Array(Int32).new
-actordb.each_with_index do |actor, actor_index|
-  next if actor.native == true
-  #check if the actor still exists
-  if script_type[actor.file_path] == "DECORATE"
-    regex = /^\h*actor\s+#{actor.name}/mi
-  elsif script_type[actor.file_path] == "ZSCRIPT"
-    regex = /^\h*class\s+#{actor.name}/mi
-  elsif script_type[actor.file_path] == "BUILT_IN"
-    next
-  end
-  file_paths_array = Array(String).new
-  #file_text_array = Array(String).new
-  #file_text = File.read(actor.file_path)
-  #file_text_array << file_text
-  success = false
-  file_paths_array << actor.file_path
-  file_paths_array.each do |file_path|
-    text = File.read(file_path)
-    lines = text.lines
-    lines.each do |line|
-      if line =~ /^\#include/i
-        if actor.file_path.split("#{fs}")[1] == "Processing"
-          include_file = file_path.split("#{fs}")[0..-2].join("#{fs}") + "#{fs}" + line.lstrip.strip.split[1].split('"')[1].upcase + ".raw"
-        elsif actor.file_path.split("#{fs}")[1] == "Processing_PK3"
-          # an out of bounds include file should have already thrown a fatal error, so I think this is safe to do
-          puts "Scanning source file: #{file_path}"
-          puts "Include Line: #{line}"
-          puts "Actor.source_file: #{actor.source_file}"
-          include_file = ".#{fs}" + Path[file_path.split("#{fs}")[0..-2].join("#{fs}") + "#{fs}" + line.split('"')[1]].normalize.to_s
+###############################################################################
+# REFRESH ACTORDB — Remove actors that no longer exist in files
+###############################################################################
 
-        else
-          next
-        end
-        #puts "Include File: #{include_file}"
-        file_paths_array << include_file
+log(2, "=== Refreshing Actor Database ===")
+
+actordb.reject! do |actor|
+  next false if actor.native == true
+
+  regex = /^\s*actor\s+#{Regex.escape(actor.name)}/mi
+  all_files = [actor.file_path]
+
+  # Check includes
+  file_text = safe_read(actor.file_path)
+  file_text.each_line do |line|
+    if line =~ /^#include/i
+      if md = line.match(/"([^"]+)"/)
+        include_path = actor.file_path.split("/")[0..-2].join("/") + "/" + md[1].upcase + ".raw"
+        all_files << include_path
       end
     end
-    if text =~ regex
-      puts "Actor found! #{actor.name} - #{actor.file_path}"
-      success = true
-    end
   end
-  if success == false
-    puts "Removing missing actor from actordb: #{actor.name} - #{actor.file_path}"
-    deletion_indexes << actor_index
+
+  found = all_files.any? { |f| safe_read(f) =~ regex }
+  unless found
+    log(3, "Removing missing actor: #{actor.name} from #{actor.file_path}")
   end
-end
-deletion_indexes.reverse!
-if deletion_indexes.empty? == false
-  deletion_indexes.each do |deletion_index|
-    puts "Deleting #{actordb[deletion_index].name_with_case}..."
-    actordb.delete_at(deletion_index)
-  end
+  !found
 end
 
-# refresh actors_by_name to the latest
-actors_by_name = actordb.reduce(Hash(String, Array(Actor)).new) do |acc, actor|
-  acc ||= Hash(String, Array(Actor)).new
-  if acc.fetch(actor.name, nil)
-    iteration_array = acc[actor.name]
-  else
-    iteration_array = Array(Actor).new
-  end
-  iteration_array << actor
-  acc[actor.name] = iteration_array
+# Rebuild name index
+actors_by_name = actordb.group_by(&.name)
 
-  acc
-end
+###############################################################################
+# EVALUATE MONSTER STATUS VIA INHERITANCE
+###############################################################################
 
-# we need to evaluate inheritance specifically as far as monsters are concerned
-actordb.each_with_index do |actor, actor_index|
+log(2, "=== Evaluating Monster Status ===")
+
+actordb.each do |actor|
   next if actor.built_in == true
 
-  is_monster = false
-  if actor.monster == true || actor.ismonster == true
-    puts "Actor is a confirmed monster, no need to evaluate inheritance"
-    is_monster = true
-  else
-    puts "Evaluating Inheritance For #{actor.name_with_case}"
-    inheritance = Array(String).new
-    inheritance << actor.name
+  is_monster = (actor.monster == true || actor.ismonster == true)
+
+  unless is_monster
+    # Walk the inheritance chain
+    inheritance = [actor.name]
     inherits_name = actor.inherits
-    puts "Actor.inherits: #{inherits_name}"
+
     while inherits_name != "UNDEFINED"
-      break if inherits_name == "UNDEFINED"
-      break if inherits_name == "actor"
-      break if inherits_name == "object"
-      break if inherits_name == "thinker"
-      actordb.each_with_index do |actor_check, actor_check_index|
-        if inherits_name == actor_check.name
-          puts " - Inherits: #{inherits_name} -> #{actor_check.inherits}"
-          inheritance << actor_check.name
-          inherits_name = actor_check.inherits
+      inherited_actors = actors_by_name[inherits_name]?
+      break unless inherited_actors
+
+      # Find the non-built-in version if multiple exist
+      target = inherited_actors.find { |a| !a.built_in } || inherited_actors.first?
+      break unless target
+
+      inheritance << target.name
+      inherits_name = target.inherits
+    end
+
+    # Walk reverse order checking monster status
+    inheritance.reverse!
+    inheritance.each do |inherited_name|
+      check_actors = actors_by_name[inherited_name]?
+      next unless check_actors
+
+      check_actors.each do |ac|
+        if ac.skip_super == true
+          is_monster = false
+        end
+        if ac.monster == true || ac.ismonster == true
+          is_monster = true
+        else
+          ac.flags_applied.each do |flag|
+            if flag == "-ismonster"
+              is_monster = false
+            elsif flag == "+ismonster"
+              is_monster = true
+            end
+          end
+        end
+      end
+    end
+  end
+
+  if is_monster
+    actor.ismonster = true
+    log(3, "Monster confirmed: #{actor.name_with_case}")
+  end
+end
+
+# Stats
+monster_count = actordb.count { |a| a.ismonster || a.monster }
+built_in_count = actordb.count { |a| (a.ismonster || a.monster) && a.built_in }
+log(2, "Total actors: #{actordb.size}, Monsters: #{monster_count} (Built-in: #{built_in_count})")
+
+###############################################################################
+# WIPE ALL DOOMEDNUMS AND REASSIGN TO MONSTERS
+###############################################################################
+
+log(2, "=== Wiping and Reassigning Doomednums ===")
+
+# Step 1: Remove all doomednums from non-built-in actors in files
+actordb.each do |actor|
+  next if actor.built_in || actor.doomednum == -1
+
+  file_text = safe_read(actor.file_path)
+  lines = file_text.lines
+
+  lines.each_with_index do |line, line_index|
+    next unless line =~ /^\s*actor\s+/i
+
+    words = line.split
+    delete_idx = -1
+    words.each_with_index do |word, word_index|
+      break if word == "{" || word =~ /^\//
+      if word.to_i? != nil
+        delete_idx = word_index
+      end
+    end
+
+    if delete_idx != -1
+      words.delete_at(delete_idx)
+      lines[line_index] = words.join(" ")
+    end
+  end
+
+  File.write(actor.file_path, lines.join("\n"))
+end
+
+# Step 2: Assign fresh doomednums to all monsters
+# [BUGFIX] V1 inserted doomednum AFTER the '{' or comment. Now inserts BEFORE.
+doomednum_counter = 15000
+
+actordb.each_with_index do |actor, actor_index|
+  if !actor.built_in && (actor.ismonster || actor.monster)
+    file_text = safe_read(actor.file_path)
+    lines = file_text.lines
+
+    lines.each_with_index do |line, line_index|
+      next unless line =~ /^\s*actor\s+/i
+
+      words = line.lstrip.split
+      next if words[1]?.try(&.downcase) != actor.name_with_case.downcase
+
+      # Find where to insert: BEFORE the '{' or any comment
+      insert_idx = words.size  # default: append at end
+      words.each_with_index do |word, word_index|
+        if word == "{" || word =~ /^\//
+          insert_idx = word_index
           break
         end
       end
-    end
-    # we go reverse order from end of the inheritance to beginning
-    # e.g. Blah : Blah2, Blah2 : Blah3, Blah3 <no inheritance on Blah3>
-    # we start with Blah3, check properties and then go to Blah2, and then Blah
-    inheritance.reverse!
-    inheritance.each do |inherited_actor|
-      actordb.each do |actor_check|
-        if actor_check.name == inherited_actor
-          puts "Inherited Actor: #{inherited_actor}"
-          #skip_super means inherit only states, not properties/flags AFAIK
-          #so we reset to false
-          if actor_check.skip_super == true
-            puts "SKIP SUPER! Reset any flags!"
-            is_monster = false
-          end
-          #Check for Monster property or +ISMONSTER flag
-          if actor_check.monster == true || actor_check.ismonster == true
-            puts "IS MONSTER! (monster: #{actor_check.monster} ismonster: #{actor_check.ismonster})"
-            is_monster = true
-          #for "false" values we also need to check flags_applied array
-          #because default value is "false" but it may override "monster" in rare cases
-          #I don't think the "monster" property can be false, it's true if present
-          else
-            actor_check.flags_applied.each do |flag|
-              if flag == "-ismonster"
-                puts "Actor: #{actor_check.name}, Flag -ismonster"
-                is_monster = false
-              elsif flag == "+ismonster"
-                puts "Actor: #{actor_check.name}, Flag +ismonster"
-                is_monster = true
-              end
-            end
-          end
-        end
+
+      # Find next available doomednum
+      while doomednum_info.has_key?(doomednum_counter)
+        doomednum_counter += 1
       end
+
+      words.insert(insert_idx, doomednum_counter.to_s)
+      doomednum_info[doomednum_counter] = {-1, -1}
+      actordb[actor_index].doomednum = doomednum_counter
+
+      lines[line_index] = words.join(" ")
+      log(3, "Assigned doomednum #{doomednum_counter} to #{actor.name_with_case}")
     end
-  end
-  #after all of that, if is_monster == true, then we have us a monster
-  #we will set this property for future reference
-  if is_monster == true
-    puts "Actor #{actor.name_with_case} is a Monster!"
-    actor.ismonster = true
-  end
-end
 
-actor_count = 0
-monster_count = 0
-built_in_count = 0
-id_non_monster = 0
-actordb.each do |actor|
-  if actor.ismonster == true || actor.monster == true
-    puts "Actor #{actor.name_with_case} is a monster!"
-    monster_count += 1
-    if actor.built_in == true
-      built_in_count += 1
-    end
-  elsif actor.doomednum != -1
-    puts "Actor #{actor.name_with_case} has ID #{actor.doomednum} but is not a monster"
-    id_non_monster += 1
-  end
-  actor_count += 1
-end
-puts "Total Actors: #{actor_count}"
-puts "Total Monsters: #{monster_count}"
-puts "  - Built In: #{built_in_count}"
-puts "ID'd non-monsters: #{id_non_monster}"
-
-# wipe all doomednums from the Processing directory
-actordb.each do |actor|
-  if (actor.built_in != true) && (actor.doomednum != -1)
-    puts "-------------------------------------------------------------------"
-    puts "Actor: #{actor.name_with_case}"
-    puts "File: #{actor.file_path}"
-    file_text = File.read(actor.file_path)
-    lines = file_text.lines
-    lines.each_with_index do |line, line_index|
-      if line =~ /^\h*actor\s+/i
-        puts "actor_line: #{line}"
-
-        delete_word = -1
-
-        words = line.split
-        words.each_with_index do |word, word_index|
-          puts "  word: #{word}"
-          if word == "{" || word =~ /\//
-            puts "   Word detected that starts with { or /"
-            break
-          end
-          if word.to_i? != nil
-            puts "  Number detected"
-            delete_word = word_index
-          end
-        end
-
-        if delete_word != -1
-          puts "Deleting Word: #{words[delete_word]}"
-          words.delete_at(delete_word)
-        end
-
-        lines[line_index] = words.join(" ")
-        puts "Writing Line: #{lines[line_index]}"
-        puts "---------------------"
-      end
-    end
-    puts "Writing file: #{actor.file_path}"
-    file_text = lines.join("\n")
-    File.write(actor.file_path, file_text)
+    File.write(actor.file_path, lines.join("\n"))
+  else
+    # Non-monster: clear doomednum
+    actordb[actor_index].doomednum = -1
   end
 end
 
-# Wipe any DoomEdNums from the MAPINFO files
-# looks for any 'doomednums {<code_here>}' section in MAPINFO and deletes it
-# case insensitive (i)
-mapinfo_files_pk3 = Dir.glob(".#{fs}Processing_PK3#{fs}*#{fs}MAPINFO*")
-mapinfo_files_wad = Dir.glob(".#{fs}Processing#{fs}*#{fs}MAPINFO")
-mapinfo_files_pk3.each do |mapinfo_file|
-  mapinfo_file_text = File.read(mapinfo_file)
-  mapinfo_file_text = mapinfo_file_text.gsub(/doomednums\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi, "")
-  File.write(mapinfo_file, mapinfo_file_text)
-end
-mapinfo_files_wad.each do |mapinfo_file|
-  mapinfo_file_text = File.read(mapinfo_file)
-  mapinfo_file_text = mapinfo_file_text.gsub(/doomednums\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi, "")
-  File.write(mapinfo_file, mapinfo_file_text)
-end
-# gsub(/doomednums\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi, "")
+###############################################################################
+# NOTE: Duplicate sprite removal was disabled because it runs before prefix
+# conflict resolution and can delete sprites from a WAD's set, leaving
+# incomplete rotation sets (e.g., SRG2E1-E8 reduced to just SRG2E2).
+# The PK3 merge's "keeping existing" conflict logic handles true duplicates
+# at copy time, which is safer since it operates on the final merged output.
+###############################################################################
 
-# assign doomednums to all monster actors
-doomednum_counter = 15000
-actordb.each_with_index do |actor, actor_index|
-  if script_type[actor.file_path] == "DECORATE"
-    if (actor.built_in != true) && (actor.ismonster == true || actor.monster == true)
-      file_text = File.read(actor.file_path)
-      lines = file_text.lines
-      lines.each_with_index do |line, line_index|
-        if line =~ /^\s*actor\s+/i
-          words = line.lstrip.split
-          next if words[1].downcase != actor.name_with_case.downcase
-          puts "Monster Actor found (#{actor.name_with_case}): #{line}"
-          # set to size minus 1
-          early_end_index = words.size
-          words.each_with_index do |word, word_index|
-            if word == "{" || word =~ /\//
-              early_end_index = word_index
-            end
-          end
-          while true
-            break if doomednum_info.fetch(doomednum_counter, nil) == nil
-            doomednum_counter += 1
-          end
-          words.insert((early_end_index), doomednum_counter.to_s)
-          doomednum_info[doomednum_counter] = {-1, -1}
-          actordb[actor_index].doomednum = doomednum_counter
-          lines[line_index] = words.join(" ")
-          puts "Modified line: #{lines[line_index]}"
-        end
-      end
-      file_text = lines.join("\n")
-      File.write(actor.file_path, file_text)
-    else
-      #the actor is not a monster, so it will not be assigned a doomednum, and we will wipe it to -1 in the database
-      actordb[actor_index].doomednum = -1
-    end
-  elsif script_type[actor.file_path] == "ZSCRIPT"
-    # determine if a MAPINFO file exists, and create if not
-    mapinfo_file = actor.file_path.split("#{fs}")[0..2].join("#{fs}") + "#{fs}MAPINFO"
-    if File.file?(mapinfo_file) == false
-      File.open(mapinfo_file, "w") do |file|
-        # just write a blank file and do nothing else
-      end
-    end
+###############################################################################
+# RESOLVE SPRITE PREFIX CONFLICTS
+###############################################################################
 
-    # determine if a DoomEdNums section exits, and create if not
-    mapinfo_file_text = File.read(mapinfo_file)
-    if mapinfo_file_text.match(/doomednums\s*(\{(?:([^\{\}]*)|(?:(?2)(?1)(?2))*)\})/mi) == nil
-      mapinfo_file_text = mapinfo_file_text + "\nDoomEdNums\n{\n\n}"
-    end
+log(2, "=== Resolving Sprite Prefix Conflicts ===")
 
-    # Increment DoomEdNums counter to next available
-    while true
-      break if doomednum_info.fetch(doomednum_counter, nil) == nil
-      doomednum_counter += 1
-    end
-    doomednum_info[doomednum_counter] = {-1, -1}
-
-    # add doomednum to actordb
-    actordb[actor_index].doomednum = doomednum_counter
-
-    # insert new doomednum by replacing..
-    # before:
-    # DoomEdNums
-    # {
-    #
-    # after:
-    # DoomEdNums
-    # {
-    #   <id> = <actor_name>
-    mapinfo_file_text = mapinfo_file_text.gsub(/^\h*doomednums\s*\{/mi, "DoomEdNums\n{\n  #{doomednum_counter} = #{actor.name_with_case}")
-
-    # write file
-    File.write(mapinfo_file, mapinfo_file_text)
-  elsif script_type[actor.file_path] == "BUILT_IN"
-    next
-  end
-end
-
-#################################################################
-# delete duplicate sprites                                      #
-#################################################################
-# sprites must be named identically and have identical contents #
-#################################################################
-sprites_files = Dir.glob(".#{fs}Processing#{fs}*#{fs}sprites#{fs}*")
-sprites_pk3 = Dir.glob(".#{fs}Processing_PK3#{fs}**#{fs}*").select { |entry| entry =~ /sprites/i }
-sprites_files = sprites_files + sprites_pk3
-sprites_files = sprites_files + Dir.glob(".#{fs}IWADs_Extracted#{fs}*#{fs}sprites#{fs}*")
-
-#sprites_by_name = sprites_files
-#  .group_by { |sprite| sprite.split("/").last }
-#  .select { |_, sprites| sprites.size > 1 }
-
-sprites_by_sha = sprites_files
-  .select { |sprite| File.file?(sprite) }
-  .group_by { |sprite| Digest::SHA256.new.file(sprite).hexfinal }
-  .select { |_, sprites| sprites.size > 1 }
-  .transform_values { |sprites| sprites.sort }
-
-#sprites_by_sha.each do |key, sprite|
-#  puts "Sprite: #{key}"
-#  file_index = 0
-#  sprite[key].each do |file|
-#    next if sprite.split("/")[1] == "IWADs_Extracted"
-#    puts "Sprite: #{sprite}"
-#    file_index += 1
-#  end
-#end
-
-sprites_by_sha.each do |key, sprites|
-  unique_sprites = Hash(String, String).new
-  puts "SHA Hash: #{key}"
-  sprites.each do |sprite|
-    if unique_sprites.fetch(sprite.split("#{fs}").last, nil) == nil || sprite.split("#{fs}")[1] == "IWADs_Extracted"
-      puts "  - Original: #{sprite}"
-      unique_sprites[sprite.split("#{fs}").last] = sprite
-    elsif sprite.split("#{fs}")[1] != "IWADs_Extracted"
-      puts "  - Duplicate: #{sprite}"
-      puts "    - Deleting!"
-      File.delete(sprite)
-    else
-      # We can't really delete duplicate IWAD sprites for hopefully obvious reasons
-      puts "  - IWAD Sprite: #{sprite}"
-    end
-  end
-end
-
-# wad1 -> BLAH, BORK, FOOD
-# wad2 -> BLAH, BLA3, BOOP
-# sprite_prefix["BOOP"] = [{"./Processing/monsters/sprites/BOOPA1.raw", "sha_hash_text..."}]
-
-# after deleting the dupes, we need to rebuild the list
 sprite_prefix = Hash(String, Array(Tuple(String, String))).new
-sprites_files = Dir.glob(".#{fs}Processing#{fs}*#{fs}sprites#{fs}*")
-sprites_pk3 = Dir.glob(".#{fs}Processing_PK3#{fs}**#{fs}*").select { |entry| entry =~ /sprites/i }
-sprites_files = sprites_files + sprites_pk3
-sprites_files = sprites_files + Dir.glob(".#{fs}IWADs_Extracted#{fs}*#{fs}sprites#{fs}*")
 
-# this is a bad "each" name, I'll have to fix it later...
-sprites_files.each do |directory|
-  next if File.file?(directory) == false
-  # hash key is the first 4 characters
-  # grab filename (last field in split), grab filename without extension, take first 4 chars, and ensure upper case
-  key = directory.split("#{fs}").last.split(".").first[0..3].upcase
-
-  # grab the filename sha
-  sha = Digest::SHA256.new.file(directory).hexfinal
-
-  # initialize if nil
-  if sprite_prefix.fetch(key, nil) == nil
-    sprite_prefix[key] = Array(Tuple(String, String)).new
-  end
-  sprite_prefix[key] << {directory, sha}
+sprite_files = (Dir.glob("./Processing/*/sprites/*") + Dir.glob("./IWADs_Extracted/*/sprites/*")).map { |p| normalize_path(p) }
+sprite_files.each do |path|
+  key = path.split("/").last.split(".").first[0..3].upcase
+  sha = Digest::SHA256.new.file(path).hexfinal
+  sprite_prefix[key] ||= Array(Tuple(String, String)).new
+  sprite_prefix[key] << {path, sha}
 end
 
-# This function should safely increment to the next available prefix
-def increment_prefix(original_string : String, sprite_prefix : Hash(String, Array(Tuple(String, String)))) : String
-  puts "Increment Prefix: #{original_string}"
-  original_string_modified = original_string.succ
-  puts "Modified Prefix: #{original_string_modified}"
-  while sprite_prefix.has_key?(original_string_modified)
-    puts "Modified Prefix #{original_string_modified} is taken by #{sprite_prefix[original_string_modified][0]}, trying next..."
-    original_string_modified = original_string_modified.succ
-    #error protection, check for numbers or 5 char prefixes
-    if original_string_modified =~ /^[0-9]/ || original_string_modified.size > 4
-      puts "Fatal Error: prefix \"#{original_string_modified}\" starts with digit or is larger than 4 characters"
+def increment_prefix(original : String, existing : Hash(String, Array(Tuple(String, String)))) : String
+  candidate = original.succ
+  while existing.has_key?(candidate)
+    candidate = candidate.succ
+    if candidate =~ /^[0-9]/ || candidate.size > 4
+      log(0, "Fatal: prefix '#{candidate}' invalid (starts with digit or >4 chars)")
       exit(1)
     end
   end
-  puts "Found Available Prefix: #{original_string_modified}"
-  return original_string_modified
+  candidate
 end
 
-sprite_prefix.each do |key, prefix|
-  puts "Prefix: #{key}"
+sprite_prefix.each do |key, prefix_entries|
+  # Check if multiple WADs use this prefix
+  wad_names = prefix_entries.map { |p| p[0].split("/")[2] }.uniq
+  next if wad_names.size <= 1
 
-  # Determine if a dupe prefix even exists
-  dupe_exists = false
-  dupe_name = "UNDEFINED"
-  prefix.each_with_index do |pfix, pfix_index|
-    if pfix_index == 0
-      dupe_name = pfix[0].split("#{fs}")[2]
-      next
-    end
-    if dupe_name != pfix[0].split("#{fs}")[2]
-      dupe_exists = true
-      break
-    end
-  end
-
-  # stop burning CPU for this prefix if no dupes
-  if dupe_exists == false
-    puts "NO DUPES"
+  # Never rename engine-reserved sprite prefixes
+  reserved_prefixes = Set{"TNT1", "NULL", "----", "UNKN"}
+  if reserved_prefixes.includes?(key)
+    log(2, "Sprite prefix conflict: #{key} used by #{wad_names.join(", ")} — SKIPPED (engine-reserved)")
     next
-  else
-    puts "DUPE EXISTS"
   end
 
-  # Create the array to hold the list of wads that use this prefix
-  # this is necessary, because there may be more than one wad in conflict
-  # format is: wad name, prefix name
-  # e.g. NewCacodemon, HEAD
+  log(2, "Sprite prefix conflict: #{key} used by #{wad_names.join(", ")}")
+
+  # Count how many sprites each WAD contributes for this prefix
+  wad_sprite_counts = Hash(String, Int32).new(0)
+  prefix_entries.each do |p|
+    wad_sprite_counts[p[0].split("/")[2]] += 1
+  end
+
   wads_with_prefix = Hash(String, String).new
 
-  # Step 1) determine if an IWAD file has the prefix
-  iwad_has_prefix = false
-  original_wad_prefix = "UNDEFINED"
-  prefix.each do |pfix|
-    if pfix[0].split("#{fs}")[1] == "IWADs_Extracted"
-      puts "IWAD Matched: #{pfix[0]}"
-      iwad_has_prefix = true
-      # we are going to take the first 3 fields
-      # ./Processing/<wadname>
-      # ./Processing_PK3/<pk3name>
-      original_wad_prefix = pfix[0].split("#{fs}")[0..2].join("#{fs}")
-      wads_with_prefix[original_wad_prefix] = key
-      break
-    end
+  # Prioritize: IWAD first, then WAD with most sprites for this prefix
+  iwad_entry = prefix_entries.find { |p| p[0].split("/")[1] == "IWADs_Extracted" }
+  if iwad_entry
+    wads_with_prefix[iwad_entry[0].split("/")[2]] = key
+  else
+    # WAD with the most sprites for this prefix keeps the original name
+    best_wad = wad_sprite_counts.max_by { |_, count| count }[0]
+    wads_with_prefix[best_wad] = key
+    log(2, "  Keeping prefix #{key} for #{best_wad} (#{wad_sprite_counts[best_wad]} sprites)")
   end
 
-  # Set wad prefix to first in list if undefined
-  if original_wad_prefix == "UNDEFINED"
-    original_wad_prefix = prefix[0][0].split("#{fs}")[0..2].join("#{fs}")
-    wads_with_prefix[original_wad_prefix] = key
-  end
-
-  # Increment the string to next value
   prefix_counter = increment_prefix(key, sprite_prefix)
 
-  # Step 2) build list of wads_with_prefix and assign new prefixes as needed
-  prefix.each do |pfix|
-    if wads_with_prefix.fetch(pfix[0].split("#{fs}")[0..2].join("#{fs}"), nil) == nil
-      wads_with_prefix[pfix[0].split("#{fs}")[0..2].join("#{fs}")] = prefix_counter
+  # Assign new prefixes to conflicting wads
+  prefix_entries.each do |pfix|
+    wad_name = pfix[0].split("/")[2]
+    unless wads_with_prefix.has_key?(wad_name)
+      wads_with_prefix[wad_name] = prefix_counter
       sprite_prefix[prefix_counter] = Array(Tuple(String, String)).new
       sprite_prefix[prefix_counter] << pfix
+      log(2, "  Renaming #{key} → #{prefix_counter} for #{wad_name} (#{wad_sprite_counts[wad_name]} sprites)")
+      prefix_counter = increment_prefix(prefix_counter, sprite_prefix)
     end
   end
 
-  puts "wads_with_prefix:"
-  puts wads_with_prefix.inspect
+  # Rename sprite files and update DECORATE/ZSCRIPT references
+  wads_with_prefix.each do |wad_name, new_prefix|
+    next if new_prefix == key # Skip the WAD that keeps the original prefix
 
-  # rename the files
-  wads_with_prefix.each_with_index do |prefix, index|
-    # skip the first entry which is the original
-    next if index == 0
-    if prefix[0].split("#{fs}")[1] == "Processing"
-      list_of_sprites = Dir.glob("#{prefix[0]}#{fs}sprites#{fs}#{key}*")
-    elsif prefix[0].split("#{fs}")[1] == "Processing_PK3"
-      list_of_sprites = Dir.glob("#{prefix[0]}#{fs}**#{fs}*#{fs}*").select { |entry| entry =~ /sprites/i && entry =~ /#{key}/ }
-      list_of_sprites = Dir.glob("#{prefix[0]}/sprites/")
-    else
-      # compiler necessitates this "else" I think
-      next
-    end
-    puts "Sprites in #{prefix[0]}:"
-    puts list_of_sprites.inspect
-    puts "Renaming..."
+    list_of_sprites = Dir.glob("./Processing/#{wad_name}/sprites/#{key}*").map { |p| normalize_path(p) }
     list_of_sprites.each do |sprite|
-      # prefix[1] should hold the new prefix which we will rename with
-      # regex looks for /BLAH and replaces with /BLA2
-      new_path = sprite.gsub(/#{fs}#{key}/, "/#{prefix[1]}")
-      puts "Renaming: #{sprite} -> #{new_path}"
+      dir = File.dirname(sprite)
+      old_name = File.basename(sprite)
+      new_name = old_name.sub(/^#{key}/i, new_prefix)
+      new_path = normalize_path(File.join(dir, new_name))
+      log(3, "Renaming sprite: #{old_name} → #{new_name}")
       File.rename(sprite, new_path)
     end
-  end
 
-  # rename the animations in decorate or zscript
-  wads_with_prefix.each_with_index do |prefix, index|
-    # skip the first entry which is the original
-    next if index == 0
-    # build list of wad file DECORATE and ZSCRIPT, and then pk3 version
-    if prefix[0].split("#{fs}")[1] == "Processing"
-      list_of_decorate = Dir.glob("#{prefix[0]}#{fs}defs#{fs}DECORATE.raw")
-      list_of_zscript = Dir.glob("#{prefix[0]}#{fs}defs#{fs}ZSCRIPT.raw")
-    elsif prefix[0].split("#{fs}")[1] == "Processing_PK3"
-      list_of_decorate = Dir.glob("#{prefix[0]}#{fs}DECORATE*")
-      list_of_zscript = Dir.glob("#{prefix[0]}#{fs}ZSCRIPT*")
-    else
-      # compiler necessitates this "else" I think
-    end
-    # populate includes
-    if list_of_decorate.nil?
-      puts "list_of_decorate is nil"
-    else
-      list_of_decorate.each do |decorate|
-        decorate_text = File.read(decorate)
-        decorate_text.each_line do |decorate_line|
-          if decorate_line =~ /^\s*\#include\s+/i
-            if prefix[0].split("#{fs}")[1] == "Processing"
-              list_of_decorate << "#{prefix[0]}#{fs}defs#{fs}#{decorate_line.split("\"")[1].upcase}.raw"
-            elsif prefix[0].split("#{fs}")[1] == "Processing_PK3"
-              # normalize path
-              decorate_path_normalized = Path["#{prefix[0]}#{fs}#{decorate_line.split("\"")[1]}"].normalize.to_s
-              list_of_decorate << "#{decorate_path_normalized}"
-            end
-          end
-        end
+    # Update DECORATE and ZSCRIPT references
+    # Collect all script files for this WAD (DECORATE + ZSCRIPT + their includes)
+    script_files = Array(String).new
+    dec_main = "./Processing/#{wad_name}/defs/DECORATE.raw"
+    zsc_main = "./Processing/#{wad_name}/defs/ZSCRIPT.raw"
+    script_files += collect_decorate_files(dec_main) if File.exists?(dec_main)
+    script_files += collect_decorate_files(zsc_main) if File.exists?(zsc_main)
+    script_files.uniq!
+
+    script_files.each do |script_file|
+      next unless File.exists?(script_file)
+      text = File.read(script_file)
+      # Replace ALL occurrences of the prefix in sprite reference contexts:
+      # - State frame lines: "  SRG2 E 5 A_Chase"
+      # - Could appear multiple times on a line or in goto targets
+      # Use word-boundary-aware replacement to avoid partial matches
+      # Replace sprite prefix references in state frame definitions.
+      # Sprite refs in DECORATE/ZSCRIPT are always: PREFIX FRAME DURATION [ACTION]
+      # where PREFIX is exactly 4 chars, FRAME is a single letter A-Z, DURATION is a number.
+      # Example: "PROJ A 5 A_Chase"
+      # We must NOT match inside words like "Projectile" or property names.
+      # The pattern requires: start-of-line/whitespace, then PREFIX, then space(s),
+      # then a single letter followed by a space or end (the frame character).
+      new_text = text.gsub(/(^|[ \t])#{key}([ \t]+[A-Z][ \t\d])/mi) do
+        "#{$1}#{new_prefix}#{$2}"
       end
-      list_of_decorate.each do |decorate|
-        puts "Checking file #{decorate}..."
-        decorate_text = File.read(decorate)
-        decorate_text_lines = decorate_text.lines
-        decorate_text_lines.each_with_index do |decorate_line, decorate_line_index|
-          if decorate_line =~ /^\s*#{key}\s+/i
-            puts "Matched line..: #{decorate_line}"
-            decorate_text_lines[decorate_line_index] = decorate_line.sub(key, prefix[1])
-            puts "Corrected line: #{decorate_text_lines[decorate_line_index]}"
-          end
-        end
-        decorate_text = decorate_text_lines.join("\n")
-        File.write(decorate, decorate_text)
+      if new_text != text
+        File.write(script_file, new_text)
+        log(3, "  Updated sprite references in #{script_file}: #{key} → #{new_prefix}")
       end
     end
-
-    # next we need to do the exact same thing with zscript files
-    if list_of_zscript.nil?
-      puts "list_of_zscript is nil"
-    else
-      list_of_zscript.each do |zscript|
-        zscript_text = File.read(zscript)
-        zscript_text.each_line do |zscript_line|
-          if zscript_line =~ /^\s*\#include\s+/i
-            if prefix[0].split("#{fs}")[1] == "Processing"
-              list_of_zscript << "#{prefix[0]}#{fs}defs#{fs}#{zscript_line.split("\"")[1].upcase}.raw"
-            elsif prefix[0].split("#{fs}")[1] == "Processing_PK3"
-              # normalize path
-              zscript_path_normalized = Path["#{prefix[0]}#{fs}#{zscript_line.split("\"")[1]}"].normalize.to_s
-              list_of_zscript << "#{zscript_path_normalized}"
-            end
-          end
-        end
-      end
-      list_of_zscript.each do |zscript|
-        puts "Checking file #{zscript}..."
-        zscript_text = File.read(zscript)
-        zscript_text_lines = zscript_text.lines
-        zscript_text_lines.each_with_index do |zscript_line, zscript_line_index|
-          if zscript_line =~ /^\s*#{key}\s+/i
-            puts "Matched line..: #{zscript_line}"
-            zscript_text_lines[zscript_line_index] = zscript_line.sub(key, prefix[1])
-            puts "Corrected line: #{zscript_text_lines[zscript_line_index]}"
-          end
-        end
-        zscript_text = zscript_text_lines.join("\n")
-        File.write(zscript, zscript_text)
-      end
-    end
-
   end
 end
 
-# Delete "maps" folders - we are not merging maps, those will be generated with Obsidian
-map_folders = Dir.glob(".#{fs}Processing#{fs}*#{fs}maps#{fs}")
-# we are looking for "maps" in case insensitive
-map_folders_pk3 = Dir.glob(".#{fs}Processing_PK3#{fs}*#{fs}*#{fs}").select { |entry| entry.split("#{fs}")[3] =~ /maps/i }
-map_folders = map_folders + map_folders_pk3
-map_folders.each do |folder|
-  FileUtils.rm_r(folder)
-end
+###############################################################################
+# MERGE ALL PROCESSED CONTENT INTO A SINGLE PK3
+###############################################################################
+#
+# Instead of rebuilding individual WADs, we merge everything into one PK3:
+#   1. Resource dirs (sprites/, sounds/, etc.) → flat-merged into PK3 dirs
+#   2. DECORATE files → per-WAD subdirs under decorate/, master DECORATE #includes
+#   3. Text lumps (SNDINFO, GLDEFS, etc.) → concatenated with source attribution
+#   4. Credits → merged with per-source labeling
+#   5. Unknown items → copied with warnings for manual review
+#
+# The output is ./Completed/monster_mash.pk3
+###############################################################################
 
-# Compile the folders back into wads
-puts "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
-puts "@ CREATING WADS AGAIN               @"
-puts "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
-wad_directories = Dir.glob(".#{fs}Processing#{fs}*#{fs}")
-puts wad_directories.sort.inspect
-# ./jeutool-linux build ./Completed/Reaper.wad ./Processing/Reaper/
-wad_directories.each do |wad_directory|
-  wad_destination = ".#{fs}Completed#{fs}#{wad_directory.split("#{fs}")[2]}.wad"
-  system ".#{fs}#{jeutoolexe} build \"#{wad_destination}\" \"#{wad_directory}\""
-end
+log(2, "=== Building Merged PK3 ===")
 
-# Compile the pk3 folders back into pk3s
-def add_files_to_zip(zip : Compress::Zip::Writer, base_directory : String, directory : String)
-  Dir.each_child(directory) do |entry|
-    entry_path = File.join(directory, entry)
-    relative_path = entry_path.sub(base_directory, "").strip
+# Clean and create PK3 staging directory
+if Dir.exists?(PK3_BUILD_DIR)
+  FileUtils.rm_rf(PK3_BUILD_DIR)
+end
+Dir.mkdir_p(PK3_BUILD_DIR)
+Dir.mkdir_p(File.join(PK3_BUILD_DIR, "mm_actors"))
+
+# Tracking structures
+text_lumps = Hash(String, Array(Tuple(String, String))).new     # lump_name → [{wad, content}]
+credits_parts = Array(Tuple(String, String)).new                # [{wad, credit_text}]
+conflict_log = Array(String).new                                 # resource file conflicts
+unknown_dirs = Hash(String, Array(String)).new                   # dirname → [wad_names]
+unknown_files = Hash(String, Array(String)).new                  # filename → [wad_names]
+wad_decorate_main = Array(Tuple(String, String)).new            # [{wad, pk3_relative_path}]
+wad_zscript_main = Array(Tuple(String, String)).new             # [{wad, pk3_relative_path}]
+stats_total_files = 0
+stats_total_conflicts = 0
+stats_wads_processed = 0
+
+# Process each WAD in Processing (skip IWADs — those come from the IWAD at runtime)
+wad_directories = Dir.glob("./Processing/*/").map { |p| normalize_path(p) }.sort
+total_wads = wad_directories.size
+
+wad_directories.each_with_index do |wad_dir, wad_index|
+  wad_name = File.basename(wad_dir)
+  stats_wads_processed += 1
+
+  # Progress bar
+  pct = ((wad_index + 1) * 100 / total_wads)
+  bar_width = 40
+  filled = (pct * bar_width / 100).to_i
+  bar = "#" * filled + "-" * (bar_width - filled)
+  print "\r  [#{bar}] #{pct}% (#{wad_index + 1}/#{total_wads}) #{wad_name.ljust(30)}"
+  STDOUT.flush
+
+  log(3, "── PK3 merge: #{wad_name} ──")
+
+  # Identify this WAD's DECORATE files (main + includes)
+  decorate_main = normalize_path(File.join(wad_dir, "defs", "DECORATE.raw"))
+  zscript_main = normalize_path(File.join(wad_dir, "defs", "ZSCRIPT.raw"))
+  decorate_file_set = Set(String).new
+  if File.exists?(decorate_main)
+    collect_decorate_files(decorate_main).each { |f| decorate_file_set << normalize_path(f) }
+  end
+  # Also collect ZSCRIPT includes
+  if File.exists?(zscript_main)
+    collect_decorate_files(zscript_main).each { |f| decorate_file_set << normalize_path(f) }
+  end
+
+  Dir.each_child(wad_dir) do |entry|
+    entry_path = normalize_path(File.join(wad_dir, entry))
+    entry_lower = entry.downcase
 
     if File.directory?(entry_path)
-      # Recursively add files from subdirectories
-      add_files_to_zip(zip, base_directory, entry_path)
-    else
-      # Read the file contents and add them to the zip archive
-      file_contents = File.read(entry_path)
-      zip.add(relative_path, file_contents)
-    end
-  end
-end
-directories_to_compress = Dir.glob(".#{fs}Processing_PK3#{fs}*")
-directories_to_compress.each do |directory|
-  puts "Directory: #{directory}"
-  zip_file = ".#{fs}Completed#{fs}" + directory.split("#{fs}").last + ".pk3"
-  puts "Zip File: #{zip_file}"
-  Compress::Zip::Writer.open(zip_file) do |zip|
-    add_files_to_zip(zip, directory, directory)
-  end
-end
+      #-----------------------------------------------------------------
+      # DIRECTORY ENTRIES
+      #-----------------------------------------------------------------
+      case entry_lower
+      when "defs"
+        # The defs/ directory may contain DECORATE/ZSCRIPT files + other text lumps.
+        # Actor definition files go to mm_actors/WadName/; everything else is a text lump.
+        dec_dest = normalize_path(File.join(PK3_BUILD_DIR, "mm_actors", wad_name))
+        Dir.mkdir_p(dec_dest)
+        has_main_decorate = false
+        has_main_zscript = false
 
-# Generate the Lua
-lua_file  = "------------------------------------------------\n"
-lua_file += "--        Monster Mash                        --\n"
-lua_file += "------------------------------------------------\n"
-lua_file += "\n"
-lua_file += "MONSTER_MASH = { }\n"
-lua_file += "\n"
-lua_file += "MONSTER_MASH.MONSTERS =\n"
-lua_file += "{\n"
+        Dir.each_child(entry_path) do |def_file|
+          def_path = normalize_path(File.join(entry_path, def_file))
+          next if File.directory?(def_path) # skip subdirs in defs/ for now
 
-actordb.each do |actor|
-  next if (actor.ismonster == false && actor.monster == false) || actor.doomednum == -1
-  lua_file += "  #{actor.name} =\n"
-  lua_file += "  {\n"
-  lua_file += "    id = #{actor.doomednum},\n"
-  lua_file += "    r = #{actor.radius.to_i},\n"
-  lua_file += "    h = #{actor.height},\n"
-  lua_file += "    prob = 30,\n"
-  lua_file += "    health = #{actor.health},\n"
-  lua_file += "    damage = 10,\n"
-  lua_file += "    attack = \"missile\",\n"
-  lua_file += "    density = 0.9\n"
-  lua_file += "  },\n"
-end
-# Close out the section
-lua_file += "}\n"
+          canonical = lump_name(def_file)
 
-lua_file += "OB_MODULES[\"monster_mash\"] =\n"
-lua_file += "{\n"
-lua_file += "  name = \"monster_mash_control\",\n"
-lua_file += "  label = _(\"Monster Mash\"),\n"
-lua_file += "  game = \"doomish\",\n"
-lua_file += "  port = \"zdoom\",\n"
-lua_file += "  tables =\n"
-lua_file += "  {\n"
-lua_file += "    MONSTER_MASH\n"
-lua_file += "  },\n"
-lua_file += "  hooks =\n"
-lua_file += "  {\n"
-lua_file += "    setup = MONSTER_MASH.control_setup\n"
-lua_file += "  },\n"
-lua_file += "  options =\n"
-lua_file += "  {\n"
+          if decorate_file_set.includes?(def_path)
+            # This is a DECORATE/ZSCRIPT file (main or included) — copy to mm_actors/WadName/
+            dest_file = normalize_path(File.join(dec_dest, def_file))
+            FileUtils.cp(def_path, dest_file)
+            log(3, "  DECORATE: #{def_file} → mm_actors/#{wad_name}/#{def_file}")
 
-actordb.each do |actor|
-  next if (actor.ismonster == false && actor.monster == false) || actor.doomednum == -1
-  lua_file += "    {\n"
-  lua_file += "      name = \"float_#{actor.name}\",\n"
-  lua_file += "      label = _(\"#{actor.name_with_case}\"),\n"
-  lua_file += "      valuator = \"slider\",\n"
-  lua_file += "      min = 0,\n"
-  lua_file += "      max = 20,\n"
-  lua_file += "      increment = .02,\n"
-  lua_file += "      default = _(\"Default\"),\n"
-  lua_file += "      nan = _(\"Default\"),\n"
-  lua_file += "      tooltip = _(\"Control the amount of #{actor.name_with_case}\"),\n"
-  lua_file += "      presets = _(\"0:0 (None at all,.02:0.02 (Scarce),.14:0.14 (Less),.5:0.5 (Plenty),1.2:1.2 (More),3:3 (Heaps),20:20 (INSANE)\"),\n"
-  lua_file += "      randomize_group = \"monsters\",\n"
-  lua_file += "    },\n"
-end
-
-lua_file += "  },\n"
-lua_file += "}\n"
-
-puts lua_file
-
-File.write("..#{fs}modules#{fs}monster_mash.lua", lua_file)
-###########################
-###########################
-###########################
-exit(0)
-# OLD CODE
-###########################
-
-
-
-# Check for duplicate names
-name_info = Hash(String, Tuple(Int32, Int32)).new
-
-actordb.each_with_index do |actor, actor_index|
-  if name_info.fetch(actor.name.downcase, nil)
-    puts "Duplicate name found:"
-    puts "  Name: #{actor.name}"
-    puts "  Index 1: #{name_info[actor.name][0]}"
-    puts "  Index 2: #{actor_index}"
-    puts "  Source: #{actordb[name_info[actor.name][0]].source_wad_folder}"
-    puts "  Source: #{actor.source_wad_folder}"
-
-    new_dupe_name = DupedActorName.new(actor.name, actor.source_wad_folder, actordb[name_info[actor.name][0]].source_wad_folder, actordb[name_info[actor.name][0]].file_path)
-    duped_names_db << new_dupe_name
-  else
-    name_info[actor.name.downcase] = {actor_index, actor.index}
-  end
-end
-
-# Check for duplicate doomednums
-# doomednum_info = Hash(Int32, Tuple(Int32, Int32)).new
-
-actordb.each_with_index do |actor, actor_index|
-  if doomednum_info.fetch(actor.doomednum, nil) && actor.doomednum != -1
-    puts "Duplicate doomednum found:"
-    puts "  Name: #{actor.name}"
-    puts "  Doomednum: #{actor.doomednum}"
-    puts "  Index 1: #{doomednum_info[actor.doomednum][0]}"
-    puts "  Index 2: #{actor_index}"
-    puts "  Source: #{actordb[actor_index].source_wad_folder}"
-    puts "  Source: #{actordb[doomednum_info[actor.doomednum][0]].source_wad_folder}"
-
-    new_dupe_doomednum = DupedDoomednums.new(actor.name, actor.doomednum, actor.source_wad_folder, actordb[doomednum_info[actor.doomednum][0]].source_wad_folder, actor.built_in)
-    duped_doomednum_db << new_dupe_doomednum
-  else
-    doomednum_info[actor.doomednum] = {actor_index, actor.index}
-  end
-end
-
-# check duplicate graphic prefixes
-graphics_info = Hash(String, String).new
-
-# Specify the directory path
-directory_path = ".#{fs}Processing"
-
-# Get a list of entries in the directory (files and subdirectories)
-entries = Dir.entries(directory_path)
-
-# Filter out only the directories (excluding "." and "..")
-folders = entries.select { |entry| File.directory?(File.join(directory_path, entry)) && entry != "." && entry != ".." }
-
-puts folders
-
-# Iterate over each folder
-folders.each_with_index do |folder, folder_index|
-  puts "Processing folder: #{folder}"
-
-  graphics_dir = folder + "#{fs}sprites"
-
-  # this should skip this entry if the folder does not exist - it only exists
-  # if there are graphics
-  next if !File.directory?(File.join(directory_path, graphics_dir))
-
-  # Perform your operations using the folder variable For example, you might
-  # want to list files within each folder:
-  files_in_folder = Dir.entries(File.join(directory_path, graphics_dir))
-
-  files_in_folder_upcase = files_in_folder.map { |filename| filename.upcase }
-
-  # Filter out "." and ".."
-  files_in_folder_pruned = files_in_folder_upcase.select { |entry| entry != "." && entry != ".." }
-
-  # Prune filenames to only the first 4 characters
-  pruned_filenames = files_in_folder_pruned.map { |filename| filename[0, 4] }
-
-  # Get unique filename prefixes
-  unique_pruned_filenames = pruned_filenames.uniq
-
-  puts unique_pruned_filenames
-
-  unique_pruned_filenames.each do |prefix|
-    if graphics_info.fetch(prefix, nil)
-      puts "Duplicate graphic prefix found:"
-      puts "  Prefix: #{prefix}"
-      puts "Source: #{folder}"
-      puts "  Source: #{graphics_info[prefix]}"
-      new_dupe_graphics = DupedGraphics.new(prefix, folder, graphics_info[prefix])
-      duped_graphics_db << new_dupe_graphics
-    else
-      graphics_info[prefix] = folder
-    end
-  end
-end
-
-puts "==============="
-puts "Duped Names DB:"
-puts duped_names_db
-puts "Duped Doomednum DB:"
-puts duped_doomednum_db
-puts "Duped Graphics DB:"
-puts duped_graphics_db
-
-# format is: filename, line number, replacement line
-itemized_line_replacements = Array(Tuple(String, Int32, String)).new
-duped_names_db.each_with_index do |duped_actor, duped_actor_index|
-  puts "-------------------------------------"
-  puts "Duped Actor Name: #{duped_actor.name}"
-  puts "-------------------------------------"
-  file_path = ".#{fs}Processing#{fs}" + duped_actor.wad_name + "#{fs}defs#{fs}DECORATE.raw"
-  puts " - File Path: #{file_path}"
-
-  # this is the replacement text that we will use for the duration of this loop
-  substitute_actor = "#{duped_actor.name}_MonsterMash_#{actor_counter}"
-
-  file_list = Array(String).new
-  file_list << file_path
-  puts " - Includes:"
-  File.open(file_path) do |file|
-    file.each_line do |line|
-      if line.starts_with?("#include")
-        include_file_modified = line.strip.lchop("#include ").strip('"').upcase
-        file_path = ".#{fs}Processing#{fs}" + duped_actor.wad_name + "#{fs}defs#{fs}" + include_file_modified + ".raw"
-        puts " - Include file: #{file_path}"
-        file_list << file_path
-      end
-    end
-  end
-
-  file_list = file_list.uniq
-  puts "File list: #{file_list}"
-  puts "Line changes: "
-  file_list.each do |file|
-    puts "-------------"
-    puts "File: #{file}"
-    File.open(file) do |text|
-      text.each_line.with_index do |line, line_number|
-        if line.downcase.starts_with?("actor".downcase)
-          if (parts = line.strip.split(" ")).size > 1 && parts[1].downcase == duped_actor.name.downcase
-            puts "Actor Definition (#{line_number}): \"#{line}\""
-            actor_regex = "#{line.strip.split(" ")[1]}"
-            replacement_line = line.gsub(Regex.new(actor_regex), substitute_actor)
-            puts "Replacement Actor Definition: \"#{replacement_line}\""
-            itemized_line_replacement = {file, line_number + 1, replacement_line}
-            itemized_line_replacements << itemized_line_replacement
-          end
-        elsif line.downcase.includes?("\"#{duped_actor.name.downcase}\"")
-          puts "Line (#{line_number}) matches: #{line}"
-          actor_regex = "#{duped_actor.name}"
-          replacement_line = line.gsub(/#{actor_regex}/i, substitute_actor)
-          puts "Replacement Line: #{replacement_line}"
-          itemized_line_replacement = {file, line_number + 1, replacement_line}
-          itemized_line_replacements << itemized_line_replacement
-        end
-      end
-    end
-  end
-  actor_counter += 1
-  puts "------------------------"
-end
-
-# Doomednum conflicts
-actor_counter = 0
-doomednum_counter = 14166
-
-# this will be used to check the actor line to see which field is the doomednum
-def numeric?(str : String) : Bool
-  str.to_i? != nil
-end
-
-duped_doomednum_db.each_with_index do |duped_doomednum, doomednum_index|
-  next if duped_doomednum.built_in == true
-  puts "-------------------------------------"
-  puts "Duped Doomednum: #{duped_doomednum.doomednum}"
-  puts "-------------------------------------"
-  file_path = ".#{fs}Processing#{fs}" + duped_doomednum.wad_name + "#{fs}defs#{fs}DECORATE.raw"
-  puts " - File Path: #{file_path}"
-
-  # this is the replacement text that we will use for the duration of this loop
-  substitute_doomednum = -1
-  # this is going to start counting at 14166 which should be a nice happy starting point based on ZDoom wiki
-  while true
-    if doomednum_info.fetch(doomednum_counter, nil)
-      doomednum_counter += 1
-    else
-      substitute_doomednum = doomednum_counter
-      doomednum_counter += 1
-      puts "Substitute Doomednum Allocated: #{substitute_doomednum}"
-      # I don't think we need to track the actor numbers in this code, but we already
-      # have a database of numbers going, so pardon the jankey solution with -1, -1
-      doomednum_info[substitute_doomednum] = {-1, -1}
-      break
-    end
-  end
-
-  file_list = Array(String).new
-  file_list << file_path
-  puts " - Includes:"
-  File.open(file_path) do |file|
-    file.each_line do |line|
-      if line.starts_with?("#include")
-        include_file_modified = line.strip.lchop("#include ").strip('"').upcase
-        file_path = ".#{fs}Processing#{fs}" + duped_doomednum.wad_name + "#{fs}defs#{fs}" + include_file_modified + ".raw"
-        puts " - Include file: #{file_path}"
-        file_list << file_path
-      end
-    end
-  end
-
-  file_list = file_list.uniq
-  puts "File list: #{file_list}"
-  puts "Line changes: "
-  file_list.each do |file|
-    puts "-------------"
-    puts "File: #{file}"
-    File.open(file) do |text|
-      text.each_line.with_index do |line, line_number|
-        if line.downcase.starts_with?("actor".downcase)
-          puts "Actor Line: #{line}"
-          parts = line.strip.split(/\s+/)
-          # find the doomednum in actor line - it will be the first number
-          doomednum_field = -1
-          parts.each_with_index do |part, part_index|
-            if numeric?(part)
-              doomednum_field = part_index
-              break
-            end
-          end
-          next if doomednum_field == -1
-
-          puts "Parts[doomednum_field] = #{parts[doomednum_field]}"
-          if parts[doomednum_field].to_i == duped_doomednum.doomednum
-            puts "Actor Definition (#{line_number}): \"#{line}\""
-            doomednum_regex = "#{line.strip.split(" ")[doomednum_field]}"
-            replacement_line = line.gsub(Regex.new(doomednum_regex), substitute_doomednum)
-            puts "Replacement Actor Definition: \"#{replacement_line}\""
-            itemized_line_replacement = {file, line_number + 1, replacement_line}
-            itemized_line_replacements << itemized_line_replacement
-          end
-        end
-      end
-    end
-  end
-end
-
-######################
-# Evaluate Inheritance
-######################
-# 1) we need to compile a list of inherited actors and inheritance depth
-# 2) working backwards from highest inheritance depth, we need to replace the monster and then rewrite the inheritance property
-#    e.g. actor1 : actor2, actor2 : actor3, actor 3: actor4
-#    so in this example we do
-#      set actor3 to actor4, then overwrite inherits, and any defined properties
-#      set actor2 to actor3, then overwrite inherits, and any defined properties
-#      set actor1 to actor2, then overwrite inherits, and any defined properties
-
-puts "#################################"
-puts "# Evaluating Inheritance"
-puts "#################################"
-
-# creating a default actor to do some property math (sort of as a mask, if that makes sense)
-default_actor = Actor.new("default", 1)
-
-property_list = default_actor.property_list
-
-actordb.each_with_index do |actor, actor_index|
-  # inheritance depth, actor
-  inheritance_info = Hash(Int32, String).new
-  inherited_actor_name = actor.inherits
-  inheritance_depth = 0
-  puts "-----------------"
-  puts "Actor: #{actor.name}"
-  while inherited_actor_name != "UNDEFINED"
-    puts "Inherits: #{inherited_actor_name}"
-    inheritance_info[inheritance_depth] = inherited_actor_name
-    inheritance_depth += 1
-    if name_info.fetch(inherited_actor_name, nil)
-      if actors_by_name[inherited_actor_name].size == 1
-        inherited_actor_name = actors_by_name[inherited_actor_name][0].inherits
-      elsif actors_by_name[inherited_actor_name].size > 1
-        # we need to determine if there are more than one wad that has this actor name
-        wad_dupe_counter = 0
-        actors_by_name[inherited_actor_name].each_with_index do |actor_by_name, actor_by_name_index|
-          if actor_by_name.built_in == false
-            wad_dupe_counter += 1
-            inherited_actor_name = actor_by_name.inherits
-          end
-          if wad_dupe_counter == 2
-            puts "Fatal Error: inherited actor name is duplicated:"
-            puts actor_by_name.name
-            exit(1)
-          end
-        end
-      end
-    else
-      puts "Error: inherited actor #{inherited_actor_name} is not present in source wads"
-      break
-    end
-  end
-end
-
-# Monsters without IDs
-puts "==================================="
-puts "Monsters Without IDs"
-puts "==================================="
-actordb.each_with_index do |actor, actor_index|
-  if actor.monster == true && actor.doomednum == -1
-    puts "======================================"
-    puts "Actor with no doomednum:"
-    puts "Actor: #{actor.name}"
-    puts "Wad: #{actor.source_wad_folder}"
-
-    # evaluate includes
-    file_path = ".#{fs}Completed#{fs}" + actor.source_wad_folder + "#{fs}defs#{fs}DECORATE.raw"
-    file_list = Array(String).new
-    file_list << file_path
-    File.open(file_path) do |file|
-      file.each_line do |line|
-        if line.starts_with?("#include")
-          include_file_modified = line.strip.lchop("#include ").strip('"').upcase
-          file_path = ".#{fs}Completed#{fs}" + actor.source_wad_folder + "#{fs}defs#{fs}" + include_file_modified + ".raw"
-          file_list << file_path
-        end
-      end
-    end
-
-    file_list = file_list.uniq
-
-    puts "File list: #{file_list}"
-    puts "Line changes: "
-    file_list.each do |file|
-      puts "-------------"
-      puts "File: #{file}"
-      File.open(file) do |text|
-        text.each_line.with_index do |line, line_number|
-          actor_parts = line.strip.split(/\s+/)
-          if line.downcase.starts_with?("actor".downcase) && actor_parts[1].downcase == actor.name
-            puts "ACTOR DETECTED: #{line}"
-            parts = line.strip.split(/\s+/)
-            puts "ACTOR: #{parts[1]}"
-
-
-            # doomednum goes at the end, so we just need to evaluate if there is
-            # any comments
-            last_index = -1
-            parts.each_with_index do |part, part_index|
-              if part =~ /^\/\//
-                break
-              end
-              last_index = part_index
+            if canonical == "decorate"
+              has_main_decorate = true
+              pk3_path = "mm_actors/#{wad_name}/#{def_file}"
+              wad_decorate_main << {wad_name, pk3_path}
+            elsif canonical == "zscript"
+              has_main_zscript = true
+              pk3_path = "mm_actors/#{wad_name}/#{def_file}"
+              wad_zscript_main << {wad_name, pk3_path}
             end
 
-            parts[last_index] = parts[last_index] + " #{doomednum_counter}"
-            doomednum_counter += 1
-            replacement_line = parts.join(" ")
-            puts "Actor Definition (#{line_number}): \"#{line}\""
-            puts "Replacement Actor Definition: \"#{replacement_line}\""
-            itemized_line_replacement = {file, line_number + 1, replacement_line}
-            itemized_line_replacements << itemized_line_replacement
+          elsif DECORATE_LUMP_NAMES.includes?(canonical)
+            # DECORATE/ZSCRIPT file not caught by include scan — still copy it
+            dest_file = normalize_path(File.join(dec_dest, def_file))
+            FileUtils.cp(def_path, dest_file)
+            log(3, "  DECORATE (extra): #{def_file} → mm_actors/#{wad_name}/#{def_file}")
+
+            if canonical == "decorate" && !has_main_decorate
+              has_main_decorate = true
+              pk3_path = "mm_actors/#{wad_name}/#{def_file}"
+              wad_decorate_main << {wad_name, pk3_path}
+            elsif canonical == "zscript" && !has_main_zscript
+              has_main_zscript = true
+              pk3_path = "mm_actors/#{wad_name}/#{def_file}"
+              wad_zscript_main << {wad_name, pk3_path}
+            end
+
+          elsif TEXT_LUMP_NAMES.includes?(canonical)
+            # Non-DECORATE text lump found in defs/ directory
+            content = safe_read(def_path)
+            unless content.empty?
+              text_lumps[canonical] ||= Array(Tuple(String, String)).new
+              text_lumps[canonical] << {wad_name, content}
+              log(3, "  Text lump (in defs/): #{canonical} from #{wad_name}")
+            end
+
+          elsif canonical == "credits" || canonical == "credit"
+            content = safe_read(def_path)
+            credits_parts << {wad_name, content} unless content.empty?
+            log(3, "  Credits (in defs/): #{wad_name}")
+
+          elsif SKIP_LUMP_NAMES.includes?(canonical)
+            log(3, "  Skipping engine lump in defs/: #{def_file}")
+
+          else
+            # Unknown file in defs/ — might be an included file we missed,
+            # or a lump type we haven't catalogued yet.
+            # Copy it alongside the DECORATE files just in case.
+            dest_file = normalize_path(File.join(dec_dest, def_file))
+            FileUtils.cp(def_path, dest_file)
+            unknown_files["defs/#{def_file}"] ||= Array(String).new
+            unknown_files["defs/#{def_file}"] << wad_name
+            log(1, "  Unknown file in defs/: #{def_file} (#{wad_name}) — copied to mm_actors/#{wad_name}/")
           end
         end
+
+      when "maps"
+        # Skip map data — maps are generated by Obsidian
+        log(3, "  Skipping maps/ directory")
+
+      when .in?(RESOURCE_DIRS)
+        # Known resource directory — flat-merge contents
+        dest_dir = normalize_path(File.join(PK3_BUILD_DIR, entry_lower))
+        is_sprites = (entry_lower == "sprites")
+        copied, conflicts = copy_resource_files(entry_path, dest_dir, wad_name, conflict_log, is_sprites)
+        stats_total_files += copied
+        stats_total_conflicts += conflicts
+        log(3, "  Resources: #{entry_lower}/ — #{copied} files copied, #{conflicts} conflicts")
+
+      else
+        # Unknown directory — copy preserving original case (PK3 is case-sensitive)
+        unknown_dirs[entry] ||= Array(String).new
+        unknown_dirs[entry] << wad_name
+        dest_dir = normalize_path(File.join(PK3_BUILD_DIR, entry))
+        copied, conflicts = copy_resource_files(entry_path, dest_dir, wad_name, conflict_log)
+        stats_total_files += copied
+        stats_total_conflicts += conflicts
+        log(1, "  UNKNOWN DIRECTORY: #{entry}/ in #{wad_name} — copied #{copied} files to #{entry}/")
+      end
+
+    else
+      #-----------------------------------------------------------------
+      # FILE ENTRIES (root-level files in the WAD extraction)
+      #-----------------------------------------------------------------
+      canonical = lump_name(entry)
+
+      if canonical == "credits" || canonical == "credit"
+        content = safe_read(entry_path)
+        credits_parts << {wad_name, content} unless content.empty?
+        log(3, "  Credits: #{wad_name}")
+
+      elsif DECORATE_LUMP_NAMES.includes?(canonical)
+        # Root-level DECORATE/ZSCRIPT file (outside defs/) — unusual but possible
+        dec_dest = normalize_path(File.join(PK3_BUILD_DIR, "mm_actors", wad_name))
+        Dir.mkdir_p(dec_dest)
+        dest_file = normalize_path(File.join(dec_dest, entry))
+        FileUtils.cp(entry_path, dest_file)
+        pk3_path = "mm_actors/#{wad_name}/#{entry}"
+        if canonical == "zscript"
+          unless wad_zscript_main.any? { |t| t[0] == wad_name }
+            wad_zscript_main << {wad_name, pk3_path}
+          end
+          log(2, "  Root ZSCRIPT: #{entry} → mm_actors/#{wad_name}/")
+        else
+          unless wad_decorate_main.any? { |t| t[0] == wad_name }
+            wad_decorate_main << {wad_name, pk3_path}
+          end
+          log(2, "  Root DECORATE: #{entry} → mm_actors/#{wad_name}/")
+        end
+
+      elsif TEXT_LUMP_NAMES.includes?(canonical)
+        content = safe_read(entry_path)
+        unless content.empty?
+          text_lumps[canonical] ||= Array(Tuple(String, String)).new
+          text_lumps[canonical] << {wad_name, content}
+          log(3, "  Text lump: #{canonical} from #{wad_name}")
+        end
+
+      elsif SKIP_LUMP_NAMES.includes?(canonical)
+        log(3, "  Skipping engine lump: #{entry}")
+
+      else
+        # Unknown root file — copy to PK3 root, log for review
+        dest_path = normalize_path(File.join(PK3_BUILD_DIR, entry))
+        unless File.exists?(dest_path)
+          FileUtils.cp(entry_path, dest_path)
+        else
+          # Already exists — check for conflict
+          src_sha = Digest::SHA256.new.file(entry_path).hexfinal
+          dest_sha = Digest::SHA256.new.file(dest_path).hexfinal
+          if src_sha != dest_sha
+            conflict_log << "ROOT CONFLICT: '#{entry}' — #{wad_name} differs from existing"
+            log(1, "  ROOT CONFLICT: #{entry} from #{wad_name} (keeping existing)")
+          end
+        end
+        unknown_files[entry] ||= Array(String).new
+        unknown_files[entry] << wad_name
+        log(1, "  UNKNOWN ROOT FILE: #{entry} in #{wad_name}")
       end
     end
   end
 end
 
-puts "Itemized line replacements: #{itemized_line_replacements}"
+###############################################################################
+# CREATE MASTER DECORATE FILE
+###############################################################################
 
-puts "ACTOR LIST:"
-actordb.each do |actor|
-  puts "-------------------------"
-  puts "Actor index: #{actor.index}"
-  puts "Actor name: #{actor.name}"
-  puts "Actor source_wad_folder: #{actor.source_wad_folder}"
-  puts "Actor source_file: #{actor.source_file}"
-  puts "Actor doomednum: #{actor.doomednum}"
-  puts "Actor inherits: #{actor.inherits}"
-  puts "Actor replaces: #{actor.replaces}"
-  puts "-------------------------"
+puts "" # Clear progress bar line
+log(2, "Creating master DECORATE file...")
+log(2, "  #{wad_decorate_main.size} WADs with DECORATE files")
+
+master_decorate = String.build do |io|
+  io << "// ============================================================\n"
+  io << "// Monster Mash — Master DECORATE\n"
+  io << "// Auto-generated by Unwad V2\n"
+  io << "// Total sources: #{wad_decorate_main.size}\n"
+  io << "// ============================================================\n\n"
+
+  wad_decorate_main.sort_by { |t| t[0].downcase }.each do |wad_name, pk3_path|
+    io << "// Source: #{wad_name}\n"
+    io << "#include \"#{pk3_path}\"\n\n"
+  end
 end
 
-puts "SCRIPT ENDED SUCCESSFULLY"
+File.write(normalize_path(File.join(PK3_BUILD_DIR, "DECORATE")), master_decorate)
+log(2, "Master DECORATE written with #{wad_decorate_main.size} includes.")
+
+###############################################################################
+# CREATE MASTER ZSCRIPT FILE (if any ZSCRIPT mods exist)
+###############################################################################
+
+if wad_zscript_main.size > 0
+  log(2, "Creating master ZSCRIPT file...")
+  log(2, "  #{wad_zscript_main.size} WADs with ZSCRIPT files")
+
+  master_zscript = String.build do |io|
+    io << "version \"4.2.0\"\n\n"
+    io << "// ============================================================\n"
+    io << "// Monster Mash — Master ZSCRIPT\n"
+    io << "// Auto-generated by Unwad V2\n"
+    io << "// Total sources: #{wad_zscript_main.size}\n"
+    io << "// ============================================================\n\n"
+
+    wad_zscript_main.sort_by { |t| t[0].downcase }.each do |wad_name, pk3_path|
+      io << "// Source: #{wad_name}\n"
+      io << "#include \"#{pk3_path}\"\n\n"
+    end
+  end
+
+  File.write(normalize_path(File.join(PK3_BUILD_DIR, "ZSCRIPT")), master_zscript)
+  log(2, "Master ZSCRIPT written with #{wad_zscript_main.size} includes.")
+end
+
+# Update #include paths INSIDE each WAD's DECORATE files.
+# GZDoom resolves #include relative to the PK3 root, not relative to the file.
+# So "#include SOMEACTOR" inside decorate/WadName/DECORATE.raw needs to become
+# "#include decorate/WadName/SOMEACTOR.raw"
+
+log(2, "Updating #include paths in DECORATE/ZSCRIPT files for PK3 structure...")
+# Combine both DECORATE and ZSCRIPT sources for include rewriting
+all_actor_mains = wad_decorate_main + wad_zscript_main
+all_actor_mains.each do |wad_name, pk3_path|
+  dec_dir = normalize_path(File.join(PK3_BUILD_DIR, "mm_actors", wad_name))
+  next unless Dir.exists?(dec_dir)
+
+  Dir.each_child(dec_dir) do |filename|
+    file_path = normalize_path(File.join(dec_dir, filename))
+    next if File.directory?(file_path)
+
+    content = File.read(file_path)
+    original_content = content
+
+    # Strip 'version "x.y.z"' from ZSCRIPT files — only the master ZSCRIPT
+    # should have a version directive. Duplicate version in #include'd files
+    # causes a parse error.
+    content = content.gsub(/^\s*version\s+"[^"]*"\s*$/mi, "// version directive moved to master ZSCRIPT")
+
+    # Match #include "FILENAME" and update path
+    content = content.gsub(/^(\s*#include\s+")([^"]+)(")/mi) do |match|
+      prefix = $1
+      inc_file = $2
+      suffix = $3
+
+      if inc_file.includes?("/") || inc_file.includes?("\\")
+        # Path includes directory separators — resolve relative to PK3 structure.
+        # Original includes like "../FSerpent/FSerpent.txt" were relative to defs/
+        # In the PK3, mm_actors/WadName/ is the DECORATE directory, so "../" means
+        # up to the WAD root which is now at the PK3 root.
+        #
+        # Strategy: normalize the path, strip leading "../", and check if the
+        # target file exists somewhere in the PK3 build directory.
+        normalized_inc = normalize_path(inc_file)
+
+        # Try to find the file in PK3_BUILD_DIR
+        # First, strip all leading "../" since those just go up from mm_actors/WadName/
+        stripped = normalized_inc.gsub(/^(\.\.\/)+/, "")
+        candidate_from_root = normalize_path(File.join(PK3_BUILD_DIR, stripped))
+        candidate_in_actors = normalize_path(File.join(PK3_BUILD_DIR, "mm_actors", wad_name, stripped))
+
+        if File.exists?(candidate_in_actors)
+          new_path = "mm_actors/#{wad_name}/#{stripped}"
+          log(3, "  Rewriting pathed include: #{inc_file} → #{new_path}")
+          "#{prefix}#{new_path}#{suffix}"
+        elsif File.exists?(candidate_from_root)
+          log(3, "  Rewriting pathed include (from root): #{inc_file} → #{stripped}")
+          "#{prefix}#{stripped}#{suffix}"
+        else
+          # Can't resolve — leave as-is and log warning
+          log(1, "  Cannot resolve include path: #{inc_file} in #{wad_name} (tried #{candidate_in_actors} and #{candidate_from_root})")
+          match
+        end
+      else
+        # Simple filename — convert to PK3-relative path
+        # The included file should be in the same mm_actors/WadName/ directory
+        new_path = "mm_actors/#{wad_name}/#{inc_file}"
+        # Ensure .raw extension if not present
+        unless new_path =~ /\.\w+$/
+          new_path += ".raw"
+        end
+        new_path = new_path.upcase.sub("MM_ACTORS/", "mm_actors/")
+        log(3, "  Rewriting include: #{inc_file} → #{new_path}")
+        "#{prefix}#{new_path}#{suffix}"
+      end
+    end
+
+    if content != original_content
+      File.write(file_path, content)
+      log(3, "  Updated includes in: decorate/#{wad_name}/#{filename}")
+    end
+  end
+end
+
+###############################################################################
+# WRITE CONCATENATED TEXT LUMPS
+###############################################################################
+
+log(2, "Writing concatenated text lumps...")
+log(2, "  #{text_lumps.size} distinct lump types found")
+
+text_lumps.each do |canonical_name, entries|
+  merged = String.build do |io|
+    io << "// ============================================================\n"
+    io << "// #{canonical_name.upcase} — Monster Mash (merged)\n"
+    io << "// Auto-generated by Unwad V2\n"
+    io << "// Sources: #{entries.size} WAD(s)\n"
+    io << "// ============================================================\n\n"
+
+    entries.each do |wad_name, content|
+      io << "// ── Begin: #{wad_name} " << ("─" * [1, 60 - wad_name.size].max) << "\n"
+      io << content.strip
+      io << "\n"
+      io << "// ── End: #{wad_name} " << ("─" * [1, 62 - wad_name.size].max) << "\n\n"
+    end
+  end
+
+  # Write with the canonical lump name (uppercase, no extension — GZDoom convention)
+  output_name = canonical_name.upcase
+
+  # Post-process GLDEFS: normalize light definition tags for compatibility.
+  # Some mods use non-standard casing (e.g., "Pointlight" instead of "PointLight")
+  # which newer GZDoom accepts but older forks like UZDoom reject.
+  if canonical_name == "gldefs"
+    gldefs_fixes = 0
+    brace_fixes = 0
+    # UZDoom (and older GZDoom forks) require all-lowercase light tags.
+    # Newer GZDoom accepts mixed case, but we normalize to lowercase for compatibility.
+    light_tags = {
+      "pointlight"    => "pointlight",
+      "spotlight"     => "spotlight",
+      "pulselight"    => "pulselight",
+      "flickerlight"  => "flickerlight",
+      "flickerlight2" => "flickerlight2",
+      "sectorlight"   => "sectorlight",
+    }
+
+    # --- Pass 1: Fix unbalanced braces per WAD section ---
+    # Each WAD's GLDEFS was concatenated between "Begin:" and "End:" markers.
+    # If a WAD has a missing closing brace, it corrupts all subsequent sections.
+    # We scan each section and append missing closing braces.
+    sections = merged.split(/^(\/\/ ── Begin: .+)$/m)
+    rebuilt = String.build do |io|
+      i = 0
+      while i < sections.size
+        section = sections[i]
+        # Check if this is a "Begin:" marker
+        if section =~ /^\/\/ ── Begin: (.+)/
+          wad_section_name = $1.strip.gsub(/─+$/, "").rstrip
+          # The actual content is in the next segment (up to next Begin: or end)
+          content_part = (i + 1 < sections.size) ? sections[i + 1] : ""
+          # Count braces in this section
+          open_braces = content_part.count('{')
+          close_braces = content_part.count('}')
+          if open_braces > close_braces
+            missing = open_braces - close_braces
+            brace_fixes += missing
+            log(1, "  GLDEFS: #{wad_section_name} has #{missing} missing closing brace(s) — auto-fixing")
+            io << section
+            io << content_part.rstrip
+            io << "\n"
+            missing.times { io << "}\n" }
+            io << "\n"
+          else
+            io << section << content_part
+          end
+          i += 2
+        else
+          io << section
+          i += 1
+        end
+      end
+    end
+    merged = rebuilt if brace_fixes > 0
+
+    # --- Pass 2: Normalize light definition tags to lowercase ---
+    lines = merged.lines
+    lines.each_with_index do |line, i|
+      stripped = line.strip
+      first_word = stripped.split(/\s+/, 2).first?.try(&.downcase) || ""
+      if light_tags.has_key?(first_word) && stripped.split(/\s+/, 2).first != light_tags[first_word]
+        old_word = stripped.split(/\s+/, 2).first.not_nil!
+        lines[i] = line.sub(old_word, light_tags[first_word])
+        gldefs_fixes += 1
+      end
+    end
+    if gldefs_fixes > 0 || brace_fixes > 0
+      merged = lines.join("\n") if gldefs_fixes > 0
+      log(2, "  GLDEFS: normalized #{gldefs_fixes} light tags, fixed #{brace_fixes} missing braces")
+    end
+  end
+
+  File.write(normalize_path(File.join(PK3_BUILD_DIR, output_name)), merged)
+  log(2, "  #{output_name}: #{entries.size} source(s) merged")
+end
+
+###############################################################################
+# WRITE MERGED CREDITS
+###############################################################################
+
+log(2, "Writing merged CREDITS lump...")
+
+credits_merged = String.build do |io|
+  io << "================================================================\n"
+  io << "  MONSTER MASH — Combined Credits\n"
+  io << "  Auto-generated by Unwad V2\n"
+  io << "================================================================\n\n"
+
+  if credits_parts.empty?
+    io << "No individual credit lumps were found in the source WADs.\n"
+    io << "See individual mod pages for author attribution.\n\n"
+  end
+
+  # Always list all source WADs, even if they didn't have a CREDITS lump
+  io << "── Source WADs (" << stats_wads_processed.to_s << ") "
+  io << ("─" * 40) << "\n\n"
+
+  wad_directories.each do |wad_dir|
+    wad_name = File.basename(wad_dir)
+    io << "  • #{wad_name}\n"
+  end
+  io << "\n"
+
+  # Then include each WAD's original credits content
+  credits_parts.each do |wad_name, content|
+    io << "── Credits: #{wad_name} " << ("─" * [1, 50 - wad_name.size].max) << "\n\n"
+    io << content.strip
+    io << "\n\n"
+  end
+
+  io << "================================================================\n"
+  io << "  End of Credits\n"
+  io << "================================================================\n"
+end
+
+File.write(normalize_path(File.join(PK3_BUILD_DIR, "CREDITS")), credits_merged)
+log(2, "CREDITS written (#{credits_parts.size} source credits found)")
+
+###############################################################################
+# LOG SUMMARY — Unknown & Conflict Report
+###############################################################################
+
+log(2, "")
+log(2, "=== PK3 Merge Summary ===")
+log(2, "  WADs processed:     #{stats_wads_processed}")
+log(2, "  Resource files:     #{stats_total_files}")
+log(2, "  File conflicts:     #{stats_total_conflicts}")
+log(2, "  DECORATE sources:   #{wad_decorate_main.size}")
+log(2, "  ZSCRIPT sources:    #{wad_zscript_main.size}")
+log(2, "  Text lumps merged:  #{text_lumps.size}")
+log(2, "  Credits found:      #{credits_parts.size}")
+
+unless unknown_dirs.empty?
+  log(1, "")
+  log(1, "── Unknown Directories (copied but may need review) ──")
+  unknown_dirs.each do |dirname, wads|
+    log(1, "  #{dirname}/ — found in: #{wads.join(", ")}")
+  end
+end
+
+unless unknown_files.empty?
+  log(1, "")
+  log(1, "── Unknown Files (copied but may need review) ──")
+  unknown_files.each do |filename, wads|
+    log(1, "  #{filename} — found in: #{wads.join(", ")}")
+  end
+end
+
+unless conflict_log.empty?
+  log(1, "")
+  log(1, "── Resource Conflicts (#{conflict_log.size} total) ──")
+  conflict_log.each { |msg| log(1, "  #{msg}") }
+end
+
+# Write the full report to a log file for offline review
+report_path = "./Completed/pk3_merge_report.txt"
+File.open(report_path, "w") do |f|
+  f.puts "Monster Mash PK3 Merge Report"
+  f.puts "Generated by Unwad V2"
+  f.puts "=" * 60
+  f.puts ""
+  f.puts "WADs processed: #{stats_wads_processed}"
+  f.puts "Resource files copied: #{stats_total_files}"
+  f.puts "File conflicts: #{stats_total_conflicts}"
+  f.puts "DECORATE sources: #{wad_decorate_main.size}"
+  f.puts "ZSCRIPT sources: #{wad_zscript_main.size}"
+  f.puts "Text lumps merged: #{text_lumps.size}"
+  f.puts "Credits found: #{credits_parts.size}"
+  f.puts ""
+
+  f.puts "DECORATE include order:"
+  wad_decorate_main.sort_by { |t| t[0].downcase }.each do |wad_name, pk3_path|
+    f.puts "  #{wad_name} → #{pk3_path}"
+  end
+  f.puts ""
+
+  unless wad_zscript_main.empty?
+    f.puts "ZSCRIPT include order:"
+    wad_zscript_main.sort_by { |t| t[0].downcase }.each do |wad_name, pk3_path|
+      f.puts "  #{wad_name} → #{pk3_path}"
+    end
+    f.puts ""
+  end
+
+  unless text_lumps.empty?
+    f.puts "Text lumps:"
+    text_lumps.each do |name, entries|
+      f.puts "  #{name.upcase}: #{entries.map { |e| e[0] }.join(", ")}"
+    end
+    f.puts ""
+  end
+
+  unless unknown_dirs.empty?
+    f.puts "Unknown directories:"
+    unknown_dirs.each do |dirname, wads|
+      f.puts "  #{dirname}/ — #{wads.join(", ")}"
+    end
+    f.puts ""
+  end
+
+  unless unknown_files.empty?
+    f.puts "Unknown files:"
+    unknown_files.each do |filename, wads|
+      f.puts "  #{filename} — #{wads.join(", ")}"
+    end
+    f.puts ""
+  end
+
+  unless conflict_log.empty?
+    f.puts "Conflicts (#{conflict_log.size}):"
+    conflict_log.each { |msg| f.puts "  #{msg}" }
+    f.puts ""
+  end
+end
+log(2, "Merge report written to: #{report_path}")
+
+###############################################################################
+# CREATE PK3 (ZIP the build directory)
+###############################################################################
+
+log(2, "Creating PK3 file: #{PK3_OUTPUT}")
+
+begin
+  File.open(PK3_OUTPUT, "w") do |file|
+    Compress::Zip::Writer.open(file) do |zip|
+      add_dir_to_zip(zip, PK3_BUILD_DIR, "")
+    end
+  end
+  pk3_size = File.size(PK3_OUTPUT)
+  size_mb = (pk3_size / (1024.0 * 1024.0)).round(2)
+  log(2, "PK3 created successfully: #{PK3_OUTPUT} (#{size_mb} MB)")
+rescue ex
+  log(0, "Failed to create PK3: #{ex.message}")
+  log(0, "The staged PK3 content is still available in #{PK3_BUILD_DIR}/ for manual zipping.")
+  log(0, "You can manually create the PK3 with:")
+  log(0, "  PowerShell: Compress-Archive -Path '#{PK3_BUILD_DIR}\\*' -DestinationPath '#{PK3_OUTPUT}'")
+  log(0, "  Linux/Mac:  cd '#{PK3_BUILD_DIR}' && zip -r monster_mash.pk3 .")
+end
+
+###############################################################################
+# GENERATE LUA MODULE FILE
+###############################################################################
+
+log(2, "=== Generating Lua Module ===")
+
+# Determine attack type from DECORATE states
+# "melee" = only has Melee state, no Missile state
+# "missile" = has Missile state (ranged attack)
+# "combo" = has both Melee and Missile states
+def detect_attack_type(actor : Actor) : String
+  has_melee = actor.states.has_key?("melee")
+  has_missile = actor.states.has_key?("missile")
+  if has_melee && has_missile
+    "combo"
+  elsif has_melee
+    "melee"
+  else
+    "missile"
+  end
+end
+
+# Calculate difficulty tier from health
+# Returns {prob, density, damage} based on health thresholds
+# Tougher monsters get lower prob/density so they appear less often
+def difficulty_tier(health : Int32) : {Int32, Float64, Float64}
+  case health
+  when     ..60 then {50, 1.2, 5.0}     # Fodder (weaker than Imp)
+  when   61..200 then {40, 1.0, 15.0}   # Low-tier (Imp-class)
+  when  201..500 then {30, 0.8, 30.0}   # Mid-tier (Cacodemon-class)
+  when  501..1000 then {20, 0.5, 50.0}  # Heavy (Baron-class)
+  when 1001..2000 then {10, 0.3, 80.0}  # Boss-tier (Cyberdemon-class)
+  when 2001..4000 then {5, 0.2, 120.0}  # Super-boss
+  else                 {2, 0.1, 200.0}  # Ultra-boss (4000+)
+  end
+end
+
+# Filter: skip sub-actors, projectiles disguised as monsters, and other
+# actors that shouldn't be independently spawned by Obsidian.
+# Heuristics:
+#   - Very small radius (<=5) AND very small height (<=8): likely a projectile/effect
+#   - Height of 1: sub-actor or dummy
+#   - Health <= 0: not meant to be fought
+def should_include_in_lua(actor : Actor) : Bool
+  return false if actor.health <= 0
+  return false if actor.radius <= 5 && actor.height <= 8
+  return false if actor.height <= 1
+  return false if actor.radius <= 1
+  true
+end
+
+lua_monster_count = 0
+
+lua = String.build do |io|
+  io << "----------------------------------------------------------------\n"
+  io << "--  Monster Mash — Obsidian Module (auto-generated by Unwad)  --\n"
+  io << "----------------------------------------------------------------\n\n"
+  io << "MONSTER_MASH = { }\n\n"
+
+  # ── control_setup function ──────────────────────────────────────────
+  io << "function MONSTER_MASH.control_setup(self)\n"
+  io << "  for name, info in pairs(MONSTER_MASH.MONSTERS) do\n"
+  io << "    local opt = self.options[\"float_\" .. name]\n"
+  io << "    if opt then\n"
+  io << "      local factor = opt.value\n"
+  io << "      if factor then\n"
+  io << "        info.prob = info.prob * factor\n"
+  io << "        info.density = info.density * factor\n"
+  io << "      end\n"
+  io << "    end\n"
+  io << "  end\n"
+  io << "end\n\n"
+
+  # ── MONSTER_MASH.MONSTERS table ────────────────────────────────────
+  io << "MONSTER_MASH.MONSTERS =\n{\n"
+
+  actordb.each do |actor|
+    next unless (actor.ismonster || actor.monster) && actor.doomednum != -1
+    next unless should_include_in_lua(actor)
+
+    attack = detect_attack_type(actor)
+    prob, density, damage = difficulty_tier(actor.health)
+
+    # Adjust for flying monsters — slightly lower prob (harder to fight)
+    if actor.float || actor.nogravity
+      prob = (prob * 0.8).to_i
+      prob = 1 if prob < 1
+    end
+
+    # Sanitize name for Lua: replace non-alphanumeric/underscore with underscore
+    lua_key = actor.name.gsub(/[^a-zA-Z0-9_]/, "_")
+    # If name starts with a digit, prefix with underscore
+    lua_key = "_#{lua_key}" if lua_key[0]?.try(&.ascii_number?)
+
+    io << "  #{lua_key} =\n"
+    io << "  {\n"
+    io << "    id = #{actor.doomednum},\n"
+    io << "    r = #{actor.radius.to_i},\n"
+    io << "    h = #{actor.height},\n"
+    io << "    prob = #{prob},\n"
+    io << "    health = #{actor.health},\n"
+    io << "    damage = #{damage},\n"
+    io << "    attack = \"#{attack}\",\n"
+    io << "    density = #{density}\n"
+    io << "  },\n"
+    lua_monster_count += 1
+  end
+
+  io << "}\n\n"
+
+  # ── OB_MODULES registration ────────────────────────────────────────
+  io << "OB_MODULES[\"monster_mash\"] =\n{\n"
+  io << "  name = \"monster_mash_control\",\n"
+  io << "  label = _(\"Monster Mash\"),\n"
+  io << "  game = \"doomish\",\n"
+  io << "  port = \"zdoom\",\n"
+  io << "  tables =\n  {\n    MONSTER_MASH\n  },\n"
+  io << "  hooks =\n  {\n    setup = MONSTER_MASH.control_setup\n  },\n"
+  io << "  options =\n  {\n"
+
+  actordb.each do |actor|
+    next unless (actor.ismonster || actor.monster) && actor.doomednum != -1
+    next unless should_include_in_lua(actor)
+    lua_key = actor.name.gsub(/[^a-zA-Z0-9_]/, "_")
+    lua_key = "_#{lua_key}" if lua_key[0]?.try(&.ascii_number?)
+    io << "    {\n"
+    io << "      name = \"float_#{lua_key}\",\n"
+    io << "      label = _(\"#{actor.name_with_case}\"),\n"
+    io << "      valuator = \"slider\",\n"
+    io << "      min = 0,\n"
+    io << "      max = 20,\n"
+    io << "      increment = 0.02,\n"
+    io << "      default = 0.2,\n"
+    io << "      presets = _(\"0:0 (None),0.02:0.02 (Scarce),0.14:0.14 (Less),0.5:0.5 (Plenty),1.2:1.2 (More),3:3 (Heaps),20:20 (INSANE)\"),\n"
+    io << "      randomize_group = \"monsters\",\n"
+    io << "    },\n"
+  end
+
+  io << "  },\n}\n"
+end
+
+# Write lua output
+lua_output_path = "../modules/monster_mash.lua"
+File.write(lua_output_path, lua)
+log(2, "Lua module written to: #{lua_output_path}")
+log(2, "Lua monsters included: #{lua_monster_count}")
+
+puts lua if LOG_LEVEL >= 3
+
+log(2, "=== Unwad V4 Completed Successfully ===")
