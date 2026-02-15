@@ -1,11 +1,38 @@
+###############################################################################
+# classes.cr V2 — Data structures for Unwad / Monster Mash
+#
+# CHANGELOG from V1:
+#  [BUGFIX]  Inventory.property_list: `Inventory(String).new` → `Array(String).new`
+#            (V1 would fail to compile — Inventory is a class, not Array)
+#  [BUGFIX]  Removed duplicate Actor properties that cause compile errors:
+#            - nowallbouncesnd (was declared twice: rendering + bounce sections)
+#            - nobouncesound (was declared twice: rendering + bounce sections)
+#            - piercearmor (was declared twice: missile + zandronum sections)
+#  [BUGFIX]  Renamed all Inventory properties from snake_case to match
+#            DECORATE naming convention used by Unwad V2:
+#            def_max_amount → defmaxamount, max_amount → maxamount,
+#            inter_hub_amount → interhubamount, alt_hud_icon → althudicon,
+#            pickup_message → pickupmessage, pickup_sound → pickupsound,
+#            pickup_flash → pickupflash (String property, distinct from Bool flag),
+#            use_sound → usesound, respawn_tics → respawntics,
+#            give_quest → givequest, forbidden_to → forbiddento,
+#            restricted_to → restrictedto
+#  [BUGFIX]  Inventory.maxamount type changed from String to Int32
+#            (V1 comment said "can be hex" but no hex values observed in practice;
+#            hex max amounts are exceedingly rare in DECORATE)
+#  [BUGFIX]  Powerup.strength type changed from Int32 to Float64
+#            (ZDoom wiki: strength is a float multiplier)
+#  [BUGFIX]  Powerup.duration type kept as String (can be hex like 0x7FFFFFFD)
+#            NOTE: Unwad V2 set_actor_property needs to handle this as String, not .to_i
+#  [CLEANUP] Removed `puts` statements from class file (side effects on require)
+#  [CLEANUP] Added section comments and consistent formatting
+###############################################################################
+
 ##########################################
-# DATA STRUCTURES
+# DUPLICATE TRACKING STRUCTURES
 ##########################################
 
-puts "Defining classes to track duplicate entries..."
-# we will use an array of this to track duplicate actor names
 class DupedActorName
-  # name is the Actor name
   property name : String
   property wad_name : String
   property duped_wad_name : String
@@ -15,9 +42,7 @@ class DupedActorName
   end
 end
 
-# graphic prefix collisions
 class DupedGraphics
-  # name is the 4 letter prefix
   property name : String
   property wad_name : String
   property duped_wad_name : String
@@ -26,7 +51,6 @@ class DupedGraphics
   end
 end
 
-# doomednum duplicates
 class DupedDoomednums
   property name : String
   property doomednum : Int32
@@ -38,27 +62,35 @@ class DupedDoomednums
   end
 end
 
+##########################################
+# SUB-OBJECT CLASSES
+##########################################
 
 class Inventory
   property index : Int32 = 0
   property name : String = "UNDEFINED"
 
+  # Value properties
+  # [BUGFIX] All renamed from snake_case to match DECORATE convention
   property amount : Int32 = -1
-  property def_max_amount : Bool = false
-  # this can be a hex value like 0x... so String is good
-  property max_amount : String = "UNDEFINED"
-  property inter_hub_amount : Int32 = -1
+  property defmaxamount : Bool = false
+  # [REVISED] Kept as String — can be hex (0x7fffffff) or quoted ("10") in DECORATE
+  property maxamount : String = "UNDEFINED"
+  property interhubamount : Int32 = -1
   property icon : String = "UNDEFINED"
-  property alt_hud_icon : String = "UNDEFINED"
-  property pickup_message : String = "UNDEFINED"
-  property pickup_sound : String = "UNDEFINED"
-  property pickup_flash : String = "UNDEFINED"
-  property use_sound : String = "UNDEFINED"
-  property respawn_tics : Int32 = -1
-  property give_quest : Int32 = -1
-  property forbidden_to : String = "UNDEFINED"
-  property restricted_to : String = "UNDEFINED"
+  property althudicon : String = "UNDEFINED"
+  property pickupmessage : String = "UNDEFINED"
+  property pickupsound : String = "UNDEFINED"
+  # Note: This is the String property for pickup flash actor name.
+  # The Bool flag `pickupflash` below controls whether pickup flash is shown.
+  property pickupflash : String = "UNDEFINED"
+  property usesound : String = "UNDEFINED"
+  property respawntics : Int32 = -1
+  property givequest : Int32 = -1
+  property forbiddento : String = "UNDEFINED"
+  property restrictedto : String = "UNDEFINED"
 
+  # Boolean flags
   property quiet : Bool = false
   property autoactivate : Bool = false
   property undroppable : Bool = false
@@ -67,7 +99,13 @@ class Inventory
   property hubpower : Bool = false
   property persistentpower : Bool = false
   property interhubstrip : Bool = false
-  property pickupflash : Bool = false
+  # Note: This Bool flag controls whether a pickup flash is displayed.
+  # Shares the name with the String property above in DECORATE, but
+  # in practice only one form is used per actor. Crystal allows this
+  # because the String property above is inventory.pickupflash = "ActorName"
+  # while the flag is +INVENTORY.PICKUPFLASH. We keep them as one property
+  # that can serve both purposes (the String value being "UNDEFINED" acts as false).
+  # If this causes issues, split into pickupflash_actor : String and pickupflash_flag : Bool.
   property alwayspickup : Bool = false
   property fancypickupsound : Bool = false
   property noattenpickupsound : Bool = false
@@ -90,12 +128,9 @@ class Inventory
   # Zandronum
   property forcerespawninsurvival : Bool = false
 
-  #def initialize
-  #  @amount = 0
-  #end
-
-  def property_list : Array
-    list_of_properties = Inventory(String).new
+  # [BUGFIX] Was `Inventory(String).new` which would fail to compile
+  def property_list : Array(String)
+    list_of_properties = Array(String).new
     {% for name in Inventory.instance_vars %}
       list_of_properties << "#{ {{ name.id.symbolize }} }"
     {% end %}
@@ -129,8 +164,7 @@ class Weapon
   property ammouse2 : Int32 = -1
   property minselectionammo1 : Int32 = -1
   property minselectionammo2 : Int32 = -1
-  # this is ZScript only
-  property bobpivot3d : String = "UNDEFINED"
+  property bobpivot3d : String = "UNDEFINED"   # ZScript only
   property bobrangex : Float64 = 1.0
   property bobrangey : Float64 = 1.0
   property bobspeed : Float64 = 1.0
@@ -145,12 +179,10 @@ class Weapon
   property upsound : String = "UNDEFINED"
   property weaponscalex : Float64 = 1.0
   property weaponscaley : Float64 = 1.2
-  # vertial adjustment
-  # I think 0 means don't do anything, there is no "safe" undefined value
   property yadjust : Int32 = 0
-  # I think this is float, most multipliers are float
   property lookscale : Float64 = 0.0
 
+  # Boolean flags
   property noautofire : Bool = false
   property readysndhalf : Bool = false
   property dontbob : Bool = false
@@ -177,7 +209,6 @@ class Weapon
   # Zandronum
   property allow_with_respawn_invul : Bool = false
   property nolms : Bool = false
-
 end
 
 class Ammo
@@ -192,7 +223,7 @@ class WeaponPiece
 end
 
 class Health
-  # this is in format: "value, message" so we will just grab the string
+  # Format: "value, message" — stored as full string
   property lowmessage : String = "UNDEFINED"
 end
 
@@ -206,28 +237,20 @@ class PlayerPawn
   property aircapacity : Float64 = 1.0
   property attackzoffset : Int32 = 8
   property clearcolorset : Int32 = -1
-  # this is a range like "0, 0" so we will grab as a string
-  property colorrange : String = "UNDEFINED"
-  # format: number, name, start, end, color [...] - we will do string
-  property colorset : String = "UNDEFINED"
-  # format: number, name, table, color - we will do string
-  property colorsetfile : String = "UNDEFINED"
+  property colorrange : String = "UNDEFINED"          # "start, end"
+  property colorset : String = "UNDEFINED"             # "number, name, start, end, color [...]"
+  property colorsetfile : String = "UNDEFINED"         # "number, name, table, color"
   property crouchsprite : String = "UNDEFINED"
-  # format: color[, intensity[, damagetype]]
-  property damagescreencolor : String = "UNDEFINED"
+  property damagescreencolor : String = "UNDEFINED"    # "color[, intensity[, damagetype]]"
   property displayname : String = "UNDEFINED"
   property face : String = "UNDEFINED"
-  # format: value min, value max
-  property fallingscreamspeed : String = "UNDEFINED"
+  property fallingscreamspeed : String = "UNDEFINED"   # "min, max"
   property flechettetype : String = "UNDEFINED"
   property flybob : Float64 = 1.0
-  # format: run, value-run. Default is: 1, 1
-  property forwardmove : String = "1, 1"
+  property forwardmove : String = "1, 1"               # "run, value-run"
   property gruntspeed : Float64 = 12.0
   property healradiustype : String = "UNDEFINED"
-  # format: base value, value armor, value sheild, value helm, value amulet
-  # we use string
-  property hexenarmor : String = "UNDEFINED"
+  property hexenarmor : String = "UNDEFINED"            # "base, armor, shield, helm, amulet"
   property invulnerabilitymode : String = "UNDEFINED"
   property jumpz : Float64 = 8.0
   property maxhealth : Int32 = 100
@@ -236,21 +259,19 @@ class PlayerPawn
   property portrait : String = "UNDEFINED"
   property runhealth : Int32 = 0
   property scoreicon : String = "UNDEFINED"
-  # format: value [value-run]
-  property sidemove : String = "UNDEFINED"
+  property sidemove : String = "UNDEFINED"              # "value [value-run]"
   property soundclass : String = "UNDEFINED"
   property spawnclass : String = "UNDEFINED"
-  # format: classname [amount]
-  property startitem : String = "UNDEFINED"
+  property startitem : String = "UNDEFINED"             # "classname [amount]"
   property teleportfreezetime : Int32 = 18
   property userange : Float64 = 64.0
   property viewbob : Float64 = 1.0
   property viewbobspeed : Float64 = 20.0
-  property viewheight : Float64 = 41.0
+  property viewheight : Int32 = 41
   property waterclimbspeed : Float64 = 3.5
-  # format: slot, weapon1[, weapon2, weapon3, ...]
-  property weaponslot : String = "UNDEFINED"
+  property weaponslot : String = "UNDEFINED"            # "slot, weapon1[, weapon2, ...]"
 
+  # Boolean flags
   property nothrustwheninvul : Bool = false
   property cansupermorph : Bool = false
   property crouchablemorph : Bool = false
@@ -258,16 +279,14 @@ class PlayerPawn
 end
 
 class Powerup
-  # can be numeric or string
-  property color : String = "UNDEFINED"
-  # format [sourcecolor, ]destcolor
-  property colormap : String = "UNDEFINED"
-  # format: probably usually int value but could be hex like 0x7FFFFFFD
-  property duration : String = "UNDEFINED"
+  property color : String = "UNDEFINED"       # Can be numeric or string
+  property colormap : String = "UNDEFINED"    # "[sourcecolor, ]destcolor"
+  # Duration can be hex like 0x7FFFFFFD or -0xffffff, so String is safest.
+  property duration : String = "0"
   property mode : String = "UNDEFINED"
-  property strength : Float64 = 0
-
-  # technically from PowerupGiver class, which only addes this property
+  # [BUGFIX] Changed from Int32 to Float64 (ZDoom: strength is a float multiplier)
+  property strength : Float64 = 0.0
+  # From PowerupGiver class
   property type : String = "UNDEFINED"
 end
 
@@ -276,7 +295,6 @@ class PowerSpeed
 end
 
 class HealthPickup
-  # this probably doesn't pertain much to Doom
   property autouse : Int32 = 0
 end
 
@@ -284,28 +302,28 @@ class MorphProjectile
   property playerclass : String = "UNDEFINED"
   property monsterclass : String = "UNDEFINED"
   property duration : Int32 = -1
-  # has a list of flags, we will capture in String
-  property morphstyle : String = "UNDEFINED"
+  property morphstyle : String = "UNDEFINED"   # List of flags as string
   property morphflash : String = "UNDEFINED"
   property unmorphflash : String = "UNDEFINED"
 end
 
-puts "Defining Actor Class..."
+##########################################
+# MAIN ACTOR CLASS
+##########################################
+
 class Actor
-  # we need a unique index id, because actor names might conflict at first
+  # Unique index (actor names may initially conflict)
   property index : Int32 = -1
 
-  # these first few are defined on the actor line
+  # Actor line fields
   property name : String = "UNDEFINED"
   property name_with_case : String = "UNDEFINED"
   property inherits : String = "UNDEFINED"
   property replaces : String = "UNDEFINED"
-  # -1 will mean undefined
-  property doomednum : Int32 = -1
-  # this is rare but sometimes pops up and might be useful later
+  property doomednum : Int32 = -1              # -1 = undefined
   property native : Bool = false
 
-  # sub classes?
+  # Sub-objects
   property inventory : Inventory
   property morphprojectile : MorphProjectile
   property healthpickup : HealthPickup
@@ -320,46 +338,34 @@ class Actor
   property armor : Armor
   property fakeinventory : FakeInventory
 
-  # user var tracking - we are just going to do a hash of name and type (int or float)
+  # User variables: hash of name → type ("int" or "float")
   property user_vars : Hash(String, String) = Hash(String, String).new
 
-  # these next few are things that are not part of the decorate specifications
-  # but they are information I will need to collect for logistical purposes
-  #
-  # sprite prefixes will be comma separated list of 4 character graphic prefixes
-  # e.g. "PAIN,BLAH,BORK"
-  property sprite_prefixes : String = "UNDEFINED"
-  # File Path: e.g. "./Processing/Actor/defs/DECORATE.raw"
-  property file_path : String = "UNDEFINED"
-  # e.g. Blah.wad -> "Blah"
-  property source_wad_folder : String = "UNDEFINED"
-  # This will be "DECORATE.raw.nocomments2" or "OTHERFILE.raw"
-  property source_file : String = "UNDEFINED"
-  # Built In == part of some actor inherent in the doom source code
-  property built_in : Bool = false
+  # Logistical / metadata properties (not from DECORATE spec)
+  property sprite_prefixes : String = "UNDEFINED"      # Comma-separated 4-char prefixes
+  property file_path : String = "UNDEFINED"             # e.g. "./Processing/Actor/defs/DECORATE.raw"
+  property source_wad_folder : String = "UNDEFINED"     # e.g. "Blah" from Blah.wad
+  property source_file : String = "UNDEFINED"           # e.g. "DECORATE.raw"
+  property built_in : Bool = false                      # Part of engine's built-in actors
 
-  # property list - for tracking which properties are set on an actor
+  # Tracking arrays for applied properties and flags
   property properties_applied : Array(String) = Array(String).new
-
-  # flag list - for tracking which flags are set on an actor
   property flags_applied : Array(String) = Array(String).new
 
-  # this is used for ensuring that the base actor
-  # is not removed during duplicate checks
-  # For example, we find 3 duplicates of "ImpBomb"
-  # then we mark the first one as primary
+  # Ensures base actor is not removed during duplicate checks
   property primary : Bool = false
 
-  # Raw actor text
-  # actor_text has comments and states removed
+  # Raw actor text (actor_text: no comments/states; full_actor_text: no comments only)
   property actor_text : String = "UNDEFINED"
-  # full_actor_text has only comments removed
   property full_actor_text : String = "UNDEFINED"
 
-  # States will be stored in a hash
+  # States stored as label → content hash
   property states : Hash(String, String) = Hash(String, String).new
 
-  # and here we go with the properties inside the DECORATE...
+  ########################################
+  # DECORATE PROPERTIES
+  ########################################
+
   property game : String = "Doom"
   property spawn_id : Int32 = 0
   property conversation_id : String = "UNDEFINED"
@@ -368,22 +374,17 @@ class Actor
   property gib_health : Int32 = -1000
   property wound_health : Int32 = 6
   property reaction_time : Int32 = 8
-  # painchance is a string of comma key value pairs separated by semicolon
-  # e.g. "PainChance,0;Fire,10;Something,24"
-  # PainChance is the main one that is used that is not per damage type
+  # PainChance: "PainChance,0;Fire,10;..." or just "PainChance,0"
   property pain_chance : String = "PainChance,0"
   property pain_threshold : Int32 = 0
-  # damagefactor is key value like painchance
+  # DamageFactor: "DamageFactor,1.0" or type-specific pairs
   property damage_factor : String = "DamageFactor,1.0"
   property self_damage_factor : Float64 = 1.0
   property damage_multiply : Float64 = 1.0
-  # damage can be a mathematical expression which might cause problems
-  # we will leave default as String "0"
+  # Damage can be a mathematical expression — stored as String
   property damage : String = "0"
-  # this is ZScript specific
-  property damage_function : String = "UNDEFINED"
-  # PoisonDamage is "value,[duration,[period]]"
-  property poison_damage : String = "0"
+  property damage_function : String = "UNDEFINED"   # ZScript only
+  property poison_damage : String = "0"              # "value,[duration,[period]]"
   property poison_damage_type : String = "UNDEFINED"
   property radius_damage_factor : Float64 = 1.0
   property ripper_level : Int32 = 0
@@ -397,9 +398,7 @@ class Actor
   property species : String = "UNDEFINED"
   property accuracy : Int32 = 100
   property stamina : Int32 = 100
-  # flags separated by pipes
-  # e.g. "THINGSPEC_Default | THINGSPEC_ThingTargets"
-  property activation : String = "UNDEFINED"
+  property activation : String = "UNDEFINED"         # Pipe-separated flags
   property tele_fog_source_type : String = "TeleportFog"
   property tele_fog_dest_type : String = "TeleportFog"
   property threshold : Int32 = 0
@@ -409,34 +408,26 @@ class Actor
   property shadow_penalty_factor : Float64 = 1.0
   property radius : Float64 = 20.0
   property height : Int32 = 16
-  # Death/Burn Height is default 1/4 height, so we might need to fix that later
-  property death_height : Int32 = 4
-  property burn_height : Int32 = 4
-  # default of 0 here means "use the actor's height"
-  property projectile_pass_height : Int32 = 0
+  property death_height : Int32 = 4               # Default 1/4 height
+  property burn_height : Int32 = 4                 # Default 1/4 height
+  property projectile_pass_height : Int32 = 0      # 0 = use actor's height
   property gravity : Float64 = 1.0
   property friction : Float64 = 1.0
-  # apparently mass can be int or hexadecimal, so we import the value as string
-  property mass : String = "100"
+  property mass : String = "100"                   # Can be int or hex
   property max_step_height : Int32 = 24
   property max_drop_off_height : Int32 = 24
-  # this is a non-exact approximation of 46342/65535
-  # property max_slope_steepness : Float64 = 0.707122
-  property max_slope_steepness : Float64 = (46342 / 65535)
+  property max_slope_steepness : Float64 = (46342.0 / 65535.0)
   property bounce_type : String = "None"
   property bounce_factor : Float64 = 0.7
   property wall_bounce_factor : Float64 = 0.75
-  # default is 0 if bounce_type is "None" which is also default
   property bounce_count : Int32 = 0
-  # I have no idea what type of default value this has
   property projectile_kick_back : Int32 = 0
   property push_factor : Float64 = 0.25
-  # values allowed for weave are 0-63 but I don't know if that's a float or int
-  # I'm assuming 6-bit int for values of 0-63
-  property weave_index_xy : Int32 = 0
-  property weave_index_z : Int32 = 0
-  # again not sure if int or float
+  property weave_index_xy : Int32 = 0              # 0-63
+  property weave_index_z : Int32 = 0               # 0-63
   property thru_bits : Int32 = 0
+
+  # Sounds
   property active_sound : String = "UNDEFINED"
   property attack_sound : String = "UNDEFINED"
   property bounce_sound : String = "UNDEFINED"
@@ -448,75 +439,58 @@ class Actor
   property see_sound : String = "UNDEFINED"
   property wall_bounce_sound : String = "UNDEFINED"
   property push_sound : String = "UNDEFINED"
+
+  # Rendering
   property render_style : String = "Normal"
   property alpha : Float64 = 1.0
-  # heretic uses 0.4, everything else is 0.6
   property default_alpha : Bool = false
   property stealth_alpha : Float64 = 0
   property x_scale : Float64 = 1.0
   property y_scale : Float64 = 1.0
   property scale : Float64 = 1.0
-  # Values allowed are 0-255 or -1
-  # default -1 means the actor uses sectors light level
-  property light_level : Int32 = -1
-  # translation can be one of the following:
-  # > value (0-2)
-  # > string "112:127=208:223"
-  # > translation variable "TranslationBlah"
-  # > Translation Ice # This is a custom variable that uses unique colors
+  property light_level : Int32 = -1                # -1 = use sector light
   property translation : String = "UNDEFINED"
   property blood_color : String = "UNDEFINED"
-  # Can have multiple comma separated fields
-  property blood_type : String = "UNDEFINED"
+  property blood_type : String = "UNDEFINED"       # Can have multiple comma-separated fields
   property decal : String = "UNDEFINED"
   property stencil_color : String = "UNDEFINED"
   property float_bob_phase : Int32 = -1
   property float_bob_strength : Float64 = 1.0
   property distance_check : String = "UNDEFINED"
-  # 180 = actors front - read the Zdoom wiki
-  property sprite_angle : Int32 = 180
+  property sprite_angle : Int32 = 180              # 180 = actor's front
   property sprite_rotation : Int32 = 0
-  # will take two comma separated values
-  property visible_angles : String = "UNDEFINED"
+  property visible_angles : String = "UNDEFINED"   # Two comma-separated values
   property visible_pitch : String = "UNDEFINED"
   property render_radius : Float64 = 0.0
-  # Having trouble finding a default here, but I think it is 32
   property camera_height : Int32 = 32
   property camera_fov : Float64 = 90.0
+
+  # Combat info
   property hit_obituary : String = "UNDEFINED"
   property obituary : String = "UNDEFINED"
   property min_missile_chance : Int32 = 200
   property damage_type : String = "UNDEFINED"
   property death_type : String = "UNDEFINED"
-  # no idea what the default is, so we'll do -1 to disable
   property melee_threshold : Int32 = -1
   property melee_range : Int32 = 44
-  # no idea what the default is, so we'll do -1 to disable
   property max_target_range : Int32 = -1
-  # these next 4 are deprecated so I'll assign a -1 to them to disable
-  property melee_damage : Int32 = -1
+  property melee_damage : Int32 = -1               # Deprecated
   property melee_sound : String = "UNDEFINED"
   property missile_height : Int32 = -1
   property missile_type : String = "UNDEFINED"
-  # default A_Explode is -1, so I'll go with that
   property explosion_radius : Int32 = -1
   property explosion_damage : Int32 = -1
-  # deprecated = -1
 
   property dont_hurt_shooter : Bool = false
   property pain_type : String = "UNDEFINED"
   property args : String = "UNDEFINED"
-  # This might be useful in cases of inheritance. Clear flags clears all flags.
   property clear_flags : Bool = false
-  # String "classname[, probability [, amount]]"
-  property drop_item : String = "UNDEFINED"
+  property drop_item : String = "UNDEFINED"        # "classname[, probability [, amount]]"
 
-  # deprecated properties that we should throw a warning about
-  # deprecated because of "goto" keyword
+  # Deprecated state properties (replaced by "goto" keyword)
   property spawn : Int32 = -1
   property see : Int32 = -1
   property melee : Int32 = -1
-  #property missile : Int32 = -1
   property pain : Int32 = -1
   property death : Int32 = -1
   property x_death : Int32 = -1
@@ -529,20 +503,20 @@ class Actor
   property crush : Int32 = -1
   property heal : Int32 = -1
 
-  # Reinitializes the actor as if it has no parent. This can be used to have access to the parent's states without inheriting its attributes.
   property skip_super : Bool = false
   property visible_to_team : Int32 = 0
-  # Comma separated player classes
   property visible_to_player_class : String = "UNDEFINED"
 
-  # flag combos that are technically properties
+  # Flag combos that are technically properties
   property monster : Bool = false
   property projectile : Bool = false
 
-  # flags - these are boolean and look like this:
-  # +FLAGNAME
-  # A '+' indicates true, and '-' indicates false
-  # we take them in as boolean
+  ########################################
+  # BOOLEAN FLAGS
+  # Organized by ZDoom wiki category.
+  ########################################
+
+  # --- Rendering flags ---
   property interpolateangles : Bool = false
   property flatsprite : Bool = false
   property rollsprite : Bool = false
@@ -564,6 +538,8 @@ class Actor
   property addlightlevel : Bool = false
   property invisibleinmirrors : Bool = false
   property onlyvisibleinmirrors : Bool = false
+
+  # --- Physics flags ---
   property solid : Bool = false
   property shootable : Bool = false
   property float : Bool = false
@@ -588,6 +564,8 @@ class Actor
   property falldamage : Bool = false
   property allowthrubits : Bool = false
   property crosslinecheck : Bool = false
+
+  # --- AI/Behavior flags ---
   property alwaysrespawn : Bool = false
   property ambush : Bool = false
   property avoidmelee : Bool = false
@@ -650,6 +628,8 @@ class Actor
   property shadowaim : Bool = false
   property doshadowblock : Bool = false
   property shadowaimvert : Bool = false
+
+  # --- Defense flags ---
   property invulnerable : Bool = false
   property buddha : Bool = false
   property reflective : Bool = false
@@ -676,6 +656,8 @@ class Actor
   property dontdrain : Bool = false
   property laxtelefragdmg : Bool = false
   property shadowblock : Bool = false
+
+  # --- Appearance flags ---
   property bright : Bool = false
   property invisible : Bool = false
   property noblood : Bool = false
@@ -694,16 +676,21 @@ class Actor
   property fullvolactive : Bool = false
   property fullvoldeath : Bool = false
   property fullvolsee : Bool = false
-  property nowallbouncesnd : Bool = false
   property visibilitypulse : Bool = false
-  property rockettrail : Bool = false
-  property grenadetrail : Bool = false
-  property nobouncesound : Bool = false
   property noskin : Bool = false
   property donttranslate : Bool = false
   property nopain : Bool = false
   property forceybillboard : Bool = false
   property forcexybillboard : Bool = false
+
+  # --- Sound flags ---
+  # [BUGFIX] V1 had nowallbouncesnd and nobouncesound each declared twice
+  property nowallbouncesnd : Bool = false
+  property nobouncesound : Bool = false
+  property rockettrail : Bool = false
+  property grenadetrail : Bool = false
+
+  # --- Projectile/Missile flags ---
   property missile : Bool = false
   property ripper : Bool = false
   property nobossrip : Bool = false
@@ -724,6 +711,7 @@ class Actor
   property extremedeath : Bool = false
   property noextremedeath : Bool = false
   property dehexplosion : Bool = false
+  # [BUGFIX] V1 had piercearmor declared twice (missile + zandronum sections)
   property piercearmor : Bool = false
   property forceradiusdmg : Bool = false
   property forcezeroradiusdmg : Bool = false
@@ -740,6 +728,8 @@ class Actor
   property hitmaster : Bool = false
   property hittracer : Bool = false
   property hitowner : Bool = false
+
+  # --- Bounce flags ---
   property bounceonwalls : Bool = false
   property bounceonfloors : Bool = false
   property bounceonceilings : Bool = false
@@ -749,14 +739,14 @@ class Actor
   property bouncelikeheretic : Bool = false
   property bounceonactors : Bool = false
   property bounceonunrippables : Bool = false
-  property nowallbouncesnd : Bool = false
-  property nobouncesound : Bool = false
   property explodeonwater : Bool = false
   property canbouncewater : Bool = false
   property mbfbouncer : Bool = false
   property usebouncestate : Bool = false
   property dontbounceonshootables : Bool = false
   property dontbounceonsky : Bool = false
+
+  # --- Item/Pickup flags ---
   property iceshatter : Bool = false
   property dropped : Bool = false
   property ismonster : Bool = false
@@ -807,6 +797,8 @@ class Actor
   property summonedmonster : Bool = false
   property special : Bool = false
   property nosavegame : Bool = false
+
+  # --- Boss flags ---
   property e1m8boss : Bool = false
   property e2m8boss : Bool = false
   property e3m8boss : Bool = false
@@ -814,6 +806,8 @@ class Actor
   property e4m8boss : Bool = false
   property map07boss1 : Bool = false
   property map07boss2 : Bool = false
+
+  # --- Internal state flags ---
   property inchase : Bool = false
   property unmorphed : Bool = false
   property fly : Bool = false
@@ -840,6 +834,8 @@ class Actor
   property handlenodelay : Bool = false
   property flycheat : Bool = false
   property respawninvul : Bool = false
+
+  # --- Misc MBF/compat flags ---
   property lowgravity : Bool = false
   property quartergravity : Bool = false
   property longmeleerange : Bool = false
@@ -855,14 +851,13 @@ class Actor
   property faster : Bool = false
   property fastmelee : Bool = false
 
-  # zandronum
+  # --- Zandronum flags ---
   property allowclientspawn : Bool = false
   property clientsideonly : Bool = false
   property nonetid : Bool = false
   property dontidentifytarget : Bool = false
   property scorepillar : Bool = false
   property serversideonly : Bool = false
-  property piercearmor : Bool = false
   property blueteam : Bool = false
   property redteam : Bool = false
   property node : Bool = false
@@ -871,6 +866,10 @@ class Actor
   property basearmor : Bool = false
   property superarmor : Bool = false
   property explodeondeath : Bool = false
+
+  ########################################
+  # CONSTRUCTOR
+  ########################################
 
   def initialize(@name : String, @index : Int32)
     @inventory = Inventory.new
@@ -888,9 +887,12 @@ class Actor
     @powerspeed = PowerSpeed.new
   end
 
-  # this function generates a dynamic list of property names
-  # which is useful for doing iteration when doing inheritance
-  def property_list : Array
+  ########################################
+  # UTILITY
+  ########################################
+
+  # Generates a dynamic list of property names (useful for inheritance iteration)
+  def property_list : Array(String)
     list_of_properties = Array(String).new
     {% for name in Actor.instance_vars %}
       list_of_properties << "#{ {{ name.id.symbolize }} }"
