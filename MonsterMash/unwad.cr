@@ -32,6 +32,10 @@ require "compress/zip"
 
 # Other Code Specific To MonsterMash
 require "./requires/classes.cr"
+require "./requires/helpers.cr"
+require "./requires/pk3_extract.cr"
+require "./requires/actor_parsing.cr"
+require "./requires/lua_gen.cr"
 
 ###############################################################################
 # CONFIGURATION
@@ -39,6 +43,10 @@ require "./requires/classes.cr"
 
 # Log levels: 0 = errors only, 1 = warnings, 2 = info, 3 = debug/verbose
 LOG_LEVEL = 2
+
+LOG_FILE = File.open("unwad.log", "w")
+LOG_FILE.puts "=== Unwad V4 Log Started: #{Time.local} ==="
+LOG_FILE.flush
 
 def log(level : Int32, msg : String)
   return if level > LOG_LEVEL
@@ -48,7 +56,15 @@ def log(level : Int32, msg : String)
            when 2 then "[INFO] "
            else        "[DEBUG]"
            end
-  puts "#{prefix} #{msg}"
+  line = "#{prefix} #{msg}"
+  puts line
+  LOG_FILE.puts line
+  LOG_FILE.flush
+end
+
+at_exit do
+  LOG_FILE.puts "=== Log Ended: #{Time.local} ==="
+  LOG_FILE.close
 end
 
 ###############################################################################
@@ -64,467 +80,6 @@ jeutoolexe = ""
   jeutoolexe = "jeutool.exe"
 {% end %}
 log(2, "Jeutool assigned: #{jeutoolexe}")
-
-###############################################################################
-# HELPER METHODS
-###############################################################################
-
-# Check if a string is a valid integer
-def numeric?(str : String) : Bool
-  str.to_i? != nil
-end
-
-# Safely read a file, returning empty string on failure
-def safe_read(path : String) : String
-  norm = normalize_path(path)
-  if File.exists?(norm)
-    File.read(norm)
-  else
-    log(1, "File not found: #{norm}")
-    ""
-  end
-end
-
-# Normalize path separators to forward slashes (Windows compat)
-def normalize_path(path : String) : String
-  path.gsub("\\", "/")
-end
-
-# Safe directory move: copy then delete.
-# FileUtils.mv fails on Windows when directories are locked (e.g., Dropbox sync)
-# or when moving across volumes. cp_r + rm_rf is more reliable.
-def safe_move_dir(src : String, dest : String)
-  src_n = normalize_path(src)
-  dest_n = normalize_path(dest)
-  log(3, "Moving directory: #{src_n} → #{dest_n}")
-  FileUtils.rm_rf(dest_n) if Dir.exists?(dest_n)
-  FileUtils.cp_r(src_n, dest_n)
-  FileUtils.rm_rf(src_n)
-rescue ex
-  log(0, "Failed to move '#{src_n}' → '#{dest_n}': #{ex.message}")
-  raise ex
-end
-
-# Collect all DECORATE files for a wad (main + includes).
-# Uses multi-strategy path resolution so it works with both jeutool-extracted
-# WADs (files in defs/ with .raw extension) and PK3-extracted content
-# (files at WAD root with various extensions like .dec, .txt, or no extension).
-def collect_decorate_files(base_path : String) : Array(String)
-  file_list = [base_path]
-  return file_list unless File.exists?(base_path)
-
-  base_dir = normalize_path(File.dirname(base_path))
-  # For files in defs/, the WAD root is one level up
-  wad_root = normalize_path(File.dirname(base_dir))
-
-  File.each_line(base_path) do |line|
-    if line.strip =~ /^#include\s+/i
-      if md = line.match(/"([^"]+)"/)
-        include_ref = md[1]
-
-        # Try multiple resolution strategies (first match wins):
-        candidates = [
-          File.join(base_dir, "#{include_ref.upcase}.raw"),   # defs/NAME.RAW (jeutool)
-          File.join(base_dir, include_ref),                    # defs/path/as-is
-          File.join(base_dir, include_ref.upcase),             # defs/NAME (no ext)
-          File.join(wad_root, include_ref),                    # wad_root/path/as-is (PK3)
-          File.join(wad_root, "#{include_ref.upcase}.raw"),    # wad_root/NAME.RAW
-          File.join(wad_root, include_ref.upcase),             # wad_root/NAME
-        ]
-
-        found = candidates.find { |c| File.exists?(normalize_path(c)) }
-        if found
-          file_list << normalize_path(found)
-        else
-          log(1, "Include not resolved: \"#{include_ref}\" (from #{base_path})")
-          log(3, "  Searched: #{candidates.map { |c| normalize_path(c) }.join(", ")}")
-        end
-      end
-    end
-  end
-  file_list.uniq
-end
-
-# Match balanced braces starting from a given position in text.
-# Returns the substring from the opening '{' to the matching '}'.
-def extract_balanced_braces(text : String, start_pos : Int32) : String?
-  return nil if start_pos < 0 || start_pos >= text.size
-  depth = 0
-  i = start_pos
-  while i < text.size
-    if text[i] == '{'
-      depth += 1
-    elsif text[i] == '}'
-      depth -= 1
-      if depth == 0
-        return text[start_pos..i]
-      end
-    end
-    i += 1
-  end
-  nil
-end
-
-# Remove the states block from actor text using iterative brace matching.
-# V1 used a recursive PCRE regex that doesn't work reliably in Crystal.
-def remove_states_block(actor_text : String) : String
-  result = actor_text
-  # Find "states" keyword followed by "{"
-  if md = result.match(/states\s*\{/mi)
-    states_start = md.begin(0).not_nil!
-    # Find the opening brace
-    brace_start = result.index('{', states_start)
-    if brace_start
-      matched = extract_balanced_braces(result, brace_start)
-      if matched
-        # Remove "states" keyword + the entire braced block
-        states_keyword_start = states_start
-        states_end = brace_start + matched.size
-        result = result[0...states_keyword_start] + result[states_end..]
-      end
-    end
-  end
-  result
-end
-
-# Extract the states block text (content between braces after "states")
-def extract_states_text(actor_text : String) : String?
-  if md = actor_text.match(/states\s*\{/mi)
-    states_start = md.begin(0).not_nil!
-    brace_start = actor_text.index('{', states_start)
-    if brace_start
-      matched = extract_balanced_braces(actor_text, brace_start)
-      if matched && matched.size > 2
-        # Strip outer braces
-        return matched[1..-2].strip
-      end
-    end
-  end
-  nil
-end
-
-# Parse states text into a hash of state_label => state_content
-def parse_states(states_text : String?) : Hash(String, String)
-  states = Hash(String, String).new
-  return states if states_text.nil?
-
-  parts = states_text.not_nil!.split(/^(\S+)\:/m)
-  # First element is anything before the first label — discard
-  parts.shift if parts.size > 0
-
-  (0...parts.size).step(2) do |i|
-    break if i + 1 >= parts.size
-    key = parts[i].strip.downcase
-    value = parts[i + 1]
-    states[key] = value
-  end
-  states
-end
-
-# Delete all contents of a directory without deleting the directory itself
-def clear_directory(path : String)
-  if Dir.exists?(path)
-    Dir.each_child(path) do |child|
-      child_path = File.join(path, child)
-      if File.directory?(child_path)
-        FileUtils.rm_rf(child_path)
-      else
-        File.delete(child_path)
-      end
-    end
-  end
-end
-
-###############################################################################
-# PK3/ZIP SOURCE EXTRACTION
-# Extracts PK3 (ZIP) files and normalizes their directory structure to match
-# what jeutool produces for WADs, so the existing processing pipeline works
-# unchanged. Root-level definition lumps are moved to defs/ with .raw extension.
-###############################################################################
-
-# List of file extensions (lowercase) to treat as definition/text lumps
-# when found at the PK3 root level. These get moved to defs/ with .raw suffix.
-PK3_ROOT_TEXT_EXTENSIONS = Set{".dec", ".txt", ".zs", ".zsc", ".acs", ""}
-
-# Detect whether a root-level file in a PK3 is a definition/text lump
-# that belongs in the defs/ directory.
-def pk3_is_root_text_lump?(filename : String) : Bool
-  canonical = lump_name(filename)
-  return true if DECORATE_LUMP_NAMES.includes?(canonical)
-  return true if TEXT_LUMP_NAMES.includes?(canonical)
-  return true if canonical == "credits" || canonical == "credit"
-  false
-end
-
-# Extract a PK3/ZIP file into dest_dir, normalizing structure to match
-# jeutool WAD extraction format:
-#   - Root-level text/def lumps → defs/LUMPNAME.raw
-#   - Subdirectory content (sprites/, sounds/, etc.) → preserved as-is
-#   - Other root files → left at root
-#
-# This allows the existing DECORATE processing pipeline (which globs for
-# Processing/*/defs/DECORATE.raw) to find PK3-sourced DECORATE files.
-def extract_pk3(pk3_path : String, dest_dir : String)
-  pk3_name = File.basename(pk3_path)
-  log(2, "Extracting PK3: #{pk3_name} → #{dest_dir}")
-  Dir.mkdir_p(dest_dir)
-  defs_dir = normalize_path(File.join(dest_dir, "defs"))
-  Dir.mkdir_p(defs_dir)
-
-  files_extracted = 0
-  root_lumps_moved = 0
-  dirs_created = Set(String).new
-
-  begin
-    File.open(pk3_path) do |file|
-      Compress::Zip::Reader.open(file) do |zip|
-        zip.each_entry do |entry|
-          next if entry.dir?
-
-          entry_name = normalize_path(entry.filename)
-          # Skip macOS resource fork junk
-          next if entry_name.includes?("__MACOSX") || entry_name.starts_with?("._")
-
-          if entry_name.includes?("/")
-            # ── File is inside a subdirectory ─────────────────────────
-            # Preserve the PK3's internal directory structure as-is.
-            # Most PK3 dirs (sprites/, sounds/, etc.) map 1:1 to what we need.
-            dest_path = normalize_path(File.join(dest_dir, entry_name))
-            dir = File.dirname(dest_path)
-            unless dirs_created.includes?(dir)
-              Dir.mkdir_p(dir)
-              dirs_created << dir
-            end
-          else
-            # ── Root-level file ───────────────────────────────────────
-            if pk3_is_root_text_lump?(entry_name)
-              # Move definition lumps to defs/ with .raw extension
-              raw_name = lump_name(entry_name).upcase + ".raw"
-              dest_path = normalize_path(File.join(defs_dir, raw_name))
-              root_lumps_moved += 1
-              log(3, "  Root lump → defs/: #{entry_name} → defs/#{raw_name}")
-            else
-              # Keep other root files in place
-              dest_path = normalize_path(File.join(dest_dir, entry_name))
-              log(3, "  Root file (kept): #{entry_name}")
-            end
-          end
-
-          # Write the file
-          File.open(dest_path, "wb") do |outfile|
-            IO.copy(entry.io, outfile)
-          end
-          files_extracted += 1
-        end
-      end
-    end
-  rescue ex
-    log(0, "Failed to extract PK3 '#{pk3_name}': #{ex.message}")
-    log(0, "  This file will be skipped. Check if it's a valid ZIP/PK3.")
-    return
-  end
-
-  # If a PK3 had an `actors/` directory with DECORATE-like files but
-  # no root DECORATE file, create a synthetic one that #includes everything.
-  decorate_path = normalize_path(File.join(defs_dir, "DECORATE.raw"))
-  actors_dir = normalize_path(File.join(dest_dir, "actors"))
-
-  if !File.exists?(decorate_path) && Dir.exists?(actors_dir)
-    log(2, "  No DECORATE found; generating synthetic DECORATE from actors/ directory")
-    actor_files = Dir.glob("#{actors_dir}/**/*")
-      .select { |f| File.file?(f) }
-      .map { |f| normalize_path(f).sub(dest_dir + "/", "") }
-      .sort
-
-    unless actor_files.empty?
-      synthetic = String.build do |io|
-        io << "// Synthetic DECORATE — auto-generated from PK3 actors/ directory\n"
-        io << "// Source: #{pk3_name}\n\n"
-        actor_files.each do |af|
-          io << "#include \"#{af}\"\n"
-        end
-      end
-      File.write(decorate_path, synthetic)
-      log(2, "  Created synthetic DECORATE with #{actor_files.size} includes")
-    end
-  end
-
-  # If DECORATE/ZSCRIPT exists and references files via include that are in the WAD root
-  # (not in defs/), update the include paths to be relative from defs/
-  [decorate_path, normalize_path(File.join(defs_dir, "ZSCRIPT.raw"))].each do |script_path|
-    next unless File.exists?(script_path)
-    content = File.read(script_path)
-    original = content
-    content = content.gsub(/^(\s*#include\s+")([^"]+)(")/mi) do
-      prefix_match = $1
-      inc_file = $2
-      suffix_match = $3
-
-      # If the include references a file that exists at the WAD root but not in defs/,
-      # prepend ../ so it resolves correctly from defs/
-      inc_from_defs = normalize_path(File.join(defs_dir, inc_file))
-      inc_from_root = normalize_path(File.join(dest_dir, inc_file))
-
-      if !File.exists?(inc_from_defs) && File.exists?(inc_from_root)
-        log(3, "  Rewriting include: \"#{inc_file}\" → \"../#{inc_file}\"")
-        "#{prefix_match}../#{inc_file}#{suffix_match}"
-      else
-        "#{prefix_match}#{inc_file}#{suffix_match}"
-      end
-    end
-
-    if content != original
-      File.write(script_path, content)
-      log(2, "  Updated #{(content.scan(/#include/).size)} include paths for defs/ relocation")
-    end
-  end
-
-  log(2, "  PK3 extracted: #{files_extracted} files, #{root_lumps_moved} root lumps → defs/")
-end
-
-PK3_BUILD_DIR = "./PK3_Build"
-PK3_OUTPUT    = "./Completed/monster_mash.pk3"
-
-# Known resource directories — contents get copied flat into the PK3.
-# These hold binary files (sprites, sounds, etc.) identified by filename.
-RESOURCE_DIRS = Set{
-  "sprites", "sounds", "graphics", "patches", "flats",
-  "textures", "hires", "acs", "models", "brightmaps",
-  "colormaps", "voxels", "music", "filter", "materials",
-  "skins", "voices",
-  # jeutool puts uncategorized lumps here — copy them as generic resources
-  "unknown",
-}
-
-# Known text lumps — these are concatenated across WADs with source attribution.
-# Compared case-insensitively, with .raw/.txt/.lmp extensions stripped.
-TEXT_LUMP_NAMES = Set{
-  "sndinfo", "gldefs", "lockdefs", "animdefs", "decaldef",
-  "sbarinfo", "menudef", "cvarinfo", "terrain", "voxeldef",
-  "modeldef", "keyconf", "textures", "gameinfo", "zmapinfo",
-  "mapinfo", "fontdefs", "reverbs", "althudcf", "x11r6rgb",
-  "textcolo", "textcolors", "dehacked", "loadacs", "s_skin",
-  "skininfo", "dialogue", "doomdefs", "hticdefs", "hexndefs",
-  "strifedefs", "language", "sndseq", "teaminfo", "in_acs",
-  # Translation lumps
-  "trnslate",
-  # ACS-related lumps (compiled ACS libraries loaded by LOADACS)
-  "bloadacs",
-}
-
-# Binary/metadata lumps to skip — these come from the IWAD, engine, or jeutool.
-SKIP_LUMP_NAMES = Set{
-  "playpal", "colormap", "endoom", "dmxgus", "dmxgusc",
-  "pnames", "texture1", "texture2",
-  # jeutool extraction metadata — present in every extracted WAD
-  "base-pal", "config", "info", "updates",
-  # Documentation / old versions — not needed at runtime
-  "readme", "document", "notes", "original", "oldcode",
-  "oldmapin", "oldzscri",
-}
-
-# Lump names that are DECORATE-like (handled separately via master #include)
-DECORATE_LUMP_NAMES = Set{
-  "decorate", "zscript",
-}
-
-# Strip common lump file extensions to get the canonical lump name
-def lump_name(filename : String) : String
-  filename
-    .gsub(/\.(raw|txt|lmp|dec|zs|acs|cfg)$/i, "")
-    .downcase
-    .strip
-end
-
-# Copy all files from src_dir into dest_dir (flat merge).
-# Logs conflicts when a file already exists with different content.
-# Returns count of files copied and conflicts detected.
-def copy_resource_files(src_dir : String, dest_dir : String, wad_name : String,
-                        conflict_log : Array(String),
-                        is_sprites_dir : Bool = false) : {Int32, Int32}
-  copied = 0
-  conflicts = 0
-  Dir.mkdir_p(dest_dir)
-
-  Dir.each_child(src_dir) do |filename|
-    src_path = normalize_path(File.join(src_dir, filename))
-
-    # For sprites, strip .raw extension — WAD lumps have no extensions and
-    # .raw breaks GZDoom's parsing of dual-rotation names (e.g., ISHMA1A5)
-    dest_filename = filename
-    if is_sprites_dir && File.extname(filename).downcase == ".raw"
-      dest_filename = File.basename(filename, File.extname(filename))
-    end
-    dest_path = normalize_path(File.join(dest_dir, dest_filename))
-
-    if File.directory?(src_path)
-      # Recurse into subdirectories (e.g., filter/doom.id.doom2/)
-      sub_copied, sub_conflicts = copy_resource_files(
-        src_path,
-        normalize_path(File.join(dest_dir, filename)),
-        wad_name, conflict_log, is_sprites_dir
-      )
-      copied += sub_copied
-      conflicts += sub_conflicts
-      next
-    end
-
-    # Filter invalid sprites — jeutool sometimes creates 0-byte placeholder files
-    if is_sprites_dir
-      file_size = File.size(src_path)
-      basename = File.basename(dest_filename, File.extname(dest_filename))
-      # Skip zero-byte files (jeutool placeholders, not real image data)
-      if file_size == 0
-        log(3, "  Skipping 0-byte sprite placeholder: #{filename} in #{wad_name}")
-        next
-      end
-      # Skip names that are too short to be valid sprites (need 4-char prefix + frame)
-      # but only if they're also small — legitimate short-named lumps exist
-      if basename.size < 5 && file_size < 64
-        log(3, "  Skipping invalid sprite: #{filename} in #{wad_name} (name=#{basename.size}chars, size=#{file_size}bytes)")
-        next
-      end
-    end
-
-    if File.exists?(dest_path)
-      # File already exists — check if identical
-      src_sha = Digest::SHA256.new.file(src_path).hexfinal
-      dest_sha = Digest::SHA256.new.file(dest_path).hexfinal
-      if src_sha != dest_sha
-        conflicts += 1
-        msg = "CONFLICT: '#{dest_filename}' in #{dest_dir.sub(PK3_BUILD_DIR, "")} — " \
-              "#{wad_name} differs from existing (keeping existing)"
-        conflict_log << msg
-        log(1, msg)
-      else
-        log(3, "  Skipping identical file: #{dest_filename}")
-      end
-    else
-      FileUtils.cp(src_path, dest_path)
-      copied += 1
-    end
-  end
-
-  {copied, conflicts}
-end
-
-# Recursively add all files in a directory to a zip writer.
-def add_dir_to_zip(zip : Compress::Zip::Writer, base_path : String, zip_prefix : String)
-  Dir.each_child(base_path) do |entry|
-    full_path = normalize_path(File.join(base_path, entry))
-    zip_path = zip_prefix.empty? ? entry : "#{zip_prefix}/#{entry}"
-
-    if File.directory?(full_path)
-      add_dir_to_zip(zip, full_path, zip_path)
-    else
-      zip.add(zip_path) do |entry_io|
-        File.open(full_path, "r") do |src|
-          IO.copy(src, entry_io)
-        end
-      end
-    end
-  end
-end
 
 ###############################################################################
 # DATA STRUCTURES
@@ -630,11 +185,12 @@ source_files.each_with_index do |file_name, file_index|
   STDOUT.flush
 
   if wad_extensions.includes?(ext)
+    puts ""  # Newline before jeutool output
     log(3, "Extracting WAD: #{file_path}")
-    system "./#{jeutoolexe} extract \"#{file_path}\" -r"
+    system "./#{jeutoolexe} extract \"#{file_path}\" \"./Processing/#{base}\" -r"
 
   elsif pk3_extensions.includes?(ext)
-    dest = normalize_path("./Source/#{base}")
+    dest = normalize_path("./Processing/#{base}")
     log(3, "Extracting PK3: #{file_path}")
     extract_pk3(file_path, dest)
 
@@ -654,10 +210,10 @@ Dir.each_child("./IWADs") do |file_name|
 
   if wad_extensions.includes?(ext)
     log(2, "Extracting IWAD WAD: #{file_path}")
-    system "./#{jeutoolexe} extract \"#{file_path}\" -r"
+    system "./#{jeutoolexe} extract \"#{file_path}\" \"./IWADs_Extracted/#{base}\" -r"
 
   elsif pk3_extensions.includes?(ext)
-    dest = normalize_path("./IWADs/#{base}")
+    dest = normalize_path("./IWADs_Extracted/#{base}")
     log(2, "Extracting IWAD PK3: #{file_path}")
     extract_pk3(file_path, dest)
 
@@ -669,24 +225,8 @@ end
 log(2, "Extraction complete.")
 
 ###############################################################################
-# MOVE EXTRACTED DIRECTORIES
+# (Extraction now writes directly to Processing/ and IWADs_Extracted/)
 ###############################################################################
-
-log(2, "Moving extracted directories to Processing...")
-
-Dir.glob("./Source/*/").each do |path|
-  path = normalize_path(path)
-  dest_path = File.join("./Processing/", File.basename(path))
-  safe_move_dir(path, dest_path)
-end
-
-Dir.glob("./IWADs/*/").each do |path|
-  path = normalize_path(path)
-  dest_path = File.join("./IWADs_Extracted/", File.basename(path))
-  safe_move_dir(path, dest_path)
-end
-
-log(2, "Move completed.")
 
 ###############################################################################
 # POST-EXTRACTION PROCESSING — Parse DECORATE actors
@@ -724,620 +264,6 @@ KNOWN_FLAGS = Set(String).new
 # We'll populate KNOWN_FLAGS from the Actor class at runtime after creating a
 # default actor. For now, we define a helper that uses Crystal's property setter.
 
-# Sets a boolean flag on an actor by name. Returns true if the flag was recognized.
-def set_actor_flag(actor : Actor, flag_name : String, value : Bool) : Bool
-  # Actor-level flags (direct properties)
-  case flag_name
-  when "interpolateangles"    then actor.interpolateangles = value
-  when "flatsprite"           then actor.flatsprite = value
-  when "rollsprite"           then actor.rollsprite = value
-  when "wallsprite"           then actor.wallsprite = value
-  when "rollcenter"           then actor.rollcenter = value
-  when "spriteangle"          then actor.spriteangle = value
-  when "spriteflip"           then actor.spriteflip = value
-  when "xflip"                then actor.xflip = value
-  when "yflip"                then actor.yflip = value
-  when "maskrotation"         then actor.maskrotation = value
-  when "absmaskangle"         then actor.absmaskangle = value
-  when "absmaskpitch"         then actor.absmaskpitch = value
-  when "dontinterpolate"      then actor.dontinterpolate = value
-  when "zdoomtrans"           then actor.zdoomtrans = value
-  when "absviewangles"        then actor.absviewangles = value
-  when "castspriteshadow"     then actor.castspriteshadow = value
-  when "nospriteshadow"       then actor.nospriteshadow = value
-  when "masternosee"          then actor.masternosee = value
-  when "addlightlevel"        then actor.addlightlevel = value
-  when "invisibleinmirrors"   then actor.invisibleinmirrors = value
-  when "onlyvisibleinmirrors" then actor.onlyvisibleinmirrors = value
-  when "solid"                then actor.solid = value
-  when "shootable"            then actor.shootable = value
-  when "float"                then actor.float = value
-  when "nogravity"            then actor.nogravity = value
-  when "windthrust"           then actor.windthrust = value
-  when "pushable"             then actor.pushable = value
-  when "dontfall"             then actor.dontfall = value
-  when "canpass"              then actor.canpass = value
-  when "actlikebridge"        then actor.actlikebridge = value
-  when "noblockmap"           then actor.noblockmap = value
-  when "movewithsector"       then actor.movewithsector = value
-  when "relativetofloor"      then actor.relativetofloor = value
-  when "noliftdrop"           then actor.noliftdrop = value
-  when "slidesonwalls"        then actor.slidesonwalls = value
-  when "nodropoff"            then actor.nodropoff = value
-  when "noforwardfall"        then actor.noforwardfall = value
-  when "notrigger"            then actor.notrigger = value
-  when "blockedbysolidactors" then actor.blockedbysolidactors = value
-  when "blockasplayer"        then actor.blockasplayer = value
-  when "nofriction"           then actor.nofriction = value
-  when "nofrictionbounce"     then actor.nofrictionbounce = value
-  when "falldamage"           then actor.falldamage = value
-  when "allowthrubits"        then actor.allowthrubits = value
-  when "crosslinecheck"       then actor.crosslinecheck = value
-  when "alwaysrespawn"        then actor.alwaysrespawn = value
-  when "ambush"               then actor.ambush = value
-  when "avoidmelee"           then actor.avoidmelee = value
-  when "boss"                 then actor.boss = value
-  when "dontcorpse"           then actor.dontcorpse = value
-  when "dontfacetalker"       then actor.dontfacetalker = value
-  when "dormant"              then actor.dormant = value
-  when "friendly"             then actor.friendly = value
-  when "jumpdown"             then actor.jumpdown = value
-  when "lookallaround"        then actor.lookallaround = value
-  when "missileevenmore"      then actor.missileevenmore = value
-  when "missilemore"          then actor.missilemore = value
-  when "neverrespawn"         then actor.neverrespawn = value
-  when "nosplashalert"        then actor.nosplashalert = value
-  when "notargetswitch"       then actor.notargetswitch = value
-  when "noverticalmeleerange" then actor.noverticalmeleerange = value
-  when "quicktoretaliate"     then actor.quicktoretaliate = value
-  when "standstill"           then actor.standstill = value
-  when "avoidhazards"         then actor.avoidhazards = value
-  when "stayonlift"           then actor.stayonlift = value
-  when "dontfollowplayers"    then actor.dontfollowplayers = value
-  when "seefriendlymonsters"  then actor.seefriendlymonsters = value
-  when "cannotpush"           then actor.cannotpush = value
-  when "noteleport"           then actor.noteleport = value
-  when "activateimpact"       then actor.activateimpact = value
-  when "canpushwalls"         then actor.canpushwalls = value
-  when "canusewalls"          then actor.canusewalls = value
-  when "activatemcross"       then actor.activatemcross = value
-  when "activatepcross"       then actor.activatepcross = value
-  when "cantleavefloorpic"    then actor.cantleavefloorpic = value
-  when "telestomp"            then actor.telestomp = value
-  when "notelestomp"          then actor.notelestomp = value
-  when "staymorphed"          then actor.staymorphed = value
-  when "canblast"             then actor.canblast = value
-  when "noblockmonst"         then actor.noblockmonst = value
-  when "allowthruflags"       then actor.allowthruflags = value
-  when "thrughost"            then actor.thrughost = value
-  when "thruactors"           then actor.thruactors = value
-  when "thruspecies"          then actor.thruspecies = value
-  when "mthruspecies"         then actor.mthruspecies = value
-  when "spectral"             then actor.spectral = value
-  when "frightened"           then actor.frightened = value
-  when "frightening"          then actor.frightening = value
-  when "notarget"             then actor.notarget = value
-  when "nevertarget"          then actor.nevertarget = value
-  when "noinfightspecies"     then actor.noinfightspecies = value
-  when "forceinfighting"      then actor.forceinfighting = value
-  when "noinfighting"         then actor.noinfighting = value
-  when "notimefreeze"         then actor.notimefreeze = value
-  when "nofear"               then actor.nofear = value
-  when "cantseek"             then actor.cantseek = value
-  when "seeinvisible"         then actor.seeinvisible = value
-  when "dontthrust"           then actor.dontthrust = value
-  when "allowpain"            then actor.allowpain = value
-  when "usekillscripts"       then actor.usekillscripts = value
-  when "nokillscripts"        then actor.nokillscripts = value
-  when "stoprails"            then actor.stoprails = value
-  when "minvisible"           then actor.minvisible = value
-  when "mvisblocked"          then actor.mvisblocked = value
-  when "shadowaim"            then actor.shadowaim = value
-  when "doshadowblock"        then actor.doshadowblock = value
-  when "shadowaimvert"        then actor.shadowaimvert = value
-  when "invulnerable"         then actor.invulnerable = value
-  when "buddha"               then actor.buddha = value
-  when "reflective"           then actor.reflective = value
-  when "shieldreflect"        then actor.shieldreflect = value
-  when "deflect"              then actor.deflect = value
-  when "mirrorreflect"        then actor.mirrorreflect = value
-  when "aimreflect"           then actor.aimreflect = value
-  when "thrureflect"          then actor.thrureflect = value
-  when "noradiusdmg"          then actor.noradiusdmg = value
-  when "dontblast"            then actor.dontblast = value
-  when "shadow"               then actor.shadow = value
-  when "ghost"                then actor.ghost = value
-  when "dontmorph"            then actor.dontmorph = value
-  when "dontsquash"           then actor.dontsquash = value
-  when "noteleother"          then actor.noteleother = value
-  when "harmfriends"          then actor.harmfriends = value
-  when "dontdrain"            then actor.dontdrain = value
-  when "dontrip"              then actor.dontrip = value
-  when "bright"               then actor.bright = value
-  when "invisible"            then actor.invisible = value
-  when "noblood"              then actor.noblood = value
-  when "noblooddecals"        then actor.noblooddecals = value
-  when "stealth"              then actor.stealth = value
-  when "floorclip"            then actor.floorclip = value
-  when "spawnfloat"           then actor.spawnfloat = value
-  when "spawnceiling"         then actor.spawnceiling = value
-  when "floatbob"             then actor.floatbob = value
-  when "noicedeath"           then actor.noicedeath = value
-  when "dontgib"              then actor.dontgib = value
-  when "dontsplash"           then actor.dontsplash = value
-  when "dontoverlap"          then actor.dontoverlap = value
-  when "randomize"            then actor.randomize = value
-  when "fixmapthingpos"       then actor.fixmapthingpos = value
-  when "fullvolactive"        then actor.fullvolactive = value
-  when "fullvoldeath"         then actor.fullvoldeath = value
-  when "fullvolsee"           then actor.fullvolsee = value
-  when "nowallbouncesnd"      then actor.nowallbouncesnd = value
-  when "visibilitypulse"      then actor.visibilitypulse = value
-  when "rockettrail"          then actor.rockettrail = value
-  when "grenadetrail"         then actor.grenadetrail = value
-  when "nobouncesound"        then actor.nobouncesound = value
-  when "noskin"               then actor.noskin = value
-  when "donttranslate"        then actor.donttranslate = value
-  when "nopain"               then actor.nopain = value
-  when "forceybillboard"      then actor.forceybillboard = value
-  when "forcexybillboard"     then actor.forcexybillboard = value
-  when "missile"              then actor.missile = value
-  when "ripper"               then actor.ripper = value
-  when "nobossrip"            then actor.nobossrip = value
-  when "nodamagethrust"       then actor.nodamagethrust = value
-  when "dontreflect"          then actor.dontreflect = value
-  when "noshieldreflect"      then actor.noshieldreflect = value
-  when "floorhugger"          then actor.floorhugger = value
-  when "ceilinghugger"        then actor.ceilinghugger = value
-  when "bloodlessimpact"      then actor.bloodlessimpact = value
-  when "bloodsplatter"        then actor.bloodsplatter = value
-  when "foilinvul"            then actor.foilinvul = value
-  when "foilbuddha"           then actor.foilbuddha = value
-  when "seekermissile"        then actor.seekermissile = value
-  when "screenseeker"         then actor.screenseeker = value
-  when "skyexplode"           then actor.skyexplode = value
-  when "noexplodefloor"       then actor.noexplodefloor = value
-  when "strifedamage"         then actor.strifedamage = value
-  when "extremedeath"         then actor.extremedeath = value
-  when "noextremedeath"       then actor.noextremedeath = value
-  when "dehexplosion"         then actor.dehexplosion = value
-  when "piercearmor"          then actor.piercearmor = value
-  when "forceradiusdmg"       then actor.forceradiusdmg = value
-  when "forcezeroradiusdmg"   then actor.forcezeroradiusdmg = value
-  when "spawnsoundsource"     then actor.spawnsoundsource = value
-  when "painless"             then actor.painless = value
-  when "forcepain"            then actor.forcepain = value
-  when "causepain"            then actor.causepain = value
-  when "dontseekinvisible"    then actor.dontseekinvisible = value
-  when "stepmissile"          then actor.stepmissile = value
-  when "additivepoisondamage"    then actor.additivepoisondamage = value
-  when "additivepoisonduration"  then actor.additivepoisonduration = value
-  when "poisonalways"         then actor.poisonalways = value
-  when "hittarget"            then actor.hittarget = value
-  when "hitmaster"            then actor.hitmaster = value
-  when "hittracer"            then actor.hittracer = value
-  when "hitowner"             then actor.hitowner = value
-  when "bounceonwalls"        then actor.bounceonwalls = value
-  when "bounceonfloors"       then actor.bounceonfloors = value
-  when "bounceonceilings"     then actor.bounceonceilings = value
-  when "allowbounceonactors"  then actor.allowbounceonactors = value
-  when "bounceautooff"        then actor.bounceautooff = value
-  when "bounceautooffflooronly" then actor.bounceautooffflooronly = value
-  when "bouncelikeheretic"    then actor.bouncelikeheretic = value
-  when "bounceonactors"       then actor.bounceonactors = value
-  when "bounceonunrippables"  then actor.bounceonunrippables = value
-  when "explodeonwater"       then actor.explodeonwater = value
-  when "canbouncewater"       then actor.canbouncewater = value
-  when "mbfbouncer"           then actor.mbfbouncer = value
-  when "usebouncestate"       then actor.usebouncestate = value
-  when "dontbounceonshootables" then actor.dontbounceonshootables = value
-  when "dontbounceonsky"      then actor.dontbounceonsky = value
-  when "iceshatter"           then actor.iceshatter = value
-  when "dropped"              then actor.dropped = value
-  when "ismonster"            then actor.ismonster = value
-  when "corpse"               then actor.corpse = value
-  when "countitem"            then actor.countitem = value
-  when "countkill"            then actor.countkill = value
-  when "countsecret"          then actor.countsecret = value
-  when "notdmatch"            then actor.notdmatch = value
-  when "nonshootable"         then actor.nonshootable = value
-  when "dropoff"              then actor.dropoff = value
-  when "puffonactors"         then actor.puffonactors = value
-  when "allowparticles"       then actor.allowparticles = value
-  when "alwayspuff"           then actor.alwayspuff = value
-  when "puffgetsowner"        then actor.puffgetsowner = value
-  when "forcedecal"           then actor.forcedecal = value
-  when "nodecal"              then actor.nodecal = value
-  when "synchronized"         then actor.synchronized = value
-  when "alwaysfast"           then actor.alwaysfast = value
-  when "neverfast"            then actor.neverfast = value
-  when "oldradiusdmg"         then actor.oldradiusdmg = value
-  when "usespecial"           then actor.usespecial = value
-  when "bumpspecial"          then actor.bumpspecial = value
-  when "bossdeath"            then actor.bossdeath = value
-  when "nointeraction"        then actor.nointeraction = value
-  when "notautoaimed"         then actor.notautoaimed = value
-  when "nomenu"               then actor.nomenu = value
-  when "pickup"               then actor.pickup = value
-  when "touchy"               then actor.touchy = value
-  when "vulnerable"           then actor.vulnerable = value
-  when "notonautomap"         then actor.notonautomap = value
-  when "weaponspawn"          then actor.weaponspawn = value
-  when "getowner"             then actor.getowner = value
-  when "seesdaggers"          then actor.seesdaggers = value
-  when "incombat"             then actor.incombat = value
-  when "noclip"               then actor.noclip = value
-  when "nosector"             then actor.nosector = value
-  when "icecorpse"            then actor.icecorpse = value
-  when "justhit"              then actor.justhit = value
-  when "justattacked"         then actor.justattacked = value
-  when "teleport"             then actor.teleport = value
-  when "e1m8boss"             then actor.e1m8boss = value
-  when "e2m8boss"             then actor.e2m8boss = value
-  when "e3m8boss"             then actor.e3m8boss = value
-  when "e4m6boss"             then actor.e4m6boss = value
-  when "e4m8boss"             then actor.e4m8boss = value
-  when "inchase"              then actor.inchase = value
-  when "unmorphed"            then actor.unmorphed = value
-  when "fly"                  then actor.fly = value
-  when "onmobj"               then actor.onmobj = value
-  when "argsdefined"          then actor.argsdefined = value
-  when "nosightcheck"         then actor.nosightcheck = value
-  when "crashed"              then actor.crashed = value
-  when "warnbot"              then actor.warnbot = value
-  when "huntplayers"          then actor.huntplayers = value
-  when "nohateplayers"        then actor.nohateplayers = value
-  when "scrollmove"           then actor.scrollmove = value
-  when "vfriction"            then actor.vfriction = value
-  when "bossspawned"          then actor.bossspawned = value
-  when "avoidingdropoff"      then actor.avoidingdropoff = value
-  when "chasegoal"            then actor.chasegoal = value
-  when "inconversation"       then actor.inconversation = value
-  when "armed"                then actor.armed = value
-  when "falling"              then actor.falling = value
-  when "linedone"             then actor.linedone = value
-  when "shattering"           then actor.shattering = value
-  when "killed"               then actor.killed = value
-  when "bosscube"             then actor.bosscube = value
-  when "intrymove"            then actor.intrymove = value
-  when "handlenodelay"        then actor.handlenodelay = value
-  when "flycheat"             then actor.flycheat = value
-  when "respawninvul"         then actor.respawninvul = value
-  when "lowgravity"           then actor.lowgravity = value
-  when "quartergravity"       then actor.quartergravity = value
-  when "longmeleerange"       then actor.longmeleerange = value
-  when "shortmissilerange"    then actor.shortmissilerange = value
-  when "highermprob"          then actor.highermprob = value
-  when "fireresist"           then actor.fireresist = value
-  when "donthurtspecies"      then actor.donthurtspecies = value
-  when "firedamage"           then actor.firedamage = value
-  when "icedamage"            then actor.icedamage = value
-  when "hereticbounce"        then actor.hereticbounce = value
-  when "hexenbounce"          then actor.hexenbounce = value
-  when "doombounce"           then actor.doombounce = value
-  when "faster"               then actor.faster = value
-  when "fastmelee"            then actor.fastmelee = value
-  when "explodeondeath"       then actor.explodeondeath = value
-  when "allowclientspawn"     then actor.allowclientspawn = value
-  when "clientsideonly"       then actor.clientsideonly = value
-  when "nonetid"              then actor.nonetid = value
-  when "dontidentifytarget"   then actor.dontidentifytarget = value
-  when "scorepillar"          then actor.scorepillar = value
-  when "serversideonly"       then actor.serversideonly = value
-  when "blueteam"             then actor.blueteam = value
-  when "redteam"              then actor.redteam = value
-  when "node"                 then actor.node = value
-  when "basehealth"           then actor.basehealth = value
-  when "superhealth"          then actor.superhealth = value
-  when "basearmor"            then actor.basearmor = value
-  when "superarmor"           then actor.superarmor = value
-  # Sub-object flags (inventory, weapon, etc.)
-  when "inventory.quiet"               then actor.inventory.quiet = value
-  when "inventory.autoactivate"        then actor.inventory.autoactivate = value
-  when "inventory.undroppable", "undroppable"  then actor.inventory.undroppable = value
-  when "inventory.unclearable"         then actor.inventory.unclearable = value
-  when "inventory.invbar", "invbar"    then actor.inventory.invbar = value
-  when "inventory.hubpower"            then actor.inventory.hubpower = value
-  when "inventory.persistentpower"     then actor.inventory.persistentpower = value
-  when "inventory.interhubstrip"       then actor.inventory.interhubstrip = value
-  # Note: inventory.pickupflash is a String property (actor name), not a Bool flag.
-  # The +INVENTORY.PICKUPFLASH flag form is extremely rare and handled via property.
-  when "inventory.alwayspickup"        then actor.inventory.alwayspickup = value
-  when "inventory.fancypickupsound", "fancypickupsound" then actor.inventory.fancypickupsound = value
-  when "inventory.noattenpickupsound"  then actor.inventory.noattenpickupsound = value
-  when "inventory.bigpowerup"          then actor.inventory.bigpowerup = value
-  when "inventory.neverrespawn"        then actor.inventory.neverrespawn = value
-  when "inventory.keepdepleted"        then actor.inventory.keepdepleted = value
-  when "inventory.ignoreskill"         then actor.inventory.ignoreskill = value
-  when "inventory.additivetime"        then actor.inventory.additivetime = value
-  when "inventory.untossable"          then actor.inventory.untossable = value
-  when "inventory.restrictabsolutely"  then actor.inventory.restrictabsolutely = value
-  when "inventory.noscreenflash"       then actor.inventory.noscreenflash = value
-  when "inventory.tossed"              then actor.inventory.tossed = value
-  when "inventory.alwaysrespawn"       then actor.inventory.alwaysrespawn = value
-  when "inventory.transfer"            then actor.inventory.transfer = value
-  when "inventory.noteleportfreeze"    then actor.inventory.noteleportfreeze = value
-  when "inventory.noscreenblink"       then actor.inventory.noscreenblink = value
-  when "inventory.ishealth"            then actor.inventory.ishealth = value
-  when "inventory.isarmor"             then actor.inventory.isarmor = value
-  when "inventory.forcerespawninsurvival" then actor.inventory.forcerespawninsurvival = value
-  when "weapon.noautofire"             then actor.weapon.noautofire = value
-  when "weapon.readysndhalf"           then actor.weapon.readysndhalf = value
-  when "weapon.dontbob"                then actor.weapon.dontbob = value
-  when "weapon.axeblood"               then actor.weapon.axeblood = value
-  when "weapon.noalert"                then actor.weapon.noalert = value
-  when "weapon.ammo_optional"          then actor.weapon.ammo_optional = value
-  when "weapon.alt_ammo_optional"      then actor.weapon.alt_ammo_optional = value
-  when "weapon.ammo_checkboth"         then actor.weapon.ammo_checkboth = value
-  when "weapon.primary_uses_both"      then actor.weapon.primary_uses_both = value
-  when "weapon.alt_uses_both"          then actor.weapon.alt_uses_both = value
-  when "weapon.wimpy_weapon", "wimpy_weapon"   then actor.weapon.wimpy_weapon = value
-  when "weapon.powered_up", "powered_up"       then actor.weapon.powered_up = value
-  when "weapon.staff2_kickback"        then actor.weapon.staff2_kickback = value
-  when "weapon.explosive"              then actor.weapon.explosive = value
-  when "weapon.meleeweapon", "meleeweapon"     then actor.weapon.meleeweapon = value
-  when "weapon.bfg"                    then actor.weapon.bfg = value
-  when "weapon.cheatnotweapon"         then actor.weapon.cheatnotweapon = value
-  when "weapon.noautoswitchto"         then actor.weapon.noautoswitchto = value
-  when "weapon.noautoaim"              then actor.weapon.noautoaim = value
-  when "weapon.nodeathdeselect"        then actor.weapon.nodeathdeselect = value
-  when "weapon.nodeathinput"           then actor.weapon.nodeathinput = value
-  when "weapon.allow_with_respawn_invul" then actor.weapon.allow_with_respawn_invul = value
-  when "weapon.nolms"                  then actor.weapon.nolms = value
-  when "powerspeed.notrail"            then actor.powerspeed.notrail = value
-  when "playerpawn.nothrustwheninvul", "nothrustwheninvul"  then actor.player.nothrustwheninvul = value
-  when "playerpawn.cansupermorph", "cansupermorph"          then actor.player.cansupermorph = value
-  when "playerpawn.crouchablemorph"    then actor.player.crouchablemorph = value
-  when "playerpawn.weaponlevel2ended"  then actor.player.weaponlevel2ended = value
-  else
-    return false
-  end
-  true
-end
-
-# Sets a property value on an actor. Returns true if recognized.
-def set_actor_property(actor : Actor, prop_name : String, line : String) : Bool
-  # Strip trailing semicolons — ZSCRIPT uses them as line terminators
-  clean_line = line.rstrip.rstrip(';').rstrip
-  words = clean_line.split
-  val1 = words[1]?
-  rest = words[1..]?.try(&.join(' ')) || ""
-
-  begin
-    case prop_name
-    when "health"
-      # Avoid collision with the "Health" actor name
-      return false if actor.name.downcase.strip == "health"
-      # Clamp to Int32 range — some mods use absurdly large values
-      health_val = val1.not_nil!.to_i64?
-      if health_val
-        actor.health = health_val.clamp(Int32::MIN.to_i64, Int32::MAX.to_i64).to_i32
-      else
-        log(1, "Cannot parse health value: #{val1}")
-      end
-    when "gibhealth"         then actor.gib_health = val1.not_nil!.to_i
-    when "woundhealth"       then actor.wound_health = val1.not_nil!.to_i
-    when "reactiontime"      then actor.reaction_time = val1.not_nil!.to_i
-    when "painchance"        then actor.pain_chance = "#{val1},#{words[2]?}"
-    when "painthreshold"     then actor.pain_threshold = val1.not_nil!.to_i
-    when "damagefactor"      then actor.damage_factor = rest
-    when "selfdamagefactor"  then actor.self_damage_factor = val1.not_nil!.to_f
-    when "damagemultiply"    then actor.damage_multiply = val1.not_nil!.to_f
-    when "damage"            then actor.damage = val1.to_s
-    when "poisondamage"      then actor.poison_damage = rest
-    when "poisondamagetype"  then actor.poison_damage_type = rest
-    when "radiusdamagefactor" then actor.radius_damage_factor = val1.not_nil!.to_f
-    when "ripperlevel"       then actor.ripper_level = val1.not_nil!.to_i
-    when "riplevelmin"       then actor.rip_level_min = val1.not_nil!.to_i
-    when "riplevelmax"       then actor.rip_level_max = val1.not_nil!.to_i
-    when "designatedteam"    then actor.designated_team = val1.not_nil!.to_i
-    when "speed"             then actor.speed = val1.not_nil!.to_f
-    when "vspeed"            then actor.v_speed = val1.not_nil!.to_f
-    when "fastspeed"         then actor.fast_speed = val1.not_nil!.to_i
-    when "floatspeed"        then actor.float_speed = val1.not_nil!.to_i
-    when "species"           then actor.species = val1.to_s
-    when "accuracy"          then actor.accuracy = val1.not_nil!.to_i
-    when "stamina"           then actor.stamina = val1.not_nil!.to_i
-    when "activation"        then actor.activation = rest
-    when "telefogsourcetype"  then actor.tele_fog_source_type = val1.to_s
-    when "telefogdesttype"   then actor.tele_fog_dest_type = val1.to_s
-    when "threshold"         then actor.threshold = val1.not_nil!.to_i
-    when "defthreshold"      then actor.def_threshold = val1.not_nil!.to_i
-    when "friendlyseeblocks" then actor.friendly_see_blocks = val1.not_nil!.to_i
-    when "shadowaimfactor"   then actor.shadow_aim_factor = val1.not_nil!.to_f
-    when "shadowpenaltyfactor" then actor.shadow_penalty_factor = val1.not_nil!.to_f
-    when "radius"            then actor.radius = val1.not_nil!.to_f
-    when "height"            then actor.height = val1.not_nil!.to_i
-    when "deathheight"       then actor.death_height = val1.not_nil!.to_i
-    when "burnheight"        then actor.burn_height = val1.not_nil!.to_i
-    when "projectilepassheight" then actor.projectile_pass_height = val1.not_nil!.to_i
-    when "gravity"           then actor.gravity = val1.not_nil!.to_f
-    when "friction"          then actor.friction = val1.not_nil!.to_f
-    when "mass"              then actor.mass = val1.to_s
-    when "maxstepheight"     then actor.max_step_height = val1.not_nil!.to_i
-    when "maxdropoffheight"  then actor.max_drop_off_height = val1.not_nil!.to_i
-    when "maxslopesteepness" then actor.max_slope_steepness = val1.not_nil!.to_f
-    when "bouncetype"        then actor.bounce_type = val1.to_s
-    when "bouncefactor"      then actor.bounce_factor = val1.not_nil!.to_f
-    when "wallbouncefactor"  then actor.wall_bounce_factor = val1.not_nil!.to_f
-    when "bouncecount"       then actor.bounce_count = val1.not_nil!.to_i
-    when "projectilekickback" then actor.projectile_kick_back = val1.not_nil!.to_i
-    when "pushfactor"        then actor.push_factor = val1.not_nil!.to_f
-    when "weaveindexxy"      then actor.weave_index_xy = val1.not_nil!.to_i
-    when "weaveindexz"       then actor.weave_index_z = val1.not_nil!.to_i
-    when "thrubits"          then actor.thru_bits = val1.not_nil!.to_i
-    when "activesound"       then actor.active_sound = val1.to_s
-    when "attacksound"       then actor.attack_sound = val1.to_s
-    when "bouncesound"       then actor.bounce_sound = val1.to_s
-    when "crushpainsound"    then actor.crush_pain_sound = val1.to_s
-    when "deathsound"        then actor.death_sound = val1.to_s
-    when "howlsound"         then actor.howl_sound = val1.to_s
-    when "painsound"         then actor.pain_sound = val1.to_s
-    when "ripsound"          then actor.rip_sound = val1.to_s
-    when "seesound"          then actor.see_sound = val1.to_s
-    when "wallbouncesound"   then actor.wall_bounce_sound = val1.to_s
-    when "pushsound"         then actor.push_sound = val1.to_s
-    when "renderstyle"       then actor.render_style = val1.to_s
-    when "alpha"             then actor.alpha = val1.not_nil!.to_f
-    when "defaultalpha"      then actor.default_alpha = true
-    when "stealthalpha"      then actor.stealth_alpha = val1.not_nil!.to_f
-    when "xscale"            then actor.x_scale = val1.not_nil!.to_f
-    when "yscale"            then actor.y_scale = val1.not_nil!.to_f
-    when "scale"             then actor.scale = val1.not_nil!.to_f
-    when "lightlevel"        then actor.light_level = val1.not_nil!.to_i
-    when "translation"       then actor.translation = rest
-    when "bloodcolor"        then actor.blood_color = rest
-    when "bloodtype"         then actor.blood_type = rest
-    when "decal"             then actor.decal = val1.to_s
-    when "stencilcolor"      then actor.stencil_color = val1.to_s
-    when "floatbobphase"     then actor.float_bob_phase = val1.not_nil!.to_i
-    when "floatbobstrength"  then actor.float_bob_strength = val1.not_nil!.to_i
-    when "distancecheck"     then actor.distance_check = val1.to_s
-    when "spriteangle"       then actor.sprite_angle = val1.not_nil!.to_i
-    when "spriterotation"    then actor.sprite_rotation = val1.not_nil!.to_i
-    when "visibleangles"     then actor.visible_angles = rest
-    when "visiblepitch"      then actor.visible_pitch = rest
-    when "renderradius"      then actor.render_radius = val1.not_nil!.to_f
-    when "cameraheight"      then actor.camera_height = val1.not_nil!.to_i
-    when "camerafov"         then actor.camera_fov = val1.not_nil!.to_f
-    when "hitobituary"       then actor.hit_obituary = val1.to_s
-    when "obituary"          then actor.obituary = val1.to_s
-    when "minmissilechance"  then actor.min_missile_chance = val1.not_nil!.to_i
-    when "damagetype"        then actor.damage_type = val1.to_s
-    when "deathtype"         then actor.death_type = val1.to_s
-    when "meleethreshold"    then actor.melee_threshold = val1.not_nil!.to_i
-    when "meleerange"        then actor.melee_range = val1.not_nil!.to_i
-    when "maxtargetrange"    then actor.max_target_range = val1.not_nil!.to_i
-    when "meleedamage"       then actor.melee_damage = val1.not_nil!.to_i
-    when "meleesound"        then actor.melee_sound = val1.to_s
-    when "missileheight"     then actor.missile_height = val1.not_nil!.to_i
-    when "missiletype"       then actor.missile_type = val1.to_s
-    when "explosionradius"   then actor.explosion_radius = val1.not_nil!.to_i
-    when "explosiondamage"   then actor.explosion_damage = val1.not_nil!.to_i
-    when "donthurtshooter"   then actor.dont_hurt_shooter = true
-    when "paintype"          then actor.pain_type = val1.to_s
-    when "projectile"        then actor.projectile = true
-    when "game"              then actor.game = val1.to_s
-    when "spawnid"           then actor.spawn_id = val1.not_nil!.to_i
-    when "conversationid"    then actor.conversation_id = rest
-    when "tag"               then actor.tag = rest
-    when "args"              then actor.args = rest
-    when "clearflags"        then actor.clear_flags = true
-    when "dropitem"          then actor.drop_item = rest
-    when "skip_super"        then actor.skip_super = true
-    when "visibletoteam"     then actor.visible_to_team = val1.not_nil!.to_i
-    # Inventory properties
-    when "inventory.amount"           then actor.inventory.amount = val1.not_nil!.to_i
-    when "inventory.defmaxamount"     then actor.inventory.defmaxamount = true
-    when "inventory.maxamount"        then actor.inventory.maxamount = val1.to_s.gsub("\"", "")
-    when "inventory.interhubamount"   then actor.inventory.interhubamount = val1.not_nil!.to_i
-    when "inventory.icon"             then actor.inventory.icon = val1.to_s
-    when "inventory.althudicon"       then actor.inventory.althudicon = val1.to_s
-    when "inventory.pickupmessage"    then actor.inventory.pickupmessage = rest
-    when "inventory.pickupsound"      then actor.inventory.pickupsound = val1.to_s
-    when "inventory.pickupflash"      then actor.inventory.pickupflash = val1.to_s
-    when "inventory.usesound"         then actor.inventory.usesound = val1.to_s
-    when "inventory.respawntics"      then actor.inventory.respawntics = val1.not_nil!.to_i
-    when "inventory.givequest"        then actor.inventory.givequest = val1.not_nil!.to_i
-    when "inventory.forbiddento"      then actor.inventory.forbiddento = val1.to_s
-    when "inventory.restrictedto"     then actor.inventory.restrictedto = val1.to_s
-    # Weapon properties
-    when "weapon.ammogive", "weapon.ammogive1"  then actor.weapon.ammogive = val1.not_nil!.to_i
-    when "weapon.ammogive2"           then actor.weapon.ammogive2 = val1.not_nil!.to_i
-    when "weapon.ammotype", "weapon.ammotype1"  then actor.weapon.ammotype = val1.to_s
-    when "weapon.ammotype2"           then actor.weapon.ammotype2 = val1.to_s
-    when "weapon.ammouse", "weapon.ammouse1"    then actor.weapon.ammouse = val1.not_nil!.to_i
-    when "weapon.ammouse2"            then actor.weapon.ammouse2 = val1.not_nil!.to_i
-    when "weapon.minselectionammo1"   then actor.weapon.minselectionammo1 = val1.not_nil!.to_i
-    when "weapon.minselectionammo2"   then actor.weapon.minselectionammo2 = val1.not_nil!.to_i
-    when "weapon.bobpivot3d"          then actor.weapon.bobpivot3d = rest
-    when "weapon.bobrangex"           then actor.weapon.bobrangex = val1.not_nil!.to_f
-    when "weapon.bobrangey"           then actor.weapon.bobrangey = val1.not_nil!.to_f
-    when "weapon.bobspeed"            then actor.weapon.bobspeed = val1.not_nil!.to_f
-    when "weapon.bobstyle"            then actor.weapon.bobstyle = rest
-    when "weapon.kickback"            then actor.weapon.kickback = val1.not_nil!.to_i
-    when "weapon.defaultkickback"     then actor.weapon.defaultkickback = true
-    when "weapon.readysound"          then actor.weapon.readysound = rest
-    when "weapon.selectionorder"      then actor.weapon.selectionorder = val1.not_nil!.to_i
-    when "weapon.sisterweapon"        then actor.weapon.sisterweapon = rest
-    when "weapon.slotnumber"          then actor.weapon.slotnumber = val1.not_nil!.to_i
-    when "weapon.slotpriority"        then actor.weapon.slotpriority = val1.not_nil!.to_f
-    when "weapon.upsound"             then actor.weapon.upsound = rest
-    when "weapon.weaponscalex"        then actor.weapon.weaponscalex = val1.not_nil!.to_f
-    when "weapon.weaponscaley"        then actor.weapon.weaponscaley = val1.not_nil!.to_f
-    when "weapon.yadjust"             then actor.weapon.yadjust = val1.not_nil!.to_i
-    when "weapon.lookscale"           then actor.weapon.lookscale = val1.not_nil!.to_f
-    # Ammo
-    when "ammo.backpackamount"        then actor.ammo.backpackamount = val1.not_nil!.to_i
-    when "ammo.backpackmaxamount"     then actor.ammo.backpackmaxamount = val1.not_nil!.to_i
-    when "ammo.dropamount"            then actor.ammo.dropamount = val1.not_nil!.to_i
-    # WeaponPiece
-    when "weaponpiece.number"         then actor.weaponpiece.number = val1.not_nil!.to_i
-    when "weaponpiece.weapon"         then actor.weaponpiece.weapon = rest
-    # Health class
-    when "health.lowmessage"          then actor.healthclass.lowmessage = rest
-    # PuzzleItem
-    when "puzzleitem.number"          then actor.puzzleitem.number = val1.not_nil!.to_i
-    when "puzzleitem.failmessage"     then actor.puzzleitem.failmessage = rest
-    when "puzzleitem.failsound"       then actor.puzzleitem.failsound = val1.to_s
-    # PlayerPawn
-    when "player.aircapacity"         then actor.player.aircapacity = val1.not_nil!.to_f
-    when "player.attackzoffset"       then actor.player.attackzoffset = val1.not_nil!.to_i
-    when "player.clearcolorset"       then actor.player.clearcolorset = val1.not_nil!.to_i
-    when "player.colorrange"          then actor.player.colorrange = rest
-    when "player.colorset"            then actor.player.colorset = val1.to_s
-    when "player.colorsetfile"        then actor.player.colorsetfile = rest
-    when "player.crouchsprite"        then actor.player.crouchsprite = val1.to_s
-    when "player.damagescreencolor"   then actor.player.damagescreencolor = rest
-    when "player.displayname"         then actor.player.displayname = val1.to_s
-    when "player.face"                then actor.player.face = val1.to_s
-    when "player.fallingscreamspeed"  then actor.player.fallingscreamspeed = rest
-    when "player.flechettetype"       then actor.player.flechettetype = val1.to_s
-    when "player.flybob"              then actor.player.flybob = val1.not_nil!.to_f
-    when "player.forwardmove"         then actor.player.forwardmove = rest
-    when "player.gruntspeed"          then actor.player.gruntspeed = val1.not_nil!.to_f
-    when "player.healradiustype"      then actor.player.healradiustype = val1.to_s
-    when "player.hexenarmor"          then actor.player.hexenarmor = val1.to_s
-    when "player.invulnerabilitymode" then actor.player.invulnerabilitymode = val1.to_s
-    when "player.jumpz"              then actor.player.jumpz = val1.not_nil!.to_f
-    when "player.maxhealth"          then actor.player.maxhealth = val1.not_nil!.to_i
-    when "player.morphweapon"        then actor.player.morphweapon = val1.to_s
-    when "player.mugshotmaxhealth"   then actor.player.mugshotmaxhealth = val1.not_nil!.to_i
-    when "player.runhealth"          then actor.player.runhealth = val1.not_nil!.to_i
-    when "player.scoreicon"          then actor.player.scoreicon = val1.to_s
-    when "player.sidemove"           then actor.player.sidemove = rest
-    when "player.soundclass"         then actor.player.soundclass = val1.to_s
-    when "player.spawnclass"         then actor.player.spawnclass = val1.to_s
-    when "player.startitem"          then actor.player.startitem = rest
-    when "player.viewbob"            then actor.player.viewbob = val1.not_nil!.to_f
-    when "player.viewheight"         then actor.player.viewheight = val1.not_nil!.to_i
-    when "player.waterclimbspeed"    then actor.player.waterclimbspeed = val1.not_nil!.to_f
-    when "player.weaponslot"         then actor.player.weaponslot = rest
-    # Powerup
-    when "powerup.color"             then actor.powerup.color = rest
-    when "powerup.colormap"          then actor.powerup.colormap = rest
-    when "powerup.duration"          then actor.powerup.duration = val1.to_s
-    when "powerup.mode"              then actor.powerup.mode = val1.to_s
-    when "powerup.strength"          then actor.powerup.strength = val1.not_nil!.to_f
-    when "powerup.type"              then actor.powerup.type = val1.to_s
-    # HealthPickup
-    when "healthpickup.autouse"      then actor.healthpickup.autouse = val1.not_nil!.to_i
-    # MorphProjectile
-    when "morphprojectile.playerclass"    then actor.morphprojectile.playerclass = val1.to_s
-    when "morphprojectile.monsterclass"   then actor.morphprojectile.monsterclass = val1.to_s
-    when "morphprojectile.duration"       then actor.morphprojectile.duration = val1.not_nil!.to_i
-    when "morphprojectile.morphstyle"     then actor.morphprojectile.morphstyle = rest
-    when "morphprojectile.morphflash"     then actor.morphprojectile.morphflash = rest
-    when "morphprojectile.unmorphflash"   then actor.morphprojectile.unmorphflash = rest
-    else
-      return false
-    end
-  rescue ex
-    log(1, "Failed to parse property '#{prop_name}' from line: #{line} (#{ex.message})")
-    return false
-  end
-  true
-end
 
 ###############################################################################
 # MAIN PARSING LOOP
@@ -1592,60 +518,15 @@ if LOG_LEVEL >= 2
 end
 
 ###############################################################################
-# REMOVING IDENTICAL ACTORS
+# REMOVING IDENTICAL ACTORS — DISABLED
+# The removal logic was deleting actors that other actors in the same WAD
+# depend on (e.g., removing "Bubble" broke "BubbleShort" which inherits it).
+# GZDoom handles true duplicates gracefully. Keeping all actors is safer.
 ###############################################################################
 
-log(2, "=== Removing Identical Actors ===")
+log(2, "=== Removing Identical Actors === (DISABLED)")
 
 actor_counter = 0
-
-# Group actors by their normalized content (name + inheritance + body)
-identical_actors = actordb.group_by { |actor|
-  lines = actor.full_actor_text.lines
-  first_line = lines[0]? || ""
-  inherits = first_line.partition(/\:\s+[^\s]*/)
-  first_line = first_line.split[0..1].join(' ')
-  first_line = first_line + " " + inherits[1] if inherits[1] != ""
-  rest = lines[1..]?.try(&.join("\n")) || ""
-  formatted = (first_line + "\n" + rest).lines.map(&.strip.downcase).reject(&.empty?).join("\n")
-  formatted
-}.select { |_, actors| actors.size > 1 }
- .flat_map { |_, actors| actors }
-
-# Mark first of each group as primary, remove the rest
-identical_actor_name = "UNDEFINED"
-identical_actors.each do |actor|
-  if identical_actor_name != actor.name
-    identical_actor_name = actor.name
-    actordb.each { |a| a.primary = true if a.index == actor.index && a.file_path == actor.file_path }
-    next
-  end
-
-  log(3, "Removing duplicate actor: #{actor.name} from #{actor.source_wad_folder}")
-
-  # Remove from the file using balanced brace matching
-  file_text = safe_read(actor.file_path)
-  regex = /^[\ \t]*actor\s+#{Regex.escape(actor.name)}\s+[^{]*\{/mi
-  if md = file_text.match(regex)
-    match_start = md.begin(0).not_nil!
-    brace_start = file_text.index('{', match_start)
-    if brace_start
-      # Find the "actor" keyword position
-      actor_keyword_pos = file_text.rindex("actor", brace_start) || match_start
-      matched = extract_balanced_braces(file_text, brace_start)
-      if matched
-        actor_end = brace_start + matched.size
-        file_text = file_text[0...actor_keyword_pos] +
-                    "// duplicate actor removed: #{actor.name}" +
-                    file_text[actor_end..]
-        File.write(actor.file_path, file_text)
-      end
-    end
-  end
-
-  # Remove from actordb
-  actordb.reject! { |a| a.index == actor.index && a.file_path == actor.file_path }
-end
 
 ###############################################################################
 # RENAMING DUPLICATE ACTOR NAMES
@@ -1676,9 +557,35 @@ actors_by_name.each do |key, actors|
     log(3, "  Renaming #{actor.name_with_case} → #{renamed_actor} in #{wad_folder}")
 
     Dir.children(wad_folder).each do |file|
-      file_text = File.read(wad_folder + file)
-      file_text = file_text.gsub(/(?<=[\s"])#{Regex.escape(actor.name_with_case)}(?=[\s"])/, renamed_actor)
-      File.write(wad_folder + file, file_text)
+      file_path_rename = wad_folder + file
+      next if File.directory?(file_path_rename)
+      file_text = File.read(file_path_rename)
+      escaped = Regex.escape(actor.name_with_case)
+
+      # Only rename in contexts where the name is used as a class/actor reference.
+      # IMPORTANT: Never rename sprite prefix references in state frame lines.
+      # Sprite frames look like: "  SPRT A 1 Action" (prefix + space + frame letter + space/digit)
+      # We use targeted patterns that require specific keywords before the name.
+      #
+      # 1. Actor definition line: "actor Name" at line start (DECORATE definitions).
+      #    Excludes ZScript variable declarations like "actor nuke = ..." where
+      #    "actor" is used as a type name. Variable declarations have "=" after
+      #    the name, while definitions have ":", "{", a number, or "replaces".
+      file_text = file_text.gsub(/^(\s*actor\s+)#{escaped}(?=[\s:{])(?![ \t]*=)/mi) { "#{$1}#{renamed_actor}" }
+      # 2. Class definition line: "class Name" at line start
+      file_text = file_text.gsub(/^(\s*class\s+)#{escaped}(?=[\s:{])/mi) { "#{$1}#{renamed_actor}" }
+      # 3. Inheritance reference: ": Name" or ": Name,"
+      #    Use [ \t]* instead of \s* to prevent matching across lines
+      #    (e.g., "Ready:\n\t\tMINE" where the colon is a state label, not inheritance)
+      file_text = file_text.gsub(/(:[ \t]*)#{escaped}(?=[\s,{])/mi) { "#{$1}#{renamed_actor}" }
+      # 4. Replaces keyword: "replaces Name"
+      file_text = file_text.gsub(/(replaces\s+)#{escaped}(?=[\s{])/mi) { "#{$1}#{renamed_actor}" }
+      # 5. Quoted class name references: "Name" (in A_FireProjectile, A_SpawnItemEx, etc.)
+      file_text = file_text.gsub(/"#{escaped}"/i, "\"#{renamed_actor}\"")
+      # 6. ZScript 'is' type check: is 'Name'
+      file_text = file_text.gsub(/'#{escaped}'/i, "'#{renamed_actor}'")
+
+      File.write(file_path_rename, file_text)
     end
 
     actor_counter += 1
@@ -1783,6 +690,90 @@ built_in_count = actordb.count { |a| (a.ismonster || a.monster) && a.built_in }
 log(2, "Total actors: #{actordb.size}, Monsters: #{monster_count} (Built-in: #{built_in_count})")
 
 ###############################################################################
+# EVALUATE WEAPON STATUS VIA INHERITANCE
+###############################################################################
+
+log(2, "=== Evaluating Weapon Status ===")
+
+# Known base weapon classes (lowercase) — actors inheriting from these are weapons
+WEAPON_BASE_CLASSES = Set{
+  "weapon", "doomweapon", "hereticweapon", "hexenweapon", "strifeweapon",
+  "fist", "chainsaw", "pistol", "shotgun", "supershotgun", "chaingun",
+  "rocketlauncher", "plasmarifle", "bfg9000",
+}
+
+weapon_actor_set = Set(String).new
+
+actordb.each do |actor|
+  next if actor.built_in == true
+
+  is_weapon = false
+
+  # Check 1: Does it have weapon-specific properties applied?
+  has_weapon_props = actor.weapon.ammotype != "UNDEFINED" ||
+                     actor.weapon.slotnumber != -1 ||
+                     actor.weapon.ammouse != -1 ||
+                     actor.weapon.ammogive != -1
+
+  # Check 2: Walk the inheritance chain to see if it inherits from Weapon
+  if has_weapon_props || actor.inherits != "UNDEFINED"
+    inheritance_chain = [actor.name.downcase]
+    inherits_name = actor.inherits
+
+    while inherits_name != "UNDEFINED"
+      lc_name = inherits_name.downcase
+      if WEAPON_BASE_CLASSES.includes?(lc_name)
+        is_weapon = true
+        break
+      end
+
+      inherited_actors = actors_by_name[lc_name]?
+      break unless inherited_actors
+
+      target = inherited_actors.find { |a| !a.built_in } || inherited_actors.first?
+      break unless target
+      break if inheritance_chain.includes?(target.name.downcase) # cycle guard
+
+      inheritance_chain << target.name.downcase
+      inherits_name = target.inherits
+    end
+  end
+
+  # Check 3: Has weapon properties even without recognized inheritance
+  if !is_weapon && has_weapon_props
+    is_weapon = true
+  end
+
+  # Exclusions
+  if is_weapon
+    # Skip WeaponPiece actors (they are parts of combo weapons, not standalone)
+    if actor.weaponpiece.weapon != "UNDEFINED"
+      is_weapon = false
+    end
+    # Skip powered-up variants (Heretic Tome of Power upgrades)
+    if actor.weapon.powered_up
+      is_weapon = false
+    end
+    # Skip cheat weapons
+    if actor.weapon.cheatnotweapon
+      is_weapon = false
+    end
+    # Skip if no Fire state (can't actually shoot)
+    unless actor.states.has_key?("fire") || actor.states.has_key?("altfire")
+      is_weapon = false
+    end
+  end
+
+  if is_weapon
+    weapon_actor_set.add(actor.name.downcase)
+    log(3, "Weapon confirmed: #{actor.name_with_case}")
+  end
+end
+
+weapon_count = weapon_actor_set.size
+log(2, "Weapons found: #{weapon_count}")
+
+###############################################################################
 # WIPE ALL DOOMEDNUMS AND REASSIGN TO MONSTERS
 ###############################################################################
 
@@ -1797,6 +788,8 @@ actordb.each do |actor|
 
   lines.each_with_index do |line, line_index|
     next unless line =~ /^\s*actor\s+/i
+    # Skip ZScript field declarations like "actor dummy;" inside class bodies
+    next if line.strip.rstrip(';').strip != line.strip
 
     words = line.split
     delete_idx = -1
@@ -1827,6 +820,8 @@ actordb.each_with_index do |actor, actor_index|
 
     lines.each_with_index do |line, line_index|
       next unless line =~ /^\s*actor\s+/i
+      # Skip ZScript field declarations like "actor dummy;" inside class bodies
+      next if line.strip.rstrip(';').strip != line.strip
 
       words = line.lstrip.split
       next if words[1]?.try(&.downcase) != actor.name_with_case.downcase
@@ -1854,11 +849,65 @@ actordb.each_with_index do |actor, actor_index|
     end
 
     File.write(actor.file_path, lines.join("\n"))
+  elsif !actor.built_in && weapon_actor_set.includes?(actor.name.downcase)
+    # Weapons get doomednums in the next pass
   else
-    # Non-monster: clear doomednum
+    # Non-monster, non-weapon: clear doomednum
     actordb[actor_index].doomednum = -1
   end
 end
+
+# Step 3: Assign fresh doomednums to all weapons (continues from monster counter)
+actordb.each_with_index do |actor, actor_index|
+  next if actor.built_in
+  next unless weapon_actor_set.includes?(actor.name.downcase)
+
+  file_text = safe_read(actor.file_path)
+  lines = file_text.lines
+
+  lines.each_with_index do |line, line_index|
+    next unless line =~ /^\s*actor\s+/i
+    # Skip ZScript field declarations like "actor dummy;" inside class bodies
+    next if line.strip.rstrip(';').strip != line.strip
+
+    words = line.lstrip.split
+    next if words[1]?.try(&.downcase) != actor.name_with_case.downcase
+
+    # Strip any existing doomednum from the line first
+    # (weapons from mods may already have one baked into their DECORATE)
+    cleaned_words = [] of String
+    words.each do |word|
+      next if word != "{" && word !~ /^\// && word.to_i? != nil && word != words[0] && word != words[1]
+      cleaned_words << word
+    end
+    words = cleaned_words
+
+    # Find where to insert: BEFORE the '{' or any comment
+    insert_idx = words.size
+    words.each_with_index do |word, word_index|
+      if word == "{" || word =~ /^\//
+        insert_idx = word_index
+        break
+      end
+    end
+
+    # Find next available doomednum
+    while doomednum_info.has_key?(doomednum_counter)
+      doomednum_counter += 1
+    end
+
+    words.insert(insert_idx, doomednum_counter.to_s)
+    doomednum_info[doomednum_counter] = {-1, -1}
+    actordb[actor_index].doomednum = doomednum_counter
+
+    lines[line_index] = words.join(" ")
+    log(3, "Assigned weapon doomednum #{doomednum_counter} to #{actor.name_with_case}")
+  end
+
+  File.write(actor.file_path, lines.join("\n"))
+end
+
+log(2, "Doomednum assignment complete. Counter ended at: #{doomednum_counter}")
 
 ###############################################################################
 # NOTE: Duplicate sprite removal was disabled because it runs before prefix
@@ -1876,8 +925,9 @@ log(2, "=== Resolving Sprite Prefix Conflicts ===")
 
 sprite_prefix = Hash(String, Array(Tuple(String, String))).new
 
-sprite_files = (Dir.glob("./Processing/*/sprites/*") + Dir.glob("./IWADs_Extracted/*/sprites/*")).map { |p| normalize_path(p) }
+sprite_files = (Dir.glob("./Processing/*/sprites/*") + Dir.glob("./Processing/*/sprites/**/*") + Dir.glob("./IWADs_Extracted/*/sprites/*") + Dir.glob("./IWADs_Extracted/*/sprites/**/*")).map { |p| normalize_path(p) }
 sprite_files.each do |path|
+  next if File.directory?(path)
   key = path.split("/").last.split(".").first[0..3].upcase
   sha = Digest::SHA256.new.file(path).hexfinal
   sprite_prefix[key] ||= Array(Tuple(String, String)).new
@@ -1992,6 +1042,579 @@ sprite_prefix.each do |key, prefix_entries|
 end
 
 ###############################################################################
+# RESOLVE SOUND LUMP CONFLICTS
+###############################################################################
+#
+# Sound files (e.g., DSPOSIT1.raw) can exist in multiple WADs with different
+# audio content. Unlike sprites (which use 4-char prefixes), sound lumps are
+# referenced by their full lump name in SNDINFO. When two WADs ship the same
+# sound filename with different content, we must:
+#   1. Detect the conflict (same filename, different SHA256)
+#   2. Rename the conflicting WAD's sound file (append WAD-specific suffix)
+#   3. Rewrite that WAD's SNDINFO to reference the new filename
+#
+# IWAD sounds always keep their original names — they're the engine baseline.
+# Among mod WADs, the first one processed keeps the original name.
+###############################################################################
+
+log(2, "=== Resolving Sound Lump Conflicts ===")
+
+# Build inventory: sound_lump_name (uppercase, no ext) → [{path, wad_name, is_iwad}]
+sound_inventory = Hash(String, Array(NamedTuple(path: String, wad_name: String, is_iwad: Bool))).new
+
+# Scan IWAD sounds first
+iwad_sound_files = Dir.glob("./IWADs_Extracted/*/sounds/*").map { |p| normalize_path(p) }
+iwad_sound_files.each do |path|
+  next if File.directory?(path)
+  lump = File.basename(path, File.extname(path)).upcase
+  wad_name = path.split("/")[2]
+  sound_inventory[lump] ||= Array(NamedTuple(path: String, wad_name: String, is_iwad: Bool)).new
+  sound_inventory[lump] << {path: path, wad_name: wad_name, is_iwad: true}
+end
+
+# Scan mod sounds (both sounds/ and music/ — jeutool often miscategorizes
+# sound effects as "music" for WADs without proper S_START/S_END markers)
+mod_sound_files = (Dir.glob("./Processing/*/sounds/*") + Dir.glob("./Processing/*/music/*")).map { |p| normalize_path(p) }
+mod_sound_files.each do |path|
+  next if File.directory?(path)
+  lump = File.basename(path, File.extname(path)).upcase
+  wad_name = path.split("/")[2]
+  sound_inventory[lump] ||= Array(NamedTuple(path: String, wad_name: String, is_iwad: Bool)).new
+  sound_inventory[lump] << {path: path, wad_name: wad_name, is_iwad: false}
+end
+
+log(2, "  Sound inventory: #{sound_inventory.size} unique lump names across #{iwad_sound_files.size + mod_sound_files.size} files")
+
+# Track renames: wad_name → {old_lump_upper → new_lump_upper}
+sound_renames = Hash(String, Hash(String, String)).new
+sound_conflicts_total = 0
+sound_renames_total = 0
+
+# For generating unique renamed lump names, track all known lump names
+all_sound_lumps = Set(String).new(sound_inventory.keys)
+
+sound_inventory.each do |lump, entries|
+  # Only care about lumps that appear in multiple WADs
+  wad_names = entries.map { |e| e[:wad_name] }.uniq
+  next if wad_names.size <= 1
+
+  # Group by content (SHA256) to find true conflicts (not just duplicates)
+  by_hash = Hash(String, Array(NamedTuple(path: String, wad_name: String, is_iwad: Bool))).new
+  entries.each do |entry|
+    # Use file size as quick pre-check
+    sha = Digest::SHA256.new.file(entry[:path]).hexfinal
+    by_hash[sha] ||= Array(NamedTuple(path: String, wad_name: String, is_iwad: Bool)).new
+    by_hash[sha] << entry
+  end
+
+  # If all files have the same hash, they're identical — no conflict
+  next if by_hash.size <= 1
+
+  sound_conflicts_total += 1
+  log(2, "  Sound conflict: #{lump} — #{wad_names.join(", ")} (#{by_hash.size} distinct versions)")
+
+  # Decide who keeps the original name:
+  #   1. IWAD always keeps original
+  #   2. Otherwise, WAD with most sound files keeps original (arbitrary but stable)
+  keeper_wad : String? = nil
+
+  # Check if any IWAD has this lump
+  iwad_entry = entries.find { |e| e[:is_iwad] }
+  if iwad_entry
+    keeper_wad = iwad_entry[:wad_name]
+    log(2, "    IWAD '#{keeper_wad}' keeps original #{lump}")
+  else
+    # First mod WAD in the list keeps the original name (stable, deterministic)
+    keeper_wad = entries.find { |e| !e[:is_iwad] }.try &.[:wad_name]
+    keeper_wad ||= entries.first[:wad_name]
+    log(2, "    '#{keeper_wad}' keeps original #{lump} (first mod WAD)")
+  end
+
+  # Rename conflicting WADs' sound files
+  entries.each do |entry|
+    next if entry[:wad_name] == keeper_wad
+    next if entry[:is_iwad] # Never rename IWAD sounds
+
+    # Check if this WAD has a SNDINFO — without one, renaming is pointless
+    # because the WAD relies on lump replacement (engine maps DS* names directly).
+    wad_has_sndinfo = [
+      "./Processing/#{entry[:wad_name]}/defs/SNDINFO.raw",
+      "./Processing/#{entry[:wad_name]}/defs/sndinfo.raw",
+      "./Processing/#{entry[:wad_name]}/defs/SNDINFO.txt",
+      "./Processing/#{entry[:wad_name]}/defs/sndinfo.txt",
+      "./Processing/#{entry[:wad_name]}/defs/SNDINFO.lmp",
+    ].any? { |p| File.exists?(normalize_path(p)) }
+
+    # Note: WADs without SNDINFO will still be renamed. A synthetic SNDINFO
+    # and DECORATE rewrite will be generated after this loop.
+    unless wad_has_sndinfo
+      log(2, "    #{entry[:wad_name]} has no SNDINFO — will generate synthetic mapping for #{lump}")
+    end
+
+    # Generate a unique new lump name.
+    # Strategy: append a short WAD-derived suffix to keep it recognizable.
+    # GZDoom lump names are typically 8 chars max for WAD compatibility,
+    # but PK3 supports longer names. We'll use: LUMP_WADABBREV
+    # First try a short abbreviation from the WAD name (first 4 alphanum chars)
+    wad_abbrev = entry[:wad_name].gsub(/[^a-zA-Z0-9]/, "")[0..3].upcase
+    candidate = "#{lump}_#{wad_abbrev}"
+
+    # Ensure uniqueness
+    suffix_counter = 0
+    while all_sound_lumps.includes?(candidate)
+      suffix_counter += 1
+      candidate = "#{lump}_#{wad_abbrev}#{suffix_counter}"
+    end
+    all_sound_lumps << candidate
+
+    # Record the rename
+    sound_renames[entry[:wad_name]] ||= Hash(String, String).new
+    sound_renames[entry[:wad_name]][lump] = candidate
+
+    # Rename the actual file on disk
+    old_path = entry[:path]
+    ext = File.extname(old_path)
+    new_path = normalize_path(File.join(File.dirname(old_path), "#{candidate}#{ext}"))
+    log(2, "    Renaming: #{File.basename(old_path)} → #{File.basename(new_path)} (#{entry[:wad_name]})")
+    File.rename(old_path, new_path)
+    sound_renames_total += 1
+  end
+end
+
+# Now rewrite SNDINFO files for WADs that had renames
+sound_sndinfo_rewrites = 0
+sound_renames.each do |wad_name, renames|
+  next if renames.empty?
+
+  # Find SNDINFO file(s) for this WAD
+  sndinfo_candidates = [
+    "./Processing/#{wad_name}/defs/SNDINFO.raw",
+    "./Processing/#{wad_name}/defs/sndinfo.raw",
+    "./Processing/#{wad_name}/defs/SNDINFO.txt",
+    "./Processing/#{wad_name}/defs/sndinfo.txt",
+    "./Processing/#{wad_name}/defs/SNDINFO.lmp",
+  ].map { |p| normalize_path(p) }
+
+  sndinfo_files = sndinfo_candidates.select { |p| File.exists?(p) }
+
+  if sndinfo_files.empty?
+    # No SNDINFO — this WAD will be handled by the synthetic SNDINFO generator below
+    log(2, "  #{wad_name}: no SNDINFO found — deferring to synthetic generation")
+    next
+  end
+
+  sndinfo_files.each do |sndinfo_path|
+    text = safe_read(sndinfo_path)
+    next if text.empty?
+
+    new_text = text
+    renames_applied = 0
+
+    renames.each do |old_lump, new_lump|
+      # SNDINFO has two contexts where lump names appear:
+      #
+      # 1. Sound definition lines:  logical_name LUMPNAME
+      #    The lump is the SECOND token. We match it by requiring at least one
+      #    non-whitespace token before it on the same line.
+      #
+      # 2. $random block contents:  $random logical { LUMP1 LUMP2 }
+      #    Lumps appear inside braces.
+      #
+      # We handle both by replacing any case-insensitive whole-word match of
+      # the old lump name that is preceded by whitespace, { or " (never at
+      # the very start of a line, which is the logical name position).
+      escaped = Regex.escape(old_lump)
+      replaced = new_text.gsub(/([ \t{"])#{escaped}([ \t}\r\n".]|$)/mi) do |_match|
+        "#{$1}#{new_lump.downcase}#{$2}"
+      end
+      if replaced != new_text
+        renames_applied += 1
+        log(3, "    SNDINFO #{File.basename(sndinfo_path)}: #{old_lump} → #{new_lump} in #{wad_name}")
+        new_text = replaced
+      end
+    end
+
+    if new_text != text
+      File.write(sndinfo_path, new_text)
+      sound_sndinfo_rewrites += 1
+      log(2, "  Rewrote SNDINFO for #{wad_name}: #{renames_applied} lump reference(s) updated")
+    else
+      log(1, "  WARNING: SNDINFO for #{wad_name} had no matching lump references to update")
+      log(1, "    Expected renames:")
+      renames.each { |old_name, new_name| log(1, "      #{old_name} → #{new_name}") }
+    end
+  end
+end
+
+###############################################################################
+# SYNTHETIC SNDINFO + DECORATE REWRITE FOR NO-SNDINFO WADS
+###############################################################################
+#
+# WADs without SNDINFO rely on lump replacement: they ship e.g. DSPOSIT1.raw
+# to override the IWAD sound. Their actors use GZDoom's built-in logical names
+# (like "grunt/sight") which resolve through default SNDINFO to those lumps.
+#
+# When we renamed their lump (DSPOSIT1 → DSPOSIT1_ZOMB), we must:
+#   1. Create a synthetic SNDINFO mapping new logical names to the renamed lumps
+#   2. Rewrite the actor's DECORATE sound properties to use the new logical names
+#
+# We use GZDoom's default lump→logical reverse mapping to find which actor
+# properties need updating.
+###############################################################################
+
+log(2, "=== Generating Synthetic SNDINFO for Lump-Replacement WADs ===")
+
+# GZDoom default SNDINFO: lump (uppercase) → [{logical_name, is_random_member}]
+# This maps Doom II engine lumps to their default logical sound names.
+# Only includes monster/world sounds likely to be overridden by monster mods.
+# Source: zdoom.git wadsrc/static/filter/game-doomchex/sndinfo.txt
+DEFAULT_LUMP_TO_LOGICAL = Hash(String, Array(String)).new
+
+# Build the reverse map from the default SNDINFO forward mappings.
+# Format: { "logical_name" => "lump_name" }
+DEFAULT_SNDINFO = {
+  # Zombieman (grunt)
+  "grunt/sight1" => "dsposit1", "grunt/sight2" => "dsposit2",
+  "grunt/sight3" => "dsposit3", "grunt/active" => "dsposact",
+  "grunt/pain" => "dspopain", "grunt/death1" => "dspodth1",
+  "grunt/death2" => "dspodth2", "grunt/death3" => "dspodth3",
+  "grunt/attack" => "dspistol",
+  # Shotgun Guy
+  "shotguy/sight1" => "dsposit1", "shotguy/sight2" => "dsposit2",
+  "shotguy/sight3" => "dsposit3", "shotguy/active" => "dsposact",
+  "shotguy/pain" => "dspopain", "shotguy/death1" => "dspodth1",
+  "shotguy/death2" => "dspodth2", "shotguy/death3" => "dspodth3",
+  "shotguy/attack" => "dsshotgn",
+  # Chaingunner
+  "chainguy/sight1" => "dsposit1", "chainguy/sight2" => "dsposit2",
+  "chainguy/sight3" => "dsposit3", "chainguy/active" => "dsposact",
+  "chainguy/pain" => "dspopain", "chainguy/death1" => "dspodth1",
+  "chainguy/death2" => "dspodth2", "chainguy/death3" => "dspodth3",
+  "chainguy/attack" => "dsshotgn",
+  # Imp
+  "imp/sight1" => "dsbgsit1", "imp/sight2" => "dsbgsit2",
+  "imp/active" => "dsbgact", "imp/pain" => "dspopain",
+  "imp/melee" => "dsclaw", "imp/death1" => "dsbgdth1",
+  "imp/death2" => "dsbgdth2", "imp/attack" => "dsfirsht",
+  "imp/shotx" => "dsfirxpl",
+  # Demon / Spectre
+  "demon/sight" => "dssgtsit", "demon/active" => "dsdmact",
+  "demon/pain" => "dsdmpain", "demon/melee" => "dssgtatk",
+  "demon/death" => "dssgtdth",
+  "spectre/sight" => "dssgtsit", "spectre/active" => "dsdmact",
+  "spectre/pain" => "dsdmpain", "spectre/melee" => "dssgtatk",
+  "spectre/death" => "dssgtdth",
+  # Cacodemon
+  "caco/sight" => "dscacsit", "caco/active" => "dsdmact",
+  "caco/pain" => "dsdmpain", "caco/death" => "dscacdth",
+  "caco/attack" => "dsfirsht", "caco/shotx" => "dsfirxpl",
+  # Baron of Hell
+  "baron/sight" => "dsbrssit", "baron/active" => "dsdmact",
+  "baron/pain" => "dsdmpain", "baron/melee" => "dsclaw",
+  "baron/death" => "dsbrsdth", "baron/attack" => "dsfirsht",
+  "baron/shotx" => "dsfirxpl",
+  # Hell Knight
+  "knight/sight" => "dskntsit", "knight/active" => "dsdmact",
+  "knight/pain" => "dsdmpain", "knight/death" => "dskntdth",
+  # Lost Soul
+  "skull/active" => "dsdmact", "skull/pain" => "dsdmpain",
+  "skull/melee" => "dssklatk", "skull/death" => "dsfirxpl",
+  # Spider Mastermind
+  "spider/sight" => "dsspisit", "spider/active" => "dsdmact",
+  "spider/pain" => "dsdmpain", "spider/attack" => "dsshotgn",
+  "spider/death" => "dsspidth", "spider/walk" => "dsmetal",
+  # Arachnotron
+  "baby/sight" => "dsbspsit", "baby/active" => "dsbspact",
+  "baby/pain" => "dsdmpain", "baby/death" => "dsbspdth",
+  "baby/walk" => "dsbspwlk", "baby/attack" => "dsplasma",
+  "baby/shotx" => "dsfirxpl",
+  # Cyberdemon
+  "cyber/sight" => "dscybsit", "cyber/active" => "dsdmact",
+  "cyber/pain" => "dsdmpain", "cyber/death" => "dscybdth",
+  "cyber/hoof" => "dshoof",
+  # Pain Elemental
+  "pain/sight" => "dspesit", "pain/active" => "dsdmact",
+  "pain/pain" => "dspepain", "pain/death" => "dspedth",
+  # Revenant
+  "skeleton/sight" => "dsskesit", "skeleton/active" => "dsskeact",
+  "skeleton/pain" => "dspopain", "skeleton/melee" => "dsskepch",
+  "skeleton/swing" => "dsskeswg", "skeleton/death" => "dsskedth",
+  "skeleton/attack" => "dsskeatk", "skeleton/tracex" => "dsbarexp",
+  # Mancubus
+  "fatso/sight" => "dsmansit", "fatso/active" => "dsposact",
+  "fatso/pain" => "dsmnpain", "fatso/raiseguns" => "dsmanatk",
+  "fatso/death" => "dsmandth", "fatso/attack" => "dsfirsht",
+  "fatso/shotx" => "dsfirxpl",
+  # Arch-vile
+  "vile/sight" => "dsvilsit", "vile/active" => "dsvilact",
+  "vile/pain" => "dsvipain", "vile/death" => "dsvildth",
+  "vile/raise" => "dsslop", "vile/start" => "dsvilatk",
+  "vile/stop" => "dsbarexp", "vile/firestrt" => "dsflamst",
+  "vile/firecrkl" => "dsflame",
+  # Wolf SS
+  "wolfss/sight" => "dssssit", "wolfss/active" => "dsposact",
+  "wolfss/pain" => "dspopain", "wolfss/death" => "dsssdth",
+  "wolfss/attack" => "dsshotgn",
+  # Commander Keen
+  "keen/pain" => "dskeenpn", "keen/death" => "dskeendt",
+  # Icon of Sin
+  "brain/sight" => "dsbossit", "brain/pain" => "dsbospn",
+  "brain/death" => "dsbosdth", "brain/spit" => "dsbospit",
+  "brain/cube" => "dsboscub", "brain/cubeboom" => "dsfirxpl",
+  # World / misc
+  "world/barrelx" => "dsbarexp", "misc/gibbed" => "dsslop",
+}
+
+# GZDoom default $random groupings: parent_logical → [child_logicals]
+DEFAULT_RANDOM_SOUNDS = {
+  "grunt/sight"    => ["grunt/sight1", "grunt/sight2", "grunt/sight3"],
+  "grunt/death"    => ["grunt/death1", "grunt/death2", "grunt/death3"],
+  "shotguy/sight"  => ["shotguy/sight1", "shotguy/sight2", "shotguy/sight3"],
+  "shotguy/death"  => ["shotguy/death1", "shotguy/death2", "shotguy/death3"],
+  "chainguy/sight" => ["chainguy/sight1", "chainguy/sight2", "chainguy/sight3"],
+  "chainguy/death" => ["chainguy/death1", "chainguy/death2", "chainguy/death3"],
+  "imp/sight"      => ["imp/sight1", "imp/sight2"],
+  "imp/death"      => ["imp/death1", "imp/death2"],
+}
+
+# Build reverse map: lump_name (uppercase) → [logical_names]
+DEFAULT_SNDINFO.each do |logical, lump|
+  key = lump.upcase
+  DEFAULT_LUMP_TO_LOGICAL[key] ||= Array(String).new
+  DEFAULT_LUMP_TO_LOGICAL[key] << logical
+end
+
+# Also build a reverse map for $random: child_logical → parent_logical
+random_child_to_parent = Hash(String, String).new
+DEFAULT_RANDOM_SOUNDS.each do |parent, children|
+  children.each { |child| random_child_to_parent[child] = parent }
+end
+
+# Map of DECORATE sound property names to Actor field accessors
+SOUND_PROPERTY_MAP = {
+  "seesound"    => :see_sound,
+  "deathsound"  => :death_sound,
+  "painsound"   => :pain_sound,
+  "activesound" => :active_sound,
+  "attacksound"  => :attack_sound,
+  "meleesound"  => :melee_sound,
+}
+
+synthetic_sndinfo_count = 0
+synthetic_decorate_rewrites = 0
+
+sound_renames.each do |wad_name, renames|
+  next if renames.empty?
+
+  # Check if this WAD already has a SNDINFO (already handled above)
+  has_existing_sndinfo = [
+    "./Processing/#{wad_name}/defs/SNDINFO.raw",
+    "./Processing/#{wad_name}/defs/sndinfo.raw",
+    "./Processing/#{wad_name}/defs/SNDINFO.txt",
+    "./Processing/#{wad_name}/defs/sndinfo.txt",
+    "./Processing/#{wad_name}/defs/SNDINFO.lmp",
+  ].any? { |p| File.exists?(normalize_path(p)) }
+
+  next if has_existing_sndinfo # Already handled by the SNDINFO rewrite above
+
+  log(2, "  Generating synthetic SNDINFO for #{wad_name} (#{renames.size} renamed lumps)")
+
+  # Find actors belonging to this WAD
+  wad_actors = actordb.select { |a| a.source_wad_folder == wad_name && !a.built_in }
+  if wad_actors.empty?
+    log(1, "  WARNING: #{wad_name} has renamed sounds but no actors in actordb!")
+    log(1, "    Renamed lumps without actor references:")
+    renames.each { |old_name, new_name| log(1, "      #{old_name} → #{new_name}") }
+    next
+  end
+
+  log(3, "    Found #{wad_actors.size} actor(s) in #{wad_name}")
+
+  # WAD-specific prefix for logical names to avoid collisions
+  wad_prefix = "mm_" + wad_name.gsub(/[^a-zA-Z0-9]/, "").downcase
+
+  # Build the synthetic SNDINFO content and collect DECORATE rewrites
+  sndinfo_lines = Array(String).new
+  sndinfo_lines << "// Synthetic SNDINFO — auto-generated by Monster Mash"
+  sndinfo_lines << "// WAD: #{wad_name}"
+  sndinfo_lines << "// Redirects renamed sound lumps to new logical names"
+  sndinfo_lines << ""
+
+  # Track: actor_file_path → [{old_property_value, new_property_value}]
+  decorate_rewrites = Hash(String, Array(Tuple(String, String))).new
+
+  renames.each do |old_lump, new_lump|
+    # Find which default logical names map to this lump
+    logical_names = DEFAULT_LUMP_TO_LOGICAL[old_lump]?
+
+    # Also check if the actor uses the lump name directly as a sound name
+    # (some mods do: SeeSound "DSPOSIT1")
+    direct_lump_ref = old_lump.downcase
+
+    # Check each actor's sound properties
+    wad_actors.each do |actor|
+      SOUND_PROPERTY_MAP.each do |prop_name, field_sym|
+        # Get the actor's sound property value
+        prop_value = case field_sym
+                     when :see_sound    then actor.see_sound
+                     when :death_sound  then actor.death_sound
+                     when :pain_sound   then actor.pain_sound
+                     when :active_sound then actor.active_sound
+                     when :attack_sound then actor.attack_sound
+                     when :melee_sound  then actor.melee_sound
+                     else "UNDEFINED"
+                     end
+
+        next if prop_value == "UNDEFINED" || prop_value.empty?
+
+        # Strip quotes if present
+        clean_value = prop_value.gsub('"', "").strip.downcase
+
+        # Check if this property references our conflicting lump, either:
+        #   a) Directly: SeeSound "DSPOSIT1"
+        #   b) Via a logical name that resolves to the lump
+        #   c) Via a $random parent whose children resolve to the lump
+
+        matches_lump = false
+        matched_logical : String? = nil
+        is_random_parent = false
+
+        # Case (a): Direct lump reference
+        if clean_value == direct_lump_ref
+          matches_lump = true
+          log(3, "      Actor '#{actor.name_with_case}' #{prop_name} directly references #{old_lump}")
+        end
+
+        # Case (b): Logical name that maps to this lump
+        if !matches_lump && logical_names
+          logical_names.each do |ln|
+            if clean_value == ln.downcase
+              matches_lump = true
+              matched_logical = ln
+              log(3, "      Actor '#{actor.name_with_case}' #{prop_name} uses logical '#{ln}' → #{old_lump}")
+              break
+            end
+          end
+        end
+
+        # Case (c): $random parent whose children include a logical that maps to this lump
+        if !matches_lump && logical_names
+          DEFAULT_RANDOM_SOUNDS.each do |parent, children|
+            if clean_value == parent.downcase
+              # Check if any child resolves to our lump
+              if children.any? { |child| DEFAULT_SNDINFO[child]?.try(&.upcase) == old_lump }
+                matches_lump = true
+                is_random_parent = true
+                matched_logical = parent
+                log(3, "      Actor '#{actor.name_with_case}' #{prop_name} uses $random '#{parent}' containing #{old_lump}")
+                break
+              end
+            end
+          end
+        end
+
+        next unless matches_lump
+
+        # Generate new logical name for SNDINFO
+        new_logical = "#{wad_prefix}/#{prop_name}_#{actor.name.downcase.gsub(/[^a-z0-9]/, "")}"
+
+        if is_random_parent && matched_logical
+          # The actor uses a $random parent. We need to:
+          # 1. Create new logical names for each child that maps to a renamed lump
+          # 2. Create the direct mappings for renamed children
+          # 3. Create a new $random with the new children
+          children = DEFAULT_RANDOM_SOUNDS[matched_logical]
+          new_children = Array(String).new
+
+          children.each_with_index do |child, idx|
+            child_lump = DEFAULT_SNDINFO[child]?.try(&.upcase)
+            new_child_logical = "#{new_logical}#{idx + 1}"
+
+            if child_lump && renames.has_key?(child_lump)
+              # This child's lump was renamed — point to the new lump
+              sndinfo_lines << "#{new_child_logical} #{renames[child_lump].downcase}"
+              log(3, "      SNDINFO: #{new_child_logical} #{renames[child_lump].downcase}")
+            elsif child_lump
+              # This child's lump was NOT renamed — point to the original
+              sndinfo_lines << "#{new_child_logical} #{child_lump.downcase}"
+              log(3, "      SNDINFO: #{new_child_logical} #{child_lump.downcase}")
+            end
+            new_children << new_child_logical
+          end
+
+          # Create the $random
+          sndinfo_lines << "$random #{new_logical} { #{new_children.join(" ")} }"
+          log(3, "      SNDINFO: $random #{new_logical} { #{new_children.join(" ")} }")
+        else
+          # Simple direct mapping — just point new logical name to renamed lump
+          sndinfo_lines << "#{new_logical} #{new_lump.downcase}"
+          log(3, "      SNDINFO: #{new_logical} #{new_lump.downcase}")
+        end
+
+        # Record the DECORATE rewrite needed
+        old_prop_raw = prop_value.gsub('"', "").strip
+        decorate_rewrites[actor.file_path] ||= Array(Tuple(String, String)).new
+        decorate_rewrites[actor.file_path] << {old_prop_raw, new_logical}
+
+        sndinfo_lines << ""
+      end
+    end
+  end
+
+  # Write the synthetic SNDINFO if we generated any mappings
+  if sndinfo_lines.size > 4  # More than just the header comments
+    sndinfo_path = normalize_path("./Processing/#{wad_name}/defs/SNDINFO.raw")
+    Dir.mkdir_p(File.dirname(sndinfo_path))
+    File.write(sndinfo_path, sndinfo_lines.join("\n") + "\n")
+    synthetic_sndinfo_count += 1
+    log(2, "    Wrote synthetic SNDINFO: #{sndinfo_path} (#{sndinfo_lines.size - 4} mapping lines)")
+  else
+    log(1, "  WARNING: No sound property references found in #{wad_name} actors for renamed lumps")
+    log(1, "    This WAD's renamed sounds may not be audible in-game.")
+    renames.each { |old_name, new_name| log(1, "      #{old_name} → #{new_name}") }
+  end
+
+  # Apply DECORATE rewrites
+  decorate_rewrites.each do |file_path, rewrites|
+    next unless File.exists?(file_path)
+    text = safe_read(file_path)
+    next if text.empty?
+
+    new_text = text
+    rewrites_applied = 0
+
+    rewrites.each do |old_value, new_value|
+      # Replace the sound property value in DECORATE.
+      # Sound properties look like: SeeSound "grunt/sight"
+      # or: SeeSound "DSPOSIT1"
+      # We match the property name + quoted value, case-insensitively.
+      escaped_old = Regex.escape(old_value)
+      replaced = new_text.gsub(/((?:SeeSound|DeathSound|PainSound|ActiveSound|AttackSound|MeleeSound)\s+)"#{escaped_old}"/mi) do
+        "#{$1}\"#{new_value}\""
+      end
+      if replaced != new_text
+        rewrites_applied += 1
+        log(3, "      DECORATE #{File.basename(file_path)}: \"#{old_value}\" → \"#{new_value}\"")
+        new_text = replaced
+      end
+    end
+
+    if new_text != text
+      File.write(file_path, new_text)
+      synthetic_decorate_rewrites += 1
+      log(2, "    Rewrote DECORATE #{File.basename(file_path)}: #{rewrites_applied} sound property change(s)")
+    end
+  end
+end
+
+log(2, "=== Sound Conflict Resolution Complete ===")
+log(2, "  #{sound_conflicts_total} conflicts detected")
+log(2, "  #{sound_renames_total} sound files renamed")
+log(2, "  #{sound_sndinfo_rewrites} SNDINFO files rewritten (existing)")
+log(2, "  #{synthetic_sndinfo_count} synthetic SNDINFO files generated")
+log(2, "  #{synthetic_decorate_rewrites} DECORATE files rewritten for sound properties")
+
+###############################################################################
 # MERGE ALL PROCESSED CONTENT INTO A SINGLE PK3
 ###############################################################################
 #
@@ -2040,6 +1663,7 @@ wad_directories.each_with_index do |wad_dir, wad_index|
   filled = (pct * bar_width / 100).to_i
   bar = "#" * filled + "-" * (bar_width - filled)
   print "\r  [#{bar}] #{pct}% (#{wad_index + 1}/#{total_wads}) #{wad_name.ljust(30)}"
+  puts ""  # Newline so warnings/log output don't collide with progress bar
   STDOUT.flush
 
   log(3, "── PK3 merge: #{wad_name} ──")
@@ -2145,8 +1769,13 @@ wad_directories.each_with_index do |wad_dir, wad_index|
         log(3, "  Skipping maps/ directory")
 
       when .in?(RESOURCE_DIRS)
-        # Known resource directory — flat-merge contents
-        dest_dir = normalize_path(File.join(PK3_BUILD_DIR, entry_lower))
+        # Known resource directory — flat-merge contents.
+        # Redirect music/ → sounds/: jeutool categorizes many sound effect lumps
+        # as "music" when they're not between S_START/S_END markers in the WAD.
+        # GZDoom requires SNDINFO-referenced sounds to be in /sounds/, not /music/.
+        # Monster/weapon mods don't ship actual music tracks, so this is safe.
+        merge_dir = (entry_lower == "music") ? "sounds" : entry_lower
+        dest_dir = normalize_path(File.join(PK3_BUILD_DIR, merge_dir))
         is_sprites = (entry_lower == "sprites")
         copied, conflicts = copy_resource_files(entry_path, dest_dir, wad_name, conflict_log, is_sprites)
         stats_total_files += copied
@@ -2154,14 +1783,26 @@ wad_directories.each_with_index do |wad_dir, wad_index|
         log(3, "  Resources: #{entry_lower}/ — #{copied} files copied, #{conflicts} conflicts")
 
       else
-        # Unknown directory — copy preserving original case (PK3 is case-sensitive)
-        unknown_dirs[entry] ||= Array(String).new
-        unknown_dirs[entry] << wad_name
-        dest_dir = normalize_path(File.join(PK3_BUILD_DIR, entry))
-        copied, conflicts = copy_resource_files(entry_path, dest_dir, wad_name, conflict_log)
-        stats_total_files += copied
-        stats_total_conflicts += conflicts
-        log(1, "  UNKNOWN DIRECTORY: #{entry}/ in #{wad_name} — copied #{copied} files to #{entry}/")
+        # Check if this directory name conflicts with DECORATE/ZSCRIPT master files
+        # (e.g., a PK3 mod with a "zscript/" directory containing included .zs files).
+        # On Windows, "zscript" dir and "ZSCRIPT" file collide due to case-insensitivity.
+        # Redirect these into mm_actors/WadName/ so the master file path stays clear.
+        if DECORATE_LUMP_NAMES.includes?(entry_lower)
+          dest_dir = normalize_path(File.join(PK3_BUILD_DIR, "mm_actors", wad_name, entry))
+          copied, conflicts = copy_resource_files(entry_path, dest_dir, wad_name, conflict_log)
+          stats_total_files += copied
+          stats_total_conflicts += conflicts
+          log(2, "  ZSCRIPT/DECORATE subdir: #{entry}/ in #{wad_name} — redirected to mm_actors/#{wad_name}/#{entry}/ (#{copied} files)")
+        else
+          # Unknown directory — copy preserving original case (PK3 is case-sensitive)
+          unknown_dirs[entry] ||= Array(String).new
+          unknown_dirs[entry] << wad_name
+          dest_dir = normalize_path(File.join(PK3_BUILD_DIR, entry))
+          copied, conflicts = copy_resource_files(entry_path, dest_dir, wad_name, conflict_log)
+          stats_total_files += copied
+          stats_total_conflicts += conflicts
+          log(1, "  UNKNOWN DIRECTORY: #{entry}/ in #{wad_name} — copied #{copied} files to #{entry}/")
+        end
       end
 
     else
@@ -2284,14 +1925,16 @@ end
 
 log(2, "Updating #include paths in DECORATE/ZSCRIPT files for PK3 structure...")
 # Combine both DECORATE and ZSCRIPT sources for include rewriting
-all_actor_mains = wad_decorate_main + wad_zscript_main
-all_actor_mains.each do |wad_name, pk3_path|
-  dec_dir = normalize_path(File.join(PK3_BUILD_DIR, "mm_actors", wad_name))
-  next unless Dir.exists?(dec_dir)
+# Recursively process all script files in a directory: strip version directives
+# and rewrite #include paths for PK3 structure.
+def process_script_dir(dir : String, wad_name : String, pk3_build_dir : String)
+  Dir.each_child(dir) do |filename|
+    file_path = normalize_path(File.join(dir, filename))
 
-  Dir.each_child(dec_dir) do |filename|
-    file_path = normalize_path(File.join(dec_dir, filename))
-    next if File.directory?(file_path)
+    if File.directory?(file_path)
+      process_script_dir(file_path, wad_name, pk3_build_dir)
+      next
+    end
 
     content = File.read(file_path)
     original_content = content
@@ -2299,7 +1942,14 @@ all_actor_mains.each do |wad_name, pk3_path|
     # Strip 'version "x.y.z"' from ZSCRIPT files — only the master ZSCRIPT
     # should have a version directive. Duplicate version in #include'd files
     # causes a parse error.
-    content = content.gsub(/^\s*version\s+"[^"]*"\s*$/mi, "// version directive moved to master ZSCRIPT")
+    # Use line-by-line replacement for robustness with \r\n line endings.
+    content = content.lines.map { |line|
+      if line.strip.downcase.starts_with?("version ")
+        "// version directive moved to master ZSCRIPT"
+      else
+        line
+      end
+    }.join("\n")
 
     # Match #include "FILENAME" and update path
     content = content.gsub(/^(\s*#include\s+")([^"]+)(")/mi) do |match|
@@ -2308,20 +1958,12 @@ all_actor_mains.each do |wad_name, pk3_path|
       suffix = $3
 
       if inc_file.includes?("/") || inc_file.includes?("\\")
-        # Path includes directory separators — resolve relative to PK3 structure.
-        # Original includes like "../FSerpent/FSerpent.txt" were relative to defs/
-        # In the PK3, mm_actors/WadName/ is the DECORATE directory, so "../" means
-        # up to the WAD root which is now at the PK3 root.
-        #
-        # Strategy: normalize the path, strip leading "../", and check if the
-        # target file exists somewhere in the PK3 build directory.
         normalized_inc = normalize_path(inc_file)
 
-        # Try to find the file in PK3_BUILD_DIR
-        # First, strip all leading "../" since those just go up from mm_actors/WadName/
+        # Strip all leading "../" since those just go up from mm_actors/WadName/
         stripped = normalized_inc.gsub(/^(\.\.\/)+/, "")
-        candidate_from_root = normalize_path(File.join(PK3_BUILD_DIR, stripped))
-        candidate_in_actors = normalize_path(File.join(PK3_BUILD_DIR, "mm_actors", wad_name, stripped))
+        candidate_from_root = normalize_path(File.join(pk3_build_dir, stripped))
+        candidate_in_actors = normalize_path(File.join(pk3_build_dir, "mm_actors", wad_name, stripped))
 
         if File.exists?(candidate_in_actors)
           new_path = "mm_actors/#{wad_name}/#{stripped}"
@@ -2331,15 +1973,11 @@ all_actor_mains.each do |wad_name, pk3_path|
           log(3, "  Rewriting pathed include (from root): #{inc_file} → #{stripped}")
           "#{prefix}#{stripped}#{suffix}"
         else
-          # Can't resolve — leave as-is and log warning
           log(1, "  Cannot resolve include path: #{inc_file} in #{wad_name} (tried #{candidate_in_actors} and #{candidate_from_root})")
           match
         end
       else
-        # Simple filename — convert to PK3-relative path
-        # The included file should be in the same mm_actors/WadName/ directory
         new_path = "mm_actors/#{wad_name}/#{inc_file}"
-        # Ensure .raw extension if not present
         unless new_path =~ /\.\w+$/
           new_path += ".raw"
         end
@@ -2351,9 +1989,17 @@ all_actor_mains.each do |wad_name, pk3_path|
 
     if content != original_content
       File.write(file_path, content)
-      log(3, "  Updated includes in: decorate/#{wad_name}/#{filename}")
+      log(3, "  Updated includes in: mm_actors/#{wad_name}/#{filename}")
     end
   end
+end
+
+all_actor_mains = wad_decorate_main + wad_zscript_main
+all_actor_mains.each do |wad_name, pk3_path|
+  dec_dir = normalize_path(File.join(PK3_BUILD_DIR, "mm_actors", wad_name))
+  next unless Dir.exists?(dec_dir)
+
+  process_script_dir(dec_dir, wad_name, PK3_BUILD_DIR)
 end
 
 ###############################################################################
@@ -2454,7 +2100,67 @@ text_lumps.each do |canonical_name, entries|
     end
   end
 
-  File.write(normalize_path(File.join(PK3_BUILD_DIR, output_name)), merged)
+  # Post-process KEYCONF: sanitize for merged PK3 compatibility.
+  # Individual weapon mods use KEYCONF for their standalone weapon setup, but
+  # when merged, these commands conflict:
+  #   - setslot: clears the entire slot, breaking all other weapons in that slot
+  #   - clearplayerclasses / addplayerclass: replaces the default player class
+  #   - weaponsection: creates isolated weapon sections (not needed for addslotdefault)
+  # We convert all setslot commands to addslotdefault (which safely adds weapons
+  # to slots without clearing them), and strip destructive player class commands.
+  # Standard Doom weapons already have default slot assignments, so we skip them.
+  if canonical_name == "keyconf"
+    keyconf_fixes = 0
+    standard_weapons = Set{
+      "fist", "chainsaw", "pistol", "shotgun", "supershotgun",
+      "chaingun", "rocketlauncher", "plasmarifle", "bfg9000",
+    }
+
+    new_lines = [] of String
+    merged.each_line do |line|
+      stripped = line.strip.downcase
+
+      # Strip clearplayerclasses / addplayerclass — destructive in merged context
+      if stripped.starts_with?("clearplayerclasses") || stripped.starts_with?("addplayerclass")
+        keyconf_fixes += 1
+        next
+      end
+
+      # Strip weaponsection — not needed when using addslotdefault only
+      if stripped.starts_with?("weaponsection")
+        keyconf_fixes += 1
+        next
+      end
+
+      # Convert setslot to addslotdefault
+      if stripped =~ /^setslot\s+(\d+)\s+(.+)/i
+        slot = $1
+        weapons_str = $2
+        weapons = weapons_str.split(/\s+/)
+        weapons.each do |weapon|
+          next if standard_weapons.includes?(weapon.downcase)
+          new_lines << "addslotdefault #{slot} #{weapon}"
+          keyconf_fixes += 1
+        end
+        next  # Skip original setslot line
+      end
+
+      new_lines << line
+    end
+
+    merged = new_lines.join("\n")
+    log(2, "  KEYCONF: sanitized #{keyconf_fixes} directive(s) (setslot→addslotdefault, stripped player classes)")
+  end
+
+  lump_output_path = normalize_path(File.join(PK3_BUILD_DIR, output_name))
+  # On Windows, a resource directory with the same name (case-insensitive) may
+  # already exist (e.g., "textures/" dir vs "TEXTURES" lump). Add .lmp extension
+  # to avoid the collision — GZDoom reads text lumps by name regardless of extension.
+  if Dir.exists?(lump_output_path)
+    lump_output_path = lump_output_path + ".lmp"
+    log(1, "  #{output_name}: directory conflict — writing as #{output_name}.lmp")
+  end
+  File.write(lump_output_path, merged)
   log(2, "  #{output_name}: #{entries.size} source(s) merged")
 end
 
@@ -2621,153 +2327,5 @@ rescue ex
   log(0, "  Linux/Mac:  cd '#{PK3_BUILD_DIR}' && zip -r monster_mash.pk3 .")
 end
 
-###############################################################################
-# GENERATE LUA MODULE FILE
-###############################################################################
 
-log(2, "=== Generating Lua Module ===")
-
-# Determine attack type from DECORATE states
-# "melee" = only has Melee state, no Missile state
-# "missile" = has Missile state (ranged attack)
-# "combo" = has both Melee and Missile states
-def detect_attack_type(actor : Actor) : String
-  has_melee = actor.states.has_key?("melee")
-  has_missile = actor.states.has_key?("missile")
-  if has_melee && has_missile
-    "combo"
-  elsif has_melee
-    "melee"
-  else
-    "missile"
-  end
-end
-
-# Calculate difficulty tier from health
-# Returns {prob, density, damage} based on health thresholds
-# Tougher monsters get lower prob/density so they appear less often
-def difficulty_tier(health : Int32) : {Int32, Float64, Float64}
-  case health
-  when     ..60 then {50, 1.2, 5.0}     # Fodder (weaker than Imp)
-  when   61..200 then {40, 1.0, 15.0}   # Low-tier (Imp-class)
-  when  201..500 then {30, 0.8, 30.0}   # Mid-tier (Cacodemon-class)
-  when  501..1000 then {20, 0.5, 50.0}  # Heavy (Baron-class)
-  when 1001..2000 then {10, 0.3, 80.0}  # Boss-tier (Cyberdemon-class)
-  when 2001..4000 then {5, 0.2, 120.0}  # Super-boss
-  else                 {2, 0.1, 200.0}  # Ultra-boss (4000+)
-  end
-end
-
-# Filter: skip sub-actors, projectiles disguised as monsters, and other
-# actors that shouldn't be independently spawned by Obsidian.
-# Heuristics:
-#   - Very small radius (<=5) AND very small height (<=8): likely a projectile/effect
-#   - Height of 1: sub-actor or dummy
-#   - Health <= 0: not meant to be fought
-def should_include_in_lua(actor : Actor) : Bool
-  return false if actor.health <= 0
-  return false if actor.radius <= 5 && actor.height <= 8
-  return false if actor.height <= 1
-  return false if actor.radius <= 1
-  true
-end
-
-lua_monster_count = 0
-
-lua = String.build do |io|
-  io << "----------------------------------------------------------------\n"
-  io << "--  Monster Mash — Obsidian Module (auto-generated by Unwad)  --\n"
-  io << "----------------------------------------------------------------\n\n"
-  io << "MONSTER_MASH = { }\n\n"
-
-  # ── control_setup function ──────────────────────────────────────────
-  io << "function MONSTER_MASH.control_setup(self)\n"
-  io << "  for name, info in pairs(MONSTER_MASH.MONSTERS) do\n"
-  io << "    local opt = self.options[\"float_\" .. name]\n"
-  io << "    if opt then\n"
-  io << "      local factor = opt.value\n"
-  io << "      if factor then\n"
-  io << "        info.prob = info.prob * factor\n"
-  io << "        info.density = info.density * factor\n"
-  io << "      end\n"
-  io << "    end\n"
-  io << "  end\n"
-  io << "end\n\n"
-
-  # ── MONSTER_MASH.MONSTERS table ────────────────────────────────────
-  io << "MONSTER_MASH.MONSTERS =\n{\n"
-
-  actordb.each do |actor|
-    next unless (actor.ismonster || actor.monster) && actor.doomednum != -1
-    next unless should_include_in_lua(actor)
-
-    attack = detect_attack_type(actor)
-    prob, density, damage = difficulty_tier(actor.health)
-
-    # Adjust for flying monsters — slightly lower prob (harder to fight)
-    if actor.float || actor.nogravity
-      prob = (prob * 0.8).to_i
-      prob = 1 if prob < 1
-    end
-
-    # Sanitize name for Lua: replace non-alphanumeric/underscore with underscore
-    lua_key = actor.name.gsub(/[^a-zA-Z0-9_]/, "_")
-    # If name starts with a digit, prefix with underscore
-    lua_key = "_#{lua_key}" if lua_key[0]?.try(&.ascii_number?)
-
-    io << "  #{lua_key} =\n"
-    io << "  {\n"
-    io << "    id = #{actor.doomednum},\n"
-    io << "    r = #{actor.radius.to_i},\n"
-    io << "    h = #{actor.height},\n"
-    io << "    prob = #{prob},\n"
-    io << "    health = #{actor.health},\n"
-    io << "    damage = #{damage},\n"
-    io << "    attack = \"#{attack}\",\n"
-    io << "    density = #{density}\n"
-    io << "  },\n"
-    lua_monster_count += 1
-  end
-
-  io << "}\n\n"
-
-  # ── OB_MODULES registration ────────────────────────────────────────
-  io << "OB_MODULES[\"monster_mash\"] =\n{\n"
-  io << "  name = \"monster_mash_control\",\n"
-  io << "  label = _(\"Monster Mash\"),\n"
-  io << "  game = \"doomish\",\n"
-  io << "  port = \"zdoom\",\n"
-  io << "  tables =\n  {\n    MONSTER_MASH\n  },\n"
-  io << "  hooks =\n  {\n    setup = MONSTER_MASH.control_setup\n  },\n"
-  io << "  options =\n  {\n"
-
-  actordb.each do |actor|
-    next unless (actor.ismonster || actor.monster) && actor.doomednum != -1
-    next unless should_include_in_lua(actor)
-    lua_key = actor.name.gsub(/[^a-zA-Z0-9_]/, "_")
-    lua_key = "_#{lua_key}" if lua_key[0]?.try(&.ascii_number?)
-    io << "    {\n"
-    io << "      name = \"float_#{lua_key}\",\n"
-    io << "      label = _(\"#{actor.name_with_case}\"),\n"
-    io << "      valuator = \"slider\",\n"
-    io << "      min = 0,\n"
-    io << "      max = 20,\n"
-    io << "      increment = 0.02,\n"
-    io << "      default = 0.2,\n"
-    io << "      presets = _(\"0:0 (None),0.02:0.02 (Scarce),0.14:0.14 (Less),0.5:0.5 (Plenty),1.2:1.2 (More),3:3 (Heaps),20:20 (INSANE)\"),\n"
-    io << "      randomize_group = \"monsters\",\n"
-    io << "    },\n"
-  end
-
-  io << "  },\n}\n"
-end
-
-# Write lua output
-lua_output_path = "../modules/monster_mash.lua"
-File.write(lua_output_path, lua)
-log(2, "Lua module written to: #{lua_output_path}")
-log(2, "Lua monsters included: #{lua_monster_count}")
-
-puts lua if LOG_LEVEL >= 3
-
-log(2, "=== Unwad V4 Completed Successfully ===")
+generate_lua_module(actordb, weapon_actor_set)
