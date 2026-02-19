@@ -36,6 +36,7 @@ require "./requires/helpers.cr"
 require "./requires/pk3_extract.cr"
 require "./requires/actor_parsing.cr"
 require "./requires/lua_gen.cr"
+require "./requires/tutorial.cr"
 
 ###############################################################################
 # CONFIGURATION
@@ -141,6 +142,20 @@ log(2, "Reserved Doomednums loaded: #{doomednum_info.size} entries")
 ["./Processing", "./Source", "./Completed", "./IWADs", "./IWADs_Extracted", PK3_BUILD_DIR].each do |dir|
   Dir.mkdir_p(dir)
   log(3, "Ensured directory: #{dir}")
+end
+
+###############################################################################
+# TUTORIAL / FIRST-RUN CHECK
+# Run the walkthrough if --tutorial was passed, or if Source/ or IWADs/ is
+# empty (indicating the user hasn't set things up yet).
+###############################################################################
+
+source_empty = Dir.children("./Source").empty?
+iwads_empty  = Dir.children("./IWADs").reject { |f| f == ".gitkeep" }.empty?
+
+if ARGV.includes?("--tutorial") || source_empty || iwads_empty
+  run_tutorial
+  exit 0
 end
 
 ###############################################################################
