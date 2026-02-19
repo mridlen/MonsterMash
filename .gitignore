@@ -1,0 +1,33 @@
+# Ignore everything by default
+*
+
+# Allow directory traversal
+!*/
+
+# --- Crystal source files ---
+!MonsterMash/unwad.cr
+!MonsterMash/requires/*.cr
+
+# --- Executables ---
+!MonsterMash/unwad.exe
+!MonsterMash/jeutool.exe
+!MonsterMash/jeutool-linux
+!MonsterMash/jeutool-macos
+
+# --- WAD/PK3 assets ---
+!MonsterMash/big_backpack.wad
+!MonsterMash/target-spy-v1.14.pk3
+
+# --- Built_In_Actors (all files, all subfolders) ---
+!MonsterMash/Built_In_Actors/**
+
+# --- Documentation ---
+!MonsterMash/LICENSE
+!MonsterMash/README.md
+
+# --- Empty placeholder folders ---
+!MonsterMash/Source/.gitkeep
+!MonsterMash/IWADs/.gitkeep
+
+# Exclude old/backup files
+MonsterMash/requires/*.cr_OLD
