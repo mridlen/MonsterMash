@@ -1093,13 +1093,14 @@ sprite_prefix.each do |key, prefix_entries|
       # - Could appear multiple times on a line or in goto targets
       # Use word-boundary-aware replacement to avoid partial matches
       # Replace sprite prefix references in state frame definitions.
-      # Sprite refs in DECORATE/ZSCRIPT are always: PREFIX FRAME DURATION [ACTION]
-      # where PREFIX is exactly 4 chars, FRAME is a single letter A-Z, DURATION is a number.
-      # Example: "PROJ A 5 A_Chase"
+      # Sprite refs in DECORATE/ZSCRIPT are always: PREFIX FRAMES DURATION [ACTION]
+      # where PREFIX is exactly 4 chars, FRAMES is one or more letters A-Z, DURATION is a number.
+      # Single frame: "PROJ A 5 A_Chase"
+      # Multi-frame:  "SPRF BCD 1 bright"  (frames B, C, D all with duration 1)
       # We must NOT match inside words like "Projectile" or property names.
       # The pattern requires: start-of-line/whitespace, then PREFIX, then space(s),
-      # then a single letter followed by a space or end (the frame character).
-      new_text = text.gsub(/(^|[ \t])#{key}([ \t]+[A-Z][ \t\d])/mi) do
+      # then one or more frame letters followed by a space or digit.
+      new_text = text.gsub(/(^|[ \t])#{key}([ \t]+[A-Z]+[ \t\d])/mi) do
         "#{$1}#{new_prefix}#{$2}"
       end
       if new_text != text
@@ -2138,6 +2139,8 @@ end
 log(2, "Writing concatenated text lumps...")
 log(2, "  #{text_lumps.size} distinct lump types found")
 
+keyconf_was_processed = false
+
 text_lumps.each do |canonical_name, entries|
   merged = String.build do |io|
     io << "// ============================================================\n"
@@ -2239,6 +2242,7 @@ text_lumps.each do |canonical_name, entries|
   # to slots without clearing them), and strip destructive player class commands.
   # Standard Doom weapons already have default slot assignments, so we skip them.
   if canonical_name == "keyconf"
+    keyconf_was_processed = true
     keyconf_fixes = 0
     standard_weapons = Set{
       "fist", "chainsaw", "pistol", "shotgun", "supershotgun",
@@ -2279,6 +2283,53 @@ text_lumps.each do |canonical_name, entries|
 
     merged = new_lines.join("\n")
     log(2, "  KEYCONF: sanitized #{keyconf_fixes} directive(s) (setslot→addslotdefault, stripped player classes)")
+
+    # [BUGFIX] Ensure ALL weapons have a slot assignment in KEYCONF.
+    # Weapons that lack both a KEYCONF entry and Weapon.SlotNumber in their
+    # DECORATE (like the Axe) will be invisible in-game — no key to select them.
+    # Collect weapons already assigned in KEYCONF, then generate addslotdefault
+    # entries for any weapons in weapon_actor_set that are missing.
+    weapons_in_keyconf = Set(String).new
+    merged.each_line do |line|
+      stripped = line.strip.downcase
+      if stripped =~ /^addslotdefault\s+\d+\s+(\S+)/i
+        weapons_in_keyconf << $1.downcase
+      end
+    end
+
+    slot_additions = [] of String
+    actordb.each do |actor|
+      next if actor.built_in
+      next unless weapon_actor_set.includes?(actor.name.downcase)
+      next if weapons_in_keyconf.includes?(actor.name.downcase)
+
+      # Determine the slot to assign
+      slot = actor.weapon.slotnumber
+      if slot == -1
+        # No explicit slot — infer from weapon characteristics
+        if actor.weapon.meleeweapon || actor.weapon.noalert
+          slot = 1  # Melee weapons → slot 1 (fist/chainsaw)
+        elsif actor.weapon.bfg
+          slot = 7  # BFG-class → slot 7
+        elsif actor.weapon.ammouse > 5
+          slot = 6  # High ammo use → slot 6 (plasma class)
+        elsif actor.weapon.ammouse > 1
+          slot = 4  # Moderate ammo use → slot 4 (chaingun class)
+        else
+          slot = 5  # Default fallback → slot 5 (rocket class)
+        end
+      end
+
+      slot_additions << "addslotdefault #{slot} #{actor.name_with_case}"
+      log(3, "  KEYCONF auto-slot: #{actor.name_with_case} → slot #{slot}")
+    end
+
+    if slot_additions.size > 0
+      merged += "\n\n// Auto-generated slot assignments for weapons missing KEYCONF entries\n"
+      merged += slot_additions.join("\n")
+      merged += "\n"
+      log(2, "  KEYCONF: auto-assigned #{slot_additions.size} weapon(s) to slots")
+    end
   end
 
   # Post-process SNDINFO: prefix bare lump names with their PK3 path.
@@ -2325,24 +2376,13 @@ text_lumps.each do |canonical_name, entries|
       end
 
       # Skip directives ($random, $limit, $alias, $volume, etc.)
+      # [BUGFIX] $random entries contain logical sound names (aliases), NOT
+      # raw lump file references. They must NOT be prefixed with sounds/.
+      # e.g., "$random weapons/HandCannon { 92FS 92FT 92FU }" — 92FS etc.
+      # are logical names defined elsewhere in SNDINFO, not file paths.
+      # Same applies to $alias, $limit, $volume — all reference logical names.
       if stripped.starts_with?("$")
-        # For $random blocks like: $random logical { LUMP1 LUMP2 }
-        # We need to prefix the lump names inside the braces too
-        if stripped =~ /^\$random\s+\S+\s*\{([^}]+)\}/i
-          inner = $1
-          new_inner = inner
-          inner.split(/\s+/).each do |token|
-            next if token.empty?
-            lookup = token.downcase
-            if sound_path_index.has_key?(lookup)
-              new_inner = new_inner.sub(token, sound_path_index[lookup])
-              sndinfo_fixes += 1
-            end
-          end
-          new_lines << line.sub(inner, new_inner)
-        else
-          new_lines << line
-        end
+        new_lines << line
         next
       end
 
@@ -2644,6 +2684,48 @@ text_lumps.each do |canonical_name, entries|
   end
   File.write(lump_output_path, merged)
   log(2, "  #{output_name}: #{entries.size} source(s) merged")
+end
+
+# [BUGFIX] If no WAD contributed a KEYCONF, generate one from scratch so all
+# weapons get slot assignments. Without this, weapons from WADs that rely on
+# Weapon.SlotNumber (or have no slot at all) will be unselectable in-game.
+unless keyconf_was_processed
+  slot_additions = [] of String
+  actordb.each do |actor|
+    next if actor.built_in
+    next unless weapon_actor_set.includes?(actor.name.downcase)
+
+    slot = actor.weapon.slotnumber
+    if slot == -1
+      if actor.weapon.meleeweapon || actor.weapon.noalert
+        slot = 1
+      elsif actor.weapon.bfg
+        slot = 7
+      elsif actor.weapon.ammouse > 5
+        slot = 6
+      elsif actor.weapon.ammouse > 1
+        slot = 4
+      else
+        slot = 5
+      end
+    end
+
+    slot_additions << "addslotdefault #{slot} #{actor.name_with_case}"
+  end
+
+  if slot_additions.size > 0
+    keyconf_content = String.build do |io|
+      io << "// ============================================================\n"
+      io << "// KEYCONF — Monster Mash (auto-generated)\n"
+      io << "// No WADs contributed KEYCONF entries, so all weapon slot\n"
+      io << "// assignments are auto-generated from DECORATE properties.\n"
+      io << "// ============================================================\n\n"
+      slot_additions.each { |line| io << line << "\n" }
+    end
+    keyconf_path = normalize_path(File.join(PK3_BUILD_DIR, "KEYCONF"))
+    File.write(keyconf_path, keyconf_content)
+    log(2, "  KEYCONF: generated from scratch with #{slot_additions.size} weapon slot assignment(s)")
+  end
 end
 
 ###############################################################################
