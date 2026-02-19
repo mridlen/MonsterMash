@@ -1,0 +1,6 @@
+This is allegedly a GPL-3 license on GZDoom 1.8.10, which is where I copied these actor definitions:
+
+https://github.com/ZDoom/gzdoom/tree/1.8.10?tab=GPL-3.0-1-ov-file
+https://github.com/ZDoom/gzdoom/tree/1.8.10/wadsrc/static/actors
+
+I have left these files intact, I just need them for reference to resolve inheritance.
