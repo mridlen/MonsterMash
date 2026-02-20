@@ -167,3 +167,89 @@ def clear_directory(path : String)
     end
   end
 end
+
+###############################################################################
+# DEDUPLICATION HELPERS
+# Shared patterns extracted from unwad.cr to eliminate code duplication.
+###############################################################################
+
+# Print a progress bar to STDOUT. Call with current index (0-based) and total.
+def print_progress_bar(index : Int32, total : Int32, label : String)
+  pct = ((index + 1) * 100 / total)
+  bar_width = 40
+  filled = (pct * bar_width / 100).to_i
+  bar = "#" * filled + "-" * (bar_width - filled)
+  print "\r  [#{bar}] #{pct}% (#{index + 1}/#{total}) #{label.ljust(30)}"
+  STDOUT.flush
+end
+
+# Return the standard list of SNDINFO file path candidates for a WAD.
+# Used during sound conflict resolution to find existing SNDINFO files.
+def sndinfo_candidates(wad_name : String) : Array(String)
+  [
+    "./Processing/#{wad_name}/defs/SNDINFO.raw",
+    "./Processing/#{wad_name}/defs/sndinfo.raw",
+    "./Processing/#{wad_name}/defs/SNDINFO.txt",
+    "./Processing/#{wad_name}/defs/sndinfo.txt",
+    "./Processing/#{wad_name}/defs/SNDINFO.lmp",
+  ].map { |p| normalize_path(p) }
+end
+
+# Infer a weapon slot number from actor properties when no explicit slot is set.
+# Returns the explicit slot if set, otherwise heuristic-based slot assignment.
+def infer_weapon_slot(actor : Actor) : Int32
+  slot = actor.weapon.slotnumber
+  return slot unless slot == -1
+  if actor.weapon.meleeweapon || actor.weapon.noalert
+    1
+  elsif actor.weapon.bfg
+    7
+  elsif actor.weapon.ammouse > 5
+    6
+  elsif actor.weapon.ammouse > 1
+    4
+  else
+    5
+  end
+end
+
+# Iterate over actor definition lines in a DECORATE file, skipping block
+# comments and ZScript field declarations. Yields (line, line_index) for
+# each valid "actor ..." line found.
+def each_actor_line(lines : Array(String), &block : (String, Int32) ->)
+  in_block_comment = false
+  lines.each_with_index do |line, line_index|
+    if line.includes?("/*")
+      in_block_comment = true
+    end
+    if in_block_comment
+      in_block_comment = false if line.includes?("*/")
+      next
+    end
+    next unless line =~ /^\s*actor\s+/i
+    # Skip ZScript field declarations like "actor dummy;" inside class bodies
+    next if line.strip.rstrip(';').strip != line.strip
+    block.call(line, line_index)
+  end
+end
+
+# Find the opening '{' at or after line_index, then insert a //$Category
+# comment on the line after it (unless one already exists). Modifies lines
+# in place. Returns true if a category tag was inserted.
+def inject_category_after_brace(lines : Array(String), line_index : Int32, category : String) : Bool
+  brace_idx = line_index
+  unless lines[brace_idx].includes?("{")
+    brace_idx += 1
+    while brace_idx < lines.size && !lines[brace_idx].includes?("{")
+      brace_idx += 1
+    end
+  end
+  if brace_idx < lines.size
+    cat_idx = brace_idx + 1
+    unless cat_idx < lines.size && lines[cat_idx] =~ /\/\/\$Category/i
+      lines.insert(cat_idx, "  //$Category #{category}")
+      return true
+    end
+  end
+  false
+end

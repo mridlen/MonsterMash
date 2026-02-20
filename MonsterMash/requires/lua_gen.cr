@@ -30,10 +30,10 @@ def difficulty_tier(health : Int32) : {Int32, Float64, Float64}
   when     ..60 then {50, 1.2, 5.0}     # Fodder (weaker than Imp)
   when   61..200 then {40, 1.0, 15.0}   # Low-tier (Imp-class)
   when  201..500 then {30, 0.8, 30.0}   # Mid-tier (Cacodemon-class)
-  when  501..1000 then {20, 0.5, 50.0}  # Heavy (Baron-class)
-  when 1001..2000 then {10, 0.3, 80.0}  # Boss-tier (Cyberdemon-class)
-  when 2001..4000 then {5, 0.2, 120.0}  # Super-boss
-  else                 {2, 0.1, 200.0}  # Ultra-boss (4000+)
+  when  501..1000 then {25, 0.6, 50.0}  # Heavy (Baron-class)
+  when 1001..2000 then {18, 0.5, 80.0}  # Boss-tier (Cyberdemon-class)
+  when 2001..4000 then {12, 0.4, 120.0} # Super-boss
+  else                 {7, 0.3, 200.0}  # Ultra-boss (4000+)
   end
 end
 
@@ -287,7 +287,7 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String))
       io << "      min = 0,\n"
       io << "      max = 20,\n"
       io << "      increment = 0.02,\n"
-      io << "      default = 0.2,\n"
+      io << "      default = 1,\n"
       io << "      presets = _(\"0:0 (None),0.02:0.02 (Scarce),0.14:0.14 (Less),0.5:0.5 (Plenty),1.2:1.2 (More),3:3 (Heaps),20:20 (INSANE)\"),\n"
       io << "      randomize_group = \"monsters\",\n"
       io << "    },\n"
@@ -317,7 +317,7 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String))
       io << "      min = 0,\n"
       io << "      max = 20,\n"
       io << "      increment = 0.02,\n"
-      io << "      default = 0.2,\n"
+      io << "      default = 1,\n"
       io << "      presets = _(\"0:0 (None),0.02:0.02 (Scarce),0.14:0.14 (Less),0.5:0.5 (Plenty),1.2:1.2 (More),3:3 (Heaps),20:20 (INSANE)\"),\n"
       io << "      randomize_group = \"weapons\",\n"
       io << "    },\n"

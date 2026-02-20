@@ -347,6 +347,8 @@ class Actor
   property source_wad_folder : String = "UNDEFINED"     # e.g. "Blah" from Blah.wad
   property source_file : String = "UNDEFINED"           # e.g. "DECORATE.raw"
   property built_in : Bool = false                      # Part of engine's built-in actors
+  # Script format: "decorate", "zscript", or "both"
+  property script_type : String = "decorate"
 
   # Tracking arrays for applied properties and flags
   property properties_applied : Array(String) = Array(String).new
