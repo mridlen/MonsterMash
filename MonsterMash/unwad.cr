@@ -18,6 +18,7 @@
 #  [REFACTOR] 600+ lines of elsif flag/property chains → hash-based dispatch
 #  [REFACTOR] Extracted reusable helper methods
 #  [REFACTOR] Added configurable logging (LOG_LEVEL)
+#  [FEATURE]  Added -v/-vv/-vvv CLI flags for runtime log verbosity control
 #  [REFACTOR] Proper error handling with begin/rescue blocks
 #  [REFACTOR] Consistent code style and comments
 ###############################################################################
@@ -46,15 +47,32 @@ require "./requires/pk3_merge.cr"
 # CONFIGURATION
 ###############################################################################
 
+# ---------------------------------------------------------------------------
+# Verbosity flags: -v = warnings, -vv = info, -vvv = debug
 # Log levels: 0 = errors only, 1 = warnings, 2 = info, 3 = debug/verbose
-LOG_LEVEL = 2
+# ---------------------------------------------------------------------------
+module Config
+  @@log_level : Int32 = if ARGV.includes?("-vvv")
+                           3
+                         elsif ARGV.includes?("-vv")
+                           2
+                         elsif ARGV.includes?("-v")
+                           1
+                         else
+                           0  # default: errors only
+                         end
+
+  def self.log_level
+    @@log_level
+  end
+end
 
 LOG_FILE = File.open("unwad.log", "w")
 LOG_FILE.puts "=== Unwad V4 Log Started: #{Time.local} ==="
 LOG_FILE.flush
 
 def log(level : Int32, msg : String)
-  return if level > LOG_LEVEL
+  return if level > Config.log_level
   prefix = case level
            when 0 then "[ERROR]"
            when 1 then "[WARN] "
@@ -294,8 +312,9 @@ full_dir_list.each do |file_path|
   # Clean up: strip each line, remove blank lines
   input_text = input_text.split("\n").map(&.strip).reject(&.empty?).join("\n")
 
-  # Split on actor definitions
+  # Split on actor/class definitions (DECORATE uses "actor", ZScript uses "class")
   input_text = input_text.gsub(/^actor\s+/im, "SPECIALDELIMITER__actor ")
+  input_text = input_text.gsub(/^class\s+/im, "SPECIALDELIMITER__class ")
   actors = input_text.split("SPECIALDELIMITER__")
   actors.reject!(&.strip.empty?)
 
@@ -309,6 +328,13 @@ full_dir_list.each do |file_path|
     lines_with_case = actor_no_states.lines.map(&.strip).reject(&.empty?)
     next if lines_with_case.empty?
     first_line_with_case = lines_with_case.first
+
+    # [BUGFIX] Normalize colon-glued tokens like "RiflePuff:Bulletpuff" into
+    # "RiflePuff : Bulletpuff" so the word-count parser handles inheritance
+    # correctly and the actor name doesn't include a trailing colon.
+    first_line_with_case = first_line_with_case.gsub(/([A-Za-z0-9_]):([A-Za-z])/, "\\1 : \\2")
+    first_line_with_case = first_line_with_case.gsub(/([A-Za-z0-9_]):\s/, "\\1 : ")
+
     name_with_case = first_line_with_case.split[1]?
     next unless name_with_case
 
@@ -317,6 +343,9 @@ full_dir_list.each do |file_path|
     next if lines.empty?
 
     first_line = lines.first
+    # Apply same colon normalization to lowercase line
+    first_line = first_line.gsub(/([a-z0-9_]):([a-z])/, "\\1 : \\2")
+    first_line = first_line.gsub(/([a-z0-9_]):\s/, "\\1 : ")
     words = first_line.split
 
     # Remove "native" keyword from actor line if present
@@ -478,7 +507,7 @@ end
 log(2, "Parsing complete. Total actors loaded: #{actordb.size}")
 
 # Report missing properties/flags
-if LOG_LEVEL >= 2
+if Config.log_level >= 2
   unless missing_property_names.empty?
     log(2, "=== Missing Properties ===")
     missing_property_names.each { |k, v| log(2, "  #{k}: #{v.uniq.join(", ")}") }
@@ -499,6 +528,47 @@ end
 log(2, "=== Removing Identical Actors === (DISABLED)")
 
 actor_counter = 0
+
+###############################################################################
+# RENAMING ACTORS THAT CONFLICT WITH BUILT-IN NAMES
+###############################################################################
+
+log(2, "=== Renaming Actors That Conflict With Built-In Names ===")
+
+built_in_names = Set(String).new
+actordb.each { |a| built_in_names << a.name if a.built_in }
+
+actordb.each do |actor|
+  next if actor.built_in
+  next unless built_in_names.includes?(actor.name)
+
+  renamed_actor = "#{actor.name_with_case}_MM#{actor_counter}"
+  wad_folder = actor.file_path.split("/")[0..-2].join("/") + "/"
+
+  log(2, "Built-in conflict: #{actor.name_with_case} → #{renamed_actor} (conflicts with engine actor)")
+
+  Dir.children(wad_folder).each do |file|
+    file_path_rename = wad_folder + file
+    next if File.directory?(file_path_rename)
+    file_text = File.read(file_path_rename)
+    escaped = Regex.escape(actor.name_with_case)
+
+    # Same 6 rename patterns as mod-vs-mod duplicates
+    file_text = file_text.gsub(/^(\s*actor\s+)#{escaped}(?=[\s:{])(?![ \t]*=)/mi) { "#{$1}#{renamed_actor}" }
+    file_text = file_text.gsub(/^(\s*class\s+)#{escaped}(?=[\s:{])/mi) { "#{$1}#{renamed_actor}" }
+    file_text = file_text.gsub(/(:[ \t]*)#{escaped}(?=[\s,{])/mi) { "#{$1}#{renamed_actor}" }
+    file_text = file_text.gsub(/(replaces\s+)#{escaped}(?=[\s{])/mi) { "#{$1}#{renamed_actor}" }
+    file_text = file_text.gsub(/"#{escaped}"/i, "\"#{renamed_actor}\"")
+    file_text = file_text.gsub(/'#{escaped}'/i, "'#{renamed_actor}'")
+
+    File.write(file_path_rename, file_text)
+  end
+
+  # Update actordb entry to match the new name in files
+  actor.name = renamed_actor.downcase
+  actor.name_with_case = renamed_actor
+  actor_counter += 1
+end
 
 ###############################################################################
 # RENAMING DUPLICATE ACTOR NAMES

@@ -333,5 +333,5 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String))
   log(2, "Lua monsters included: #{lua_monster_count}")
   log(2, "Lua weapons included: #{lua_weapon_count}")
 
-  puts lua if LOG_LEVEL >= 3
+  puts lua if Config.log_level >= 3
 end
