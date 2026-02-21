@@ -347,6 +347,7 @@ class Actor
   property source_wad_folder : String = "UNDEFINED"     # e.g. "Blah" from Blah.wad
   property source_file : String = "UNDEFINED"           # e.g. "DECORATE.raw"
   property built_in : Bool = false                      # Part of engine's built-in actors
+  property is_ammo : Bool = false                       # Inherits from Ammo class
   # Script format: "decorate", "zscript", or "both"
   property script_type : String = "decorate"
 

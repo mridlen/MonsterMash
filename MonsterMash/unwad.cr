@@ -727,6 +727,12 @@ actordb.each do |actor|
     end
   end
 
+  # Actors with +NOINTERACTION are purely decorative, not monsters
+  if is_monster && actor.nointeraction
+    is_monster = false
+    log(3, "Monster excluded (NOINTERACTION): #{actor.name_with_case}")
+  end
+
   if is_monster
     actor.ismonster = true
     log(3, "Monster confirmed: #{actor.name_with_case}")
@@ -823,6 +829,74 @@ weapon_count = weapon_actor_set.size
 log(2, "Weapons found: #{weapon_count}")
 
 ###############################################################################
+# EVALUATE AMMO STATUS VIA INHERITANCE
+###############################################################################
+
+log(2, "=== Evaluating Ammo Status ===")
+
+# Known base ammo classes (lowercase) — actors inheriting from these are ammo
+AMMO_BASE_CLASSES = Set{
+  "ammo",
+  # Standard Doom ammo actors
+  "clip", "clipbox", "cell", "cellpack",
+  "shell", "shellbox", "rocketammo", "rocketbox",
+  # Heretic ammo
+  "goldwandammo", "goldwandhemo1", "crossbowammo",
+  "blasterammo", "skullrodammo", "phoenixrodammo", "maceammo",
+}
+
+ammo_actor_set = Set(String).new
+
+actordb.each do |actor|
+  next if actor.built_in == true
+
+  is_ammo = false
+
+  # Check 1: Does it have ammo-specific properties applied?
+  has_ammo_props = actor.ammo.backpackamount != -1 ||
+                   actor.ammo.backpackmaxamount != -1 ||
+                   actor.ammo.dropamount != -1
+
+  # Check 2: Walk the inheritance chain to see if it inherits from Ammo
+  if has_ammo_props || actor.inherits != "UNDEFINED"
+    inheritance_chain = [actor.name.downcase]
+    inherits_name = actor.inherits
+
+    while inherits_name != "UNDEFINED"
+      lc_name = inherits_name.downcase
+      if AMMO_BASE_CLASSES.includes?(lc_name)
+        is_ammo = true
+        break
+      end
+
+      inherited_actors = actors_by_name[lc_name]?
+      break unless inherited_actors
+
+      target = inherited_actors.find { |a| !a.built_in } || inherited_actors.first?
+      break unless target
+      break if inheritance_chain.includes?(target.name.downcase) # cycle guard
+
+      inheritance_chain << target.name.downcase
+      inherits_name = target.inherits
+    end
+  end
+
+  # Check 3: Has ammo properties even without recognized inheritance
+  if !is_ammo && has_ammo_props
+    is_ammo = true
+  end
+
+  if is_ammo
+    actor.is_ammo = true
+    ammo_actor_set.add(actor.name.downcase)
+    log(3, "Ammo confirmed: #{actor.name_with_case} (amount: #{actor.inventory.amount})")
+  end
+end
+
+ammo_count = ammo_actor_set.size
+log(2, "Ammo actors found: #{ammo_count}")
+
+###############################################################################
 # ZSCRIPT CLASS DETECTION — Standalone pass for monster/weapon classification.
 # The main parser only handles DECORATE 'actor' definitions. ZScript uses
 # 'class Name : Parent' syntax which is not parsed into actordb. This pass
@@ -911,6 +985,7 @@ zscript_class_info.each do |class_lc, info|
   # Walk inheritance chain
   is_monster = info[:has_monster_flag]
   is_weapon = false
+  is_ammo = false
   chain_name = info[:parent_lc]
   visited = Set{class_lc}
 
@@ -926,6 +1001,10 @@ zscript_class_info.each do |class_lc, info|
       is_weapon = true
       break
     end
+    if AMMO_BASE_CLASSES.includes?(chain_name)
+      is_ammo = true
+      break
+    end
 
     # Check if parent is another ZScript class we know about
     parent_info = zscript_class_info[chain_name]?
@@ -933,25 +1012,33 @@ zscript_class_info.each do |class_lc, info|
       is_monster = true if parent_info[:has_monster_flag]
       chain_name = parent_info[:parent_lc]
     else
-      # Check if parent is a known monster from actordb (built-in DECORATE actors)
+      # Check if parent is a known monster/ammo from actordb (built-in DECORATE actors)
       db_actors = actors_by_name[chain_name]?
       if db_actors
         db_actor = db_actors.first
         if db_actor.ismonster || db_actor.monster
           is_monster = true
         end
+        if db_actor.is_ammo
+          is_ammo = true
+        end
       end
       break
     end
   end
 
-  if is_monster || is_weapon
+  if is_monster || is_weapon || is_ammo
     # Check if this actor already exists in actordb (from DECORATE parsing)
     existing = actors_by_name[class_lc]?
     if existing
       # Actor exists in both DECORATE and ZScript — mark as "both"
       existing.each { |a| a.script_type = "both" }
-      log(3, "  ZScript #{is_monster ? "monster" : "weapon"} (both): #{info[:name_with_case]}")
+      if is_ammo
+        existing.each { |a| a.is_ammo = true }
+        ammo_actor_set.add(class_lc)
+      end
+      kind = is_monster ? "monster" : (is_weapon ? "weapon" : "ammo")
+      log(3, "  ZScript #{kind} (both): #{info[:name_with_case]}")
     else
       # Create a new Actor entry for this ZScript class
       # Determine wad folder from file path: ./Processing/WadName/defs/ZSCRIPT.raw
@@ -971,7 +1058,9 @@ zscript_class_info.each do |class_lc, info|
         new_actor.ismonster = true
         new_actor.monster = info[:has_monster_flag]
       end
-      # Weapon status is tracked via weapon_actor_set (populated below)
+      if is_ammo
+        new_actor.is_ammo = true
+      end
 
       actordb << new_actor
       actors_by_name[class_lc] ||= [] of Actor
@@ -980,17 +1069,22 @@ zscript_class_info.each do |class_lc, info|
       if is_weapon
         weapon_actor_set.add(class_lc)
       end
+      if is_ammo
+        ammo_actor_set.add(class_lc)
+      end
 
-      log(3, "  ZScript #{is_monster ? "monster" : "weapon"}: #{info[:name_with_case]} (#{info[:file_path]})")
+      kind = is_monster ? "monster" : (is_weapon ? "weapon" : "ammo")
+      log(3, "  ZScript #{kind}: #{info[:name_with_case]} (#{info[:file_path]})")
     end
   end
 end
 
 zs_monster_count = actordb.count { |a| !a.built_in && a.script_type != "decorate" && (a.ismonster || a.monster) }
 zs_weapon_count = actordb.count { |a| !a.built_in && a.script_type != "decorate" && weapon_actor_set.includes?(a.name.downcase) }
-log(2, "  ZScript monsters: #{zs_monster_count}, weapons: #{zs_weapon_count}")
+zs_ammo_count = actordb.count { |a| !a.built_in && a.script_type != "decorate" && ammo_actor_set.includes?(a.name.downcase) }
+log(2, "  ZScript monsters: #{zs_monster_count}, weapons: #{zs_weapon_count}, ammo: #{zs_ammo_count}")
 
-doomednum_counter = wipe_and_reassign_doomednums(actordb, weapon_actor_set, doomednum_info) # requires/doomednum_assign.cr
+doomednum_counter = wipe_and_reassign_doomednums(actordb, weapon_actor_set, ammo_actor_set, doomednum_info) # requires/doomednum_assign.cr
 
 resolve_sprite_conflicts(actordb) # requires/sprite_conflicts.cr
 
@@ -998,4 +1092,4 @@ resolve_sound_conflicts(actordb) # requires/sound_conflicts.cr
 
 build_merged_pk3(actordb, weapon_actor_set) # requires/pk3_merge.cr
 
-generate_lua_module(actordb, weapon_actor_set) # requires/lua_gen.cr
+generate_lua_module(actordb, weapon_actor_set, ammo_actor_set) # requires/lua_gen.cr

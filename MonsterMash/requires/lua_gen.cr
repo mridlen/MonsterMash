@@ -153,13 +153,22 @@ def should_include_weapon_in_lua(actor : Actor) : Bool
   true
 end
 
+# Filter ammo pickups for Lua output — skip actors with no editor number.
+def should_include_pickup_in_lua(actor : Actor) : Bool
+  return false if actor.doomednum == -1
+  true
+end
+
 # Generate the complete Lua module file for Obsidian integration.
-# Writes MONSTER_MASH.MONSTERS, MONSTER_MASH.WEAPONS, and OB_MODULES registration.
-def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String))
+# Writes MONSTER_MASH.MONSTERS, MONSTER_MASH.WEAPONS, MONSTER_MASH.PICKUPS,
+# and OB_MODULES registration.
+def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), ammo_actor_set : Set(String))
   log(2, "=== Generating Lua Module ===")
 
   lua_monster_count = 0
+  lua_ally_count = 0
   lua_weapon_count = 0
+  lua_pickup_count = 0
 
   lua = String.build do |io|
     io << "----------------------------------------------------------------\n"
@@ -171,6 +180,16 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String))
     io << "function MONSTER_MASH.control_setup(self)\n"
     io << "  for name, info in pairs(MONSTER_MASH.MONSTERS) do\n"
     io << "    local opt = self.options[\"float_\" .. name]\n"
+    io << "    if opt then\n"
+    io << "      local factor = opt.value\n"
+    io << "      if factor then\n"
+    io << "        info.prob = info.prob * factor\n"
+    io << "        info.density = info.density * factor\n"
+    io << "      end\n"
+    io << "    end\n"
+    io << "  end\n"
+    io << "  for name, info in pairs(MONSTER_MASH.ALLIES) do\n"
+    io << "    local opt = self.options[\"float_ally_\" .. name]\n"
     io << "    if opt then\n"
     io << "      local factor = opt.value\n"
     io << "      if factor then\n"
@@ -196,6 +215,7 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String))
     actordb.each do |actor|
       next unless (actor.ismonster || actor.monster) && actor.doomednum != -1
       next unless should_include_in_lua(actor)
+      next if actor.friendly  # Friendly monsters go in ALLIES table
 
       attack = detect_attack_type(actor)
       prob, density, damage = difficulty_tier(actor.health)
@@ -225,6 +245,42 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String))
       io << "    density = #{density}\n"
       io << "  },\n"
       lua_monster_count += 1
+    end
+
+    io << "}\n\n"
+
+    # ── MONSTER_MASH.ALLIES table ─────────────────────────────────────
+    io << "MONSTER_MASH.ALLIES =\n{\n"
+
+    actordb.each do |actor|
+      next unless (actor.ismonster || actor.monster) && actor.doomednum != -1
+      next unless should_include_in_lua(actor)
+      next unless actor.friendly  # Only friendly monsters
+
+      attack = detect_attack_type(actor)
+      prob, density, damage = difficulty_tier(actor.health)
+
+      if actor.float || actor.nogravity
+        prob = (prob * 0.8).to_i
+        prob = 1 if prob < 1
+      end
+
+      lua_key = actor.name.gsub(/[^a-zA-Z0-9_]/, "_")
+      lua_key = "_#{lua_key}" if lua_key[0]?.try(&.ascii_number?)
+
+      source_comment = actor.source_wad_folder != "UNDEFINED" ? "  -- source: #{actor.source_wad_folder}" : ""
+      io << "  #{lua_key} =#{source_comment}\n"
+      io << "  {\n"
+      io << "    id = #{actor.doomednum},\n"
+      io << "    r = #{actor.radius.to_i},\n"
+      io << "    h = #{actor.height},\n"
+      io << "    prob = #{prob},\n"
+      io << "    health = #{actor.health},\n"
+      io << "    damage = #{damage},\n"
+      io << "    attack = \"#{attack}\",\n"
+      io << "    density = #{density}\n"
+      io << "  },\n"
+      lua_ally_count += 1
     end
 
     io << "}\n\n"
@@ -265,6 +321,37 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String))
 
     io << "}\n\n"
 
+    # ── MONSTER_MASH.PICKUPS table ────────────────────────────────────
+    io << "MONSTER_MASH.PICKUPS =\n{\n"
+
+    actordb.each do |actor|
+      next unless ammo_actor_set.includes?(actor.name.downcase) && actor.doomednum != -1
+      next unless should_include_pickup_in_lua(actor)
+
+      # Ammo type: use map_ammo_type so the string matches what weapons reference
+      ammo_type = map_ammo_type(actor.name)
+
+      # Amount: use inventory.amount if set, otherwise default to 10
+      amount = actor.inventory.amount > 0 ? actor.inventory.amount : 10
+
+      # Sanitize name for Lua key
+      lua_key = actor.name.gsub(/[^a-zA-Z0-9_]/, "_")
+      lua_key = "_#{lua_key}" if lua_key[0]?.try(&.ascii_number?)
+
+      source_comment = actor.source_wad_folder != "UNDEFINED" ? "  -- source: #{actor.source_wad_folder}" : ""
+      io << "  #{lua_key} =#{source_comment}\n"
+      io << "  {\n"
+      io << "    id = #{actor.doomednum},\n"
+      io << "    kind = \"ammo\",\n"
+      io << "    rank = 2,\n"
+      io << "    add_prob = 40,\n"
+      io << "    give = { {ammo=\"#{ammo_type}\",count=#{amount}} }\n"
+      io << "  },\n"
+      lua_pickup_count += 1
+    end
+
+    io << "}\n\n"
+
     # ── OB_MODULES registration: Monsters ──────────────────────────────
     io << "OB_MODULES[\"monster_mash_monsters\"] =\n{\n"
     io << "  name = \"monster_mash_monsters_control\",\n"
@@ -278,6 +365,7 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String))
     actordb.each do |actor|
       next unless (actor.ismonster || actor.monster) && actor.doomednum != -1
       next unless should_include_in_lua(actor)
+      next if actor.friendly
       lua_key = actor.name.gsub(/[^a-zA-Z0-9_]/, "_")
       lua_key = "_#{lua_key}" if lua_key[0]?.try(&.ascii_number?)
       io << "    {\n"
@@ -290,6 +378,37 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String))
       io << "      default = 1,\n"
       io << "      presets = _(\"0:0 (None),0.02:0.02 (Scarce),0.14:0.14 (Less),0.5:0.5 (Plenty),1.2:1.2 (More),3:3 (Heaps),20:20 (INSANE)\"),\n"
       io << "      randomize_group = \"monsters\",\n"
+      io << "    },\n"
+    end
+
+    io << "  },\n}\n\n"
+
+    # ── OB_MODULES registration: Allies ──────────────────────────────
+    io << "OB_MODULES[\"monster_mash_allies\"] =\n{\n"
+    io << "  name = \"monster_mash_allies_control\",\n"
+    io << "  label = _(\"Monster Mash Allies\"),\n"
+    io << "  game = \"doomish\",\n"
+    io << "  port = \"zdoom\",\n"
+    io << "  tables =\n  {\n    MONSTER_MASH\n  },\n"
+    io << "  hooks =\n  {\n    setup = MONSTER_MASH.control_setup\n  },\n"
+    io << "  options =\n  {\n"
+
+    actordb.each do |actor|
+      next unless (actor.ismonster || actor.monster) && actor.doomednum != -1
+      next unless should_include_in_lua(actor)
+      next unless actor.friendly
+      lua_key = actor.name.gsub(/[^a-zA-Z0-9_]/, "_")
+      lua_key = "_#{lua_key}" if lua_key[0]?.try(&.ascii_number?)
+      io << "    {\n"
+      io << "      name = \"float_ally_#{lua_key}\",\n"
+      io << "      label = _(\"#{actor.name_with_case}\"),\n"
+      io << "      valuator = \"slider\",\n"
+      io << "      min = 0,\n"
+      io << "      max = 20,\n"
+      io << "      increment = 0.02,\n"
+      io << "      default = 1,\n"
+      io << "      presets = _(\"0:0 (None),0.02:0.02 (Scarce),0.14:0.14 (Less),0.5:0.5 (Plenty),1.2:1.2 (More),3:3 (Heaps),20:20 (INSANE)\"),\n"
+      io << "      randomize_group = \"allies\",\n"
       io << "    },\n"
     end
 
@@ -331,7 +450,9 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String))
   File.write(lua_output_path, lua)
   log(2, "Lua module written to: #{lua_output_path}")
   log(2, "Lua monsters included: #{lua_monster_count}")
+  log(2, "Lua allies included: #{lua_ally_count}")
   log(2, "Lua weapons included: #{lua_weapon_count}")
+  log(2, "Lua pickups included: #{lua_pickup_count}")
 
   puts lua if Config.log_level >= 3
 end

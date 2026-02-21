@@ -1189,6 +1189,35 @@ def build_merged_pk3(actordb : Array(Actor), weapon_actor_set : Set(String))
     pk3_size = File.size(PK3_OUTPUT)
     size_mb = (pk3_size / (1024.0 * 1024.0)).round(2)
     log(2, "PK3 created successfully: #{PK3_OUTPUT} (#{size_mb} MB)")
+
+    # If running inside Obsidian (not standalone), copy the PK3 to the Obsidian root
+    # so it's ready for level generation. find_obsidian_exe is from tutorial.cr
+    obsidian_exe_path = find_obsidian_exe
+    if obsidian_exe_path
+      obsidian_dir = File.dirname(obsidian_exe_path)
+      exe_dir = File.dirname(Process.executable_path || ".")
+
+      # Copy monster_mash.pk3 to Obsidian root
+      dest_pk3 = normalize_path(File.join(obsidian_dir, "monster_mash.pk3"))
+      FileUtils.cp(PK3_OUTPUT, dest_pk3)
+      log(1, "Copied PK3 to Obsidian folder: #{dest_pk3}")
+
+      # Copy companion files (target-spy, big_backpack) if not already present
+      companion_files = ["target-spy-v1.14.pk3", "big_backpack.wad"]
+      companion_files.each do |filename|
+        src = normalize_path(File.join(exe_dir, filename))
+        dest = normalize_path(File.join(obsidian_dir, filename))
+        next unless File.exists?(src)
+        if File.exists?(dest)
+          log(2, "Companion file already in Obsidian folder: #{filename}")
+        else
+          FileUtils.cp(src, dest)
+          log(1, "Copied companion file to Obsidian folder: #{filename}")
+        end
+      end
+    else
+      log(2, "Standalone mode — PK3 not copied (obsidian.exe not found)")
+    end
   rescue ex
     log(0, "Failed to create PK3: #{ex.message}")
     log(0, "The staged PK3 content is still available in #{PK3_BUILD_DIR}/ for manual zipping.")
