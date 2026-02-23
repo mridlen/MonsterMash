@@ -208,6 +208,7 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
   lua_monster_count = 0
   lua_ally_count = 0
   lua_weapon_count = 0
+  lua_ammo_count = 0
   lua_pickup_count = 0
 
   lua = String.build do |io|
@@ -244,6 +245,15 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
     io << "      local factor = opt.value\n"
     io << "      if factor then\n"
     io << "        info.add_prob = info.add_prob * factor\n"
+    io << "      end\n"
+    io << "    end\n"
+    io << "  end\n"
+    io << "  for name, info in pairs(MONSTER_MASH.AMMO) do\n"
+    io << "    local opt = self.options[\"float_ammo_\" .. name]\n"
+    io << "    if opt then\n"
+    io << "      local factor = opt.value\n"
+    io << "      if factor then\n"
+    io << "        if info.add_prob then info.add_prob = info.add_prob * factor end\n"
     io << "      end\n"
     io << "    end\n"
     io << "  end\n"
@@ -370,8 +380,8 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
 
     io << "}\n\n"
 
-    # ── MONSTER_MASH.PICKUPS table ────────────────────────────────────
-    io << "MONSTER_MASH.PICKUPS =\n{\n"
+    # ── MONSTER_MASH.AMMO table ──────────────────────────────────────
+    io << "MONSTER_MASH.AMMO =\n{\n"
 
     actordb.each do |actor|
       next unless ammo_actor_set.includes?(actor.name.downcase) && actor.doomednum != -1
@@ -395,6 +405,52 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
       io << "    rank = 2,\n"
       io << "    add_prob = 10,\n"
       io << "    give = { {ammo=\"#{ammo_type}\",count=#{amount}} }\n"
+      io << "  },\n"
+      lua_ammo_count += 1
+    end
+
+    io << "}\n\n"
+
+    # ── MONSTER_MASH.PICKUPS table ────────────────────────────────────
+    io << "MONSTER_MASH.PICKUPS =\n{\n"
+
+    # Non-ammo pickups: health, armor, powerup, other
+    actordb.each do |actor|
+      next unless pickup_actor_set.includes?(actor.name.downcase) && actor.doomednum != -1
+      next unless should_include_pickup_in_lua(actor)
+
+      kind = actor.pickup_kind
+      lua_key = actor.name.gsub(/[^a-zA-Z0-9_]/, "_")
+      lua_key = "_#{lua_key}" if lua_key[0]?.try(&.ascii_number?)
+
+      source_comment = actor.source_wad_folder != "UNDEFINED" ? "  -- source: #{actor.source_wad_folder}" : ""
+      io << "  #{lua_key} =#{source_comment}\n"
+      io << "  {\n"
+      io << "    id = #{actor.doomednum},\n"
+      io << "    kind = \"#{kind}\",\n"
+      io << "    rank = 2,\n"
+
+      case kind
+      when "health"
+        health_amount = actor.inventory.amount > 0 ? actor.inventory.amount : 10
+        io << "    add_prob = 10,\n"
+        io << "    give = { {health=#{health_amount}} }\n"
+      when "armor"
+        health_equiv = armor_health_equivalent(actor)
+        io << "    add_prob = 7,\n"
+        io << "    give = { {health=#{health_equiv}} }\n"
+      when "powerup"
+        io << "    add_prob = 2,\n"
+        duration = parse_powerup_duration(actor.powerup.duration)
+        if duration
+          io << "    time_limit = #{duration},\n"
+        end
+      else # "other"
+        io << "    add_prob = 5,\n"
+        other_amount = actor.inventory.amount > 0 ? actor.inventory.amount : 5
+        io << "    give = { {health=#{other_amount}} }\n"
+      end
+
       io << "  },\n"
       lua_pickup_count += 1
     end
@@ -448,6 +504,7 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
     io << "  label = _(\"Monster Mash Monsters\"),\n"
     io << "  game = \"doomish\",\n"
     io << "  port = \"zdoom\",\n"
+    io << "  where = \"combat\",\n"
     io << "  tables =\n  {\n    MONSTER_MASH\n  },\n"
     io << "  hooks =\n  {\n    setup = MONSTER_MASH.control_setup\n  },\n"
     io << "  options =\n  {\n"
@@ -479,6 +536,7 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
     io << "  label = _(\"Monster Mash Allies\"),\n"
     io << "  game = \"doomish\",\n"
     io << "  port = \"zdoom\",\n"
+    io << "  where = \"combat\",\n"
     io << "  tables =\n  {\n    MONSTER_MASH\n  },\n"
     io << "  hooks =\n  {\n    setup = MONSTER_MASH.control_setup\n  },\n"
     io << "  options =\n  {\n"
@@ -504,20 +562,52 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
 
     io << "  },\n}\n\n"
 
+    # ── OB_MODULES registration: Ammo ───────────────────────────────
+    io << "OB_MODULES[\"monster_mash_ammo\"] =\n{\n"
+    io << "  name = \"monster_mash_ammo_control\",\n"
+    io << "  label = _(\"Monster Mash Ammo\"),\n"
+    io << "  game = \"doomish\",\n"
+    io << "  port = \"zdoom\",\n"
+    io << "  where = \"pickup\",\n"
+    io << "  tables =\n  {\n    MONSTER_MASH\n  },\n"
+    io << "  hooks =\n  {\n    setup = MONSTER_MASH.control_setup\n  },\n"
+    io << "  options =\n  {\n"
+
+    actordb.each do |actor|
+      next unless ammo_actor_set.includes?(actor.name.downcase) && actor.doomednum != -1
+      next unless should_include_pickup_in_lua(actor)
+      lua_key = actor.name.gsub(/[^a-zA-Z0-9_]/, "_")
+      lua_key = "_#{lua_key}" if lua_key[0]?.try(&.ascii_number?)
+      io << "    {\n"
+      io << "      name = \"float_ammo_#{lua_key}\",\n"
+      io << "      label = _(\"#{actor.name_with_case}\"),\n"
+      io << "      valuator = \"slider\",\n"
+      io << "      min = 0,\n"
+      io << "      max = 20,\n"
+      io << "      increment = 0.02,\n"
+      io << "      default = 0.3,\n"
+      io << "      presets = _(\"0:0 (None),0.02:0.02 (Scarce),0.14:0.14 (Less),0.5:0.5 (Plenty),1.2:1.2 (More),3:3 (Heaps),20:20 (INSANE)\"),\n"
+      io << "      randomize_group = \"ammo\",\n"
+      io << "    },\n"
+    end
+
+    io << "  },\n}\n\n"
+
+
     # ── OB_MODULES registration: Pickups ─────────────────────────────
     io << "OB_MODULES[\"monster_mash_pickups\"] =\n{\n"
     io << "  name = \"monster_mash_pickups_control\",\n"
     io << "  label = _(\"Monster Mash Pickups\"),\n"
     io << "  game = \"doomish\",\n"
     io << "  port = \"zdoom\",\n"
+    io << "  where = \"pickup\",\n"
     io << "  tables =\n  {\n    MONSTER_MASH\n  },\n"
     io << "  hooks =\n  {\n    setup = MONSTER_MASH.control_setup\n  },\n"
     io << "  options =\n  {\n"
 
-    # Include both ammo and non-ammo pickups in the slider menu
+    # Non-ammo pickups only (health, armor, powerup, other)
     actordb.each do |actor|
-      is_in_pickups = (ammo_actor_set.includes?(actor.name.downcase) || pickup_actor_set.includes?(actor.name.downcase)) && actor.doomednum != -1
-      next unless is_in_pickups
+      next unless pickup_actor_set.includes?(actor.name.downcase) && actor.doomednum != -1
       next unless should_include_pickup_in_lua(actor)
       lua_key = actor.name.gsub(/[^a-zA-Z0-9_]/, "_")
       lua_key = "_#{lua_key}" if lua_key[0]?.try(&.ascii_number?)
@@ -542,6 +632,7 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
     io << "  label = _(\"Monster Mash Weapons\"),\n"
     io << "  game = \"doomish\",\n"
     io << "  port = \"zdoom\",\n"
+    io << "  where = \"pickup\",\n"
     io << "  tables =\n  {\n    MONSTER_MASH\n  },\n"
     io << "  hooks =\n  {\n    setup = MONSTER_MASH.control_setup\n  },\n"
     io << "  options =\n  {\n"
@@ -574,6 +665,7 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
   log(2, "Lua monsters included: #{lua_monster_count}")
   log(2, "Lua allies included: #{lua_ally_count}")
   log(2, "Lua weapons included: #{lua_weapon_count}")
+  log(2, "Lua ammo included: #{lua_ammo_count}")
   log(2, "Lua pickups included: #{lua_pickup_count}")
 
   puts lua if Config.log_level >= 3
