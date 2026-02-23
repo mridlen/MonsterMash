@@ -552,6 +552,9 @@ def set_actor_property(actor : Actor, prop_name : String, line : String) : Bool
     when "ammo.backpackamount"        then actor.ammo.backpackamount = val1.not_nil!.to_i
     when "ammo.backpackmaxamount"     then actor.ammo.backpackmaxamount = val1.not_nil!.to_i
     when "ammo.dropamount"            then actor.ammo.dropamount = val1.not_nil!.to_i
+    # Armor
+    when "armor.saveamount"           then actor.armor.saveamount = val1.not_nil!.to_i
+    when "armor.savepercent"          then actor.armor.savepercent = val1.not_nil!.to_f
     # WeaponPiece
     when "weaponpiece.number"         then actor.weaponpiece.number = val1.not_nil!.to_i
     when "weaponpiece.weapon"         then actor.weaponpiece.weapon = rest

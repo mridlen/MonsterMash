@@ -52,13 +52,14 @@ def build_reserved_doomednums : Hash(Int32, Tuple(Int32, Int32))
 end
 
 # Wipe all existing doomednums from non-built-in actors, then reassign
-# fresh doomednums to monsters, weapons, ammo, and ZScript actors.
+# fresh doomednums to monsters, weapons, ammo, pickups, and ZScript actors.
 # Also injects //$Category tags into DECORATE and ZScript files.
 # Returns the final doomednum_counter value.
 def wipe_and_reassign_doomednums(
   actordb : Array(Actor),
   weapon_actor_set : Set(String),
   ammo_actor_set : Set(String),
+  pickup_actor_set : Set(String),
   doomednum_info : Hash(Int32, Tuple(Int32, Int32))
 ) : Int32
   log(2, "=== Wiping and Reassigning Doomednums ===")
@@ -151,8 +152,10 @@ def wipe_and_reassign_doomednums(
       # Weapons get doomednums in the next pass
     elsif !actor.built_in && ammo_actor_set.includes?(actor.name.downcase)
       # Ammo actors get doomednums in the ammo pass
+    elsif !actor.built_in && pickup_actor_set.includes?(actor.name.downcase)
+      # Pickup actors get doomednums in the pickup pass
     else
-      # Non-monster, non-weapon, non-ammo: clear doomednum
+      # Non-monster, non-weapon, non-ammo, non-pickup: clear doomednum
       actordb[actor_index].doomednum = -1
     end
   end
@@ -277,13 +280,71 @@ def wipe_and_reassign_doomednums(
     File.write(actor.file_path, lines.join("\n"))
   end
 
-  # Step 4: Assign doomednums to ZScript monsters, weapons, and ammo (in actordb only).
+  # Step 3.75: Assign fresh doomednums to all pickup actors
+  actordb.each_with_index do |actor, actor_index|
+    next if actor.built_in
+    next unless pickup_actor_set.includes?(actor.name.downcase)
+
+    file_text = safe_read(actor.file_path)
+    lines = file_text.lines
+
+    each_actor_line(lines) do |line, line_index|
+      words = line.lstrip.split
+      # [BUGFIX] Strip trailing colon from name
+      next if words[1]?.try(&.rstrip(':')).try(&.downcase) != actor.name_with_case.downcase
+
+      # Strip any existing doomednum from the line
+      cleaned_words = [] of String
+      words.each do |word|
+        if word.includes?("//") && word !~ /^\//
+          parts = word.split("//", 2)
+          if parts[0].to_i? != nil
+            cleaned_words << "//" + parts[1]
+            next
+          end
+        end
+        next if word != "{" && word !~ /^\// && word.to_i? != nil && word != words[0] && word != words[1]
+        cleaned_words << word
+      end
+      words = cleaned_words
+
+      # Find where to insert: BEFORE the '{' or any comment
+      insert_idx = words.size
+      words.each_with_index do |word, word_index|
+        if word == "{" || word =~ /^\//
+          insert_idx = word_index
+          break
+        end
+      end
+
+      # Find next available doomednum
+      while doomednum_info.has_key?(doomednum_counter)
+        doomednum_counter += 1
+      end
+
+      words.insert(insert_idx, doomednum_counter.to_s)
+      doomednum_info[doomednum_counter] = {-1, -1}
+      actordb[actor_index].doomednum = doomednum_counter
+
+      lines[line_index] = words.join(" ")
+      log(3, "Assigned pickup doomednum #{doomednum_counter} to #{actor.name_with_case}")
+
+      # Insert //$Category Pickups after the '{' line
+      if inject_category_after_brace(lines, line_index, "Pickups")
+        log(3, "Injected //$Category Pickups for #{actor.name_with_case}")
+      end
+    end
+
+    File.write(actor.file_path, lines.join("\n"))
+  end
+
+  # Step 4: Assign doomednums to ZScript monsters, weapons, ammo, and pickups (in actordb only).
   # Unlike DECORATE actors, these are NOT written into the source files — they
   # will be emitted via a MAPINFO DoomEdNums block later.
   actordb.each_with_index do |actor, actor_index|
     next if actor.built_in
     next unless actor.script_type == "zscript" || actor.script_type == "both"
-    next unless (actor.ismonster || actor.monster) || weapon_actor_set.includes?(actor.name.downcase) || ammo_actor_set.includes?(actor.name.downcase)
+    next unless (actor.ismonster || actor.monster) || weapon_actor_set.includes?(actor.name.downcase) || ammo_actor_set.includes?(actor.name.downcase) || pickup_actor_set.includes?(actor.name.downcase)
     next if actor.doomednum != -1  # already assigned somehow
 
     while doomednum_info.has_key?(doomednum_counter)
@@ -316,6 +377,8 @@ def wipe_and_reassign_doomednums(
                  "Weapons"
                elsif ammo_actor_set.includes?(actor.name.downcase)
                  "Ammunition"
+               elsif pickup_actor_set.includes?(actor.name.downcase)
+                 "Pickups"
                else
                  nil
                end
@@ -360,7 +423,7 @@ def wipe_and_reassign_doomednums(
                     indent = ind_match[1] if ind_match
                   end
                   lines.insert(cat_idx, "#{indent}//$Category #{category}")
-                  log(3, "Injected //$Category #{category} for ZScript class #{$1}")
+                  log(3, "Injected //$Category #{category} for ZScript class #{class_name_lc}")
                 end
               end
               break

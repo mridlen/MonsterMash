@@ -112,33 +112,33 @@ def weapon_tier(actor : Actor) : {Float64, Int32, Int32, Float64}
 
   case slot
   when 1  # Melee (fist/chainsaw)
-    {1.0, 10, 30, 10.0}
+    {1.0, 10, 7, 10.0}
   when 2  # Pistol class
-    {1.0, 15, 35, 15.0}
+    {1.0, 15, 9, 15.0}
   when 3  # Shotgun class
-    {1.5, 40, 40, 70.0}
+    {1.5, 40, 10, 70.0}
   when 4  # Chaingun class
-    {2.5, 40, 50, 50.0}
+    {2.5, 40, 12, 50.0}
   when 5  # Rocket launcher class
-    {4.0, 30, 45, 170.0}
+    {4.0, 30, 11, 170.0}
   when 6  # Plasma rifle class
-    {5.0, 25, 40, 80.0}
+    {5.0, 25, 10, 80.0}
   when 7  # BFG class
-    {8.0, 12, 20, 300.0}
+    {8.0, 12, 5, 300.0}
   when 8, 9, 0  # Exotic / overflow slots
-    {8.0, 12, 20, 300.0}
+    {8.0, 12, 5, 300.0}
   else
     # No slot info — estimate from weapon flags and ammo use
     if actor.weapon.bfg
-      {8.0, 12, 20, 300.0}
+      {8.0, 12, 5, 300.0}
     elsif actor.weapon.meleeweapon
-      {1.0, 10, 30, 10.0}
+      {1.0, 10, 7, 10.0}
     elsif actor.weapon.ammouse > 5
-      {6.0, 20, 30, 150.0}   # High ammo use = powerful
+      {6.0, 20, 7, 150.0}   # High ammo use = powerful
     elsif actor.weapon.ammouse > 1
-      {3.0, 35, 45, 80.0}    # Moderate ammo use
+      {3.0, 35, 11, 80.0}    # Moderate ammo use
     else
-      {2.0, 35, 50, 50.0}    # Default — mid-tier
+      {2.0, 35, 12, 50.0}    # Default — mid-tier
     end
   end
 end
@@ -159,10 +159,50 @@ def should_include_pickup_in_lua(actor : Actor) : Bool
   true
 end
 
+# Calculate health-equivalent give value for armor pickups.
+# Armor absorbs damage proportionally, so effective health gain ≈ saveamount * savepercent.
+def armor_health_equivalent(actor : Actor) : Int32
+  if actor.armor.saveamount > 0 && actor.armor.savepercent > 0
+    result = (actor.armor.saveamount * actor.armor.savepercent / 100.0).to_i
+    return result < 1 ? 1 : result
+  elsif actor.armor.saveamount > 0
+    # No savepercent set — assume ~50% absorption
+    half = actor.armor.saveamount // 2
+    return half < 1 ? 1 : half
+  elsif actor.inventory.amount > 0
+    return actor.inventory.amount
+  end
+  10 # fallback default
+end
+
+# Parse powerup duration string to seconds. Returns nil if infinite or unset.
+def parse_powerup_duration(duration_str : String) : Int32?
+  return nil if duration_str == "0" || duration_str == "UNDEFINED"
+
+  # Handle hex values (e.g., "0x7FFFFFFD")
+  seconds = if duration_str =~ /^-?0x/i
+               duration_str.to_i(prefix: true) rescue nil
+             else
+               duration_str.to_i rescue nil
+             end
+
+  return nil if seconds.nil?
+
+  # Absolute value — negative means "seconds active" per ZDoom docs
+  seconds = seconds.abs
+
+  # Very large values (0x7FFFFFFD etc.) are effectively infinite
+  return nil if seconds > 999999
+
+  return nil if seconds == 0
+
+  seconds
+end
+
 # Generate the complete Lua module file for Obsidian integration.
 # Writes MONSTER_MASH.MONSTERS, MONSTER_MASH.WEAPONS, MONSTER_MASH.PICKUPS,
 # and OB_MODULES registration.
-def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), ammo_actor_set : Set(String))
+def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), ammo_actor_set : Set(String), pickup_actor_set : Set(String))
   log(2, "=== Generating Lua Module ===")
 
   lua_monster_count = 0
@@ -204,6 +244,15 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
     io << "      local factor = opt.value\n"
     io << "      if factor then\n"
     io << "        info.add_prob = info.add_prob * factor\n"
+    io << "      end\n"
+    io << "    end\n"
+    io << "  end\n"
+    io << "  for name, info in pairs(MONSTER_MASH.PICKUPS) do\n"
+    io << "    local opt = self.options[\"float_pickup_\" .. name]\n"
+    io << "    if opt then\n"
+    io << "      local factor = opt.value\n"
+    io << "      if factor then\n"
+    io << "        if info.add_prob then info.add_prob = info.add_prob * factor end\n"
     io << "      end\n"
     io << "    end\n"
     io << "  end\n"
@@ -344,8 +393,49 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
       io << "    id = #{actor.doomednum},\n"
       io << "    kind = \"ammo\",\n"
       io << "    rank = 2,\n"
-      io << "    add_prob = 40,\n"
+      io << "    add_prob = 10,\n"
       io << "    give = { {ammo=\"#{ammo_type}\",count=#{amount}} }\n"
+      io << "  },\n"
+      lua_pickup_count += 1
+    end
+
+    # Non-ammo pickups: health, armor, powerup, other
+    actordb.each do |actor|
+      next unless pickup_actor_set.includes?(actor.name.downcase) && actor.doomednum != -1
+      next unless should_include_pickup_in_lua(actor)
+
+      kind = actor.pickup_kind
+      lua_key = actor.name.gsub(/[^a-zA-Z0-9_]/, "_")
+      lua_key = "_#{lua_key}" if lua_key[0]?.try(&.ascii_number?)
+
+      source_comment = actor.source_wad_folder != "UNDEFINED" ? "  -- source: #{actor.source_wad_folder}" : ""
+      io << "  #{lua_key} =#{source_comment}\n"
+      io << "  {\n"
+      io << "    id = #{actor.doomednum},\n"
+      io << "    kind = \"#{kind}\",\n"
+      io << "    rank = 2,\n"
+
+      case kind
+      when "health"
+        health_amount = actor.inventory.amount > 0 ? actor.inventory.amount : 10
+        io << "    add_prob = 10,\n"
+        io << "    give = { {health=#{health_amount}} }\n"
+      when "armor"
+        health_equiv = armor_health_equivalent(actor)
+        io << "    add_prob = 7,\n"
+        io << "    give = { {health=#{health_equiv}} }\n"
+      when "powerup"
+        io << "    add_prob = 2,\n"
+        duration = parse_powerup_duration(actor.powerup.duration)
+        if duration
+          io << "    time_limit = #{duration},\n"
+        end
+      else # "other"
+        io << "    add_prob = 5,\n"
+        other_amount = actor.inventory.amount > 0 ? actor.inventory.amount : 5
+        io << "    give = { {health=#{other_amount}} }\n"
+      end
+
       io << "  },\n"
       lua_pickup_count += 1
     end
@@ -414,6 +504,38 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
 
     io << "  },\n}\n\n"
 
+    # ── OB_MODULES registration: Pickups ─────────────────────────────
+    io << "OB_MODULES[\"monster_mash_pickups\"] =\n{\n"
+    io << "  name = \"monster_mash_pickups_control\",\n"
+    io << "  label = _(\"Monster Mash Pickups\"),\n"
+    io << "  game = \"doomish\",\n"
+    io << "  port = \"zdoom\",\n"
+    io << "  tables =\n  {\n    MONSTER_MASH\n  },\n"
+    io << "  hooks =\n  {\n    setup = MONSTER_MASH.control_setup\n  },\n"
+    io << "  options =\n  {\n"
+
+    # Include both ammo and non-ammo pickups in the slider menu
+    actordb.each do |actor|
+      is_in_pickups = (ammo_actor_set.includes?(actor.name.downcase) || pickup_actor_set.includes?(actor.name.downcase)) && actor.doomednum != -1
+      next unless is_in_pickups
+      next unless should_include_pickup_in_lua(actor)
+      lua_key = actor.name.gsub(/[^a-zA-Z0-9_]/, "_")
+      lua_key = "_#{lua_key}" if lua_key[0]?.try(&.ascii_number?)
+      io << "    {\n"
+      io << "      name = \"float_pickup_#{lua_key}\",\n"
+      io << "      label = _(\"#{actor.name_with_case}\"),\n"
+      io << "      valuator = \"slider\",\n"
+      io << "      min = 0,\n"
+      io << "      max = 20,\n"
+      io << "      increment = 0.02,\n"
+      io << "      default = 0.3,\n"
+      io << "      presets = _(\"0:0 (None),0.02:0.02 (Scarce),0.14:0.14 (Less),0.5:0.5 (Plenty),1.2:1.2 (More),3:3 (Heaps),20:20 (INSANE)\"),\n"
+      io << "      randomize_group = \"pickups\",\n"
+      io << "    },\n"
+    end
+
+    io << "  },\n}\n\n"
+
     # ── OB_MODULES registration: Weapons ─────────────────────────────
     io << "OB_MODULES[\"monster_mash_weapons\"] =\n{\n"
     io << "  name = \"monster_mash_weapons_control\",\n"
@@ -436,7 +558,7 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
       io << "      min = 0,\n"
       io << "      max = 20,\n"
       io << "      increment = 0.02,\n"
-      io << "      default = 1,\n"
+      io << "      default = 0.3,\n"
       io << "      presets = _(\"0:0 (None),0.02:0.02 (Scarce),0.14:0.14 (Less),0.5:0.5 (Plenty),1.2:1.2 (More),3:3 (Heaps),20:20 (INSANE)\"),\n"
       io << "      randomize_group = \"weapons\",\n"
       io << "    },\n"

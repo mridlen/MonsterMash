@@ -348,6 +348,8 @@ class Actor
   property source_file : String = "UNDEFINED"           # e.g. "DECORATE.raw"
   property built_in : Bool = false                      # Part of engine's built-in actors
   property is_ammo : Bool = false                       # Inherits from Ammo class
+  property is_pickup : Bool = false                     # Inherits from pickup base class
+  property pickup_kind : String = "other"               # "health", "armor", "powerup", "other"
   # Script format: "decorate", "zscript", or "both"
   property script_type : String = "decorate"
 

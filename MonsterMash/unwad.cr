@@ -897,6 +897,115 @@ ammo_count = ammo_actor_set.size
 log(2, "Ammo actors found: #{ammo_count}")
 
 ###############################################################################
+# EVALUATE PICKUP STATUS VIA INHERITANCE
+###############################################################################
+
+log(2, "=== Evaluating Pickup Status ===")
+
+# Known base pickup classes (lowercase) — actors inheriting from these are pickups
+PICKUP_BASE_CLASSES = Set{
+  "inventory", "custominventory", "powerupgiver",
+  "armorbonus", "basicarmorpickup", "basicarmor",
+  "soulsphere", "megasphere",
+  "health", "healthpickup", "healthbonus",
+  "maprevealerpickup", "backpackitem",
+}
+
+# Subsets for kind classification
+HEALTH_PICKUP_CLASSES = Set{"health", "healthpickup", "healthbonus", "soulsphere", "megasphere"}
+ARMOR_PICKUP_CLASSES = Set{"armorbonus", "basicarmorpickup", "basicarmor"}
+POWERUP_PICKUP_CLASSES = Set{"powerupgiver"}
+
+# Check if an actor has a visible spawn state (not TNT1-only)
+def has_visible_spawn_state(actor : Actor) : Bool
+  spawn_text = actor.states["spawn"]?
+  return false if spawn_text.nil? || spawn_text.strip.empty?
+
+  spawn_text.each_line do |line|
+    stripped = line.strip
+    next if stripped.empty?
+    next if stripped.starts_with?("//")
+    # First token of a state line is the sprite prefix
+    sprite = stripped.split(/\s+/).first?
+    next unless sprite
+    # Skip directives
+    next if sprite.downcase.in?("goto", "stop", "loop", "wait")
+    # The sprite is valid if it's not TNT1
+    prefix = sprite.size >= 4 ? sprite[0, 4].upcase : sprite.upcase
+    return prefix != "TNT1"
+  end
+  false
+end
+
+pickup_actor_set = Set(String).new
+
+actordb.each do |actor|
+  next if actor.built_in == true
+  # Skip weapons and ammo — they are not pickups in this context
+  next if weapon_actor_set.includes?(actor.name.downcase)
+  next if ammo_actor_set.includes?(actor.name.downcase)
+
+  # Must have a pickup message
+  next if actor.inventory.pickupmessage == "UNDEFINED"
+
+  # Must have a visible spawn state
+  next unless has_visible_spawn_state(actor)
+
+  is_pickup = false
+  pickup_kind = "other"
+  matched_base = ""
+
+  # Walk the inheritance chain to check for pickup base classes
+  if actor.inherits != "UNDEFINED"
+    inheritance_chain = [actor.name.downcase]
+    inherits_name = actor.inherits
+
+    while inherits_name != "UNDEFINED"
+      lc_name = inherits_name.downcase
+      if PICKUP_BASE_CLASSES.includes?(lc_name)
+        is_pickup = true
+        matched_base = lc_name
+        break
+      end
+
+      inherited_actors = actors_by_name[lc_name]?
+      break unless inherited_actors
+
+      target = inherited_actors.find { |a| !a.built_in } || inherited_actors.first?
+      break unless target
+      break if inheritance_chain.includes?(target.name.downcase) # cycle guard
+
+      inheritance_chain << target.name.downcase
+      inherits_name = target.inherits
+    end
+  end
+
+  next unless is_pickup
+
+  # Classify the pickup kind based on matched base class
+  if HEALTH_PICKUP_CLASSES.includes?(matched_base)
+    pickup_kind = "health"
+  elsif ARMOR_PICKUP_CLASSES.includes?(matched_base)
+    pickup_kind = "armor"
+  elsif POWERUP_PICKUP_CLASSES.includes?(matched_base)
+    pickup_kind = "powerup"
+  elsif actor.powerup.type != "UNDEFINED" || actor.powerup.duration != "0"
+    # Has powerup properties even if not directly inheriting from PowerupGiver
+    pickup_kind = "powerup"
+  else
+    pickup_kind = "other"
+  end
+
+  actor.is_pickup = true
+  actor.pickup_kind = pickup_kind
+  pickup_actor_set.add(actor.name.downcase)
+  log(3, "Pickup confirmed: #{actor.name_with_case} (kind: #{pickup_kind}, base: #{matched_base})")
+end
+
+pickup_count = pickup_actor_set.size
+log(2, "Pickup actors found: #{pickup_count}")
+
+###############################################################################
 # ZSCRIPT CLASS DETECTION — Standalone pass for monster/weapon classification.
 # The main parser only handles DECORATE 'actor' definitions. ZScript uses
 # 'class Name : Parent' syntax which is not parsed into actordb. This pass
@@ -986,6 +1095,8 @@ zscript_class_info.each do |class_lc, info|
   is_monster = info[:has_monster_flag]
   is_weapon = false
   is_ammo = false
+  is_pickup = false
+  pickup_matched_base = ""
   chain_name = info[:parent_lc]
   visited = Set{class_lc}
 
@@ -1005,6 +1116,11 @@ zscript_class_info.each do |class_lc, info|
       is_ammo = true
       break
     end
+    if PICKUP_BASE_CLASSES.includes?(chain_name)
+      is_pickup = true
+      pickup_matched_base = chain_name
+      break
+    end
 
     # Check if parent is another ZScript class we know about
     parent_info = zscript_class_info[chain_name]?
@@ -1012,7 +1128,7 @@ zscript_class_info.each do |class_lc, info|
       is_monster = true if parent_info[:has_monster_flag]
       chain_name = parent_info[:parent_lc]
     else
-      # Check if parent is a known monster/ammo from actordb (built-in DECORATE actors)
+      # Check if parent is a known monster/ammo/pickup from actordb (built-in DECORATE actors)
       db_actors = actors_by_name[chain_name]?
       if db_actors
         db_actor = db_actors.first
@@ -1022,12 +1138,21 @@ zscript_class_info.each do |class_lc, info|
         if db_actor.is_ammo
           is_ammo = true
         end
+        if db_actor.is_pickup
+          is_pickup = true
+          pickup_matched_base = chain_name
+        end
       end
       break
     end
   end
 
-  if is_monster || is_weapon || is_ammo
+  # Pickups must not also be weapons or ammo
+  if is_pickup && (is_weapon || is_ammo)
+    is_pickup = false
+  end
+
+  if is_monster || is_weapon || is_ammo || is_pickup
     # Check if this actor already exists in actordb (from DECORATE parsing)
     existing = actors_by_name[class_lc]?
     if existing
@@ -1037,7 +1162,21 @@ zscript_class_info.each do |class_lc, info|
         existing.each { |a| a.is_ammo = true }
         ammo_actor_set.add(class_lc)
       end
-      kind = is_monster ? "monster" : (is_weapon ? "weapon" : "ammo")
+      if is_pickup
+        existing.each do |a|
+          a.is_pickup = true
+          # Classify kind based on matched base class
+          if HEALTH_PICKUP_CLASSES.includes?(pickup_matched_base)
+            a.pickup_kind = "health"
+          elsif ARMOR_PICKUP_CLASSES.includes?(pickup_matched_base)
+            a.pickup_kind = "armor"
+          elsif POWERUP_PICKUP_CLASSES.includes?(pickup_matched_base)
+            a.pickup_kind = "powerup"
+          end
+        end
+        pickup_actor_set.add(class_lc)
+      end
+      kind = is_monster ? "monster" : (is_weapon ? "weapon" : (is_ammo ? "ammo" : "pickup"))
       log(3, "  ZScript #{kind} (both): #{info[:name_with_case]}")
     else
       # Create a new Actor entry for this ZScript class
@@ -1061,6 +1200,16 @@ zscript_class_info.each do |class_lc, info|
       if is_ammo
         new_actor.is_ammo = true
       end
+      if is_pickup
+        new_actor.is_pickup = true
+        if HEALTH_PICKUP_CLASSES.includes?(pickup_matched_base)
+          new_actor.pickup_kind = "health"
+        elsif ARMOR_PICKUP_CLASSES.includes?(pickup_matched_base)
+          new_actor.pickup_kind = "armor"
+        elsif POWERUP_PICKUP_CLASSES.includes?(pickup_matched_base)
+          new_actor.pickup_kind = "powerup"
+        end
+      end
 
       actordb << new_actor
       actors_by_name[class_lc] ||= [] of Actor
@@ -1072,8 +1221,11 @@ zscript_class_info.each do |class_lc, info|
       if is_ammo
         ammo_actor_set.add(class_lc)
       end
+      if is_pickup
+        pickup_actor_set.add(class_lc)
+      end
 
-      kind = is_monster ? "monster" : (is_weapon ? "weapon" : "ammo")
+      kind = is_monster ? "monster" : (is_weapon ? "weapon" : (is_ammo ? "ammo" : "pickup"))
       log(3, "  ZScript #{kind}: #{info[:name_with_case]} (#{info[:file_path]})")
     end
   end
@@ -1082,9 +1234,10 @@ end
 zs_monster_count = actordb.count { |a| !a.built_in && a.script_type != "decorate" && (a.ismonster || a.monster) }
 zs_weapon_count = actordb.count { |a| !a.built_in && a.script_type != "decorate" && weapon_actor_set.includes?(a.name.downcase) }
 zs_ammo_count = actordb.count { |a| !a.built_in && a.script_type != "decorate" && ammo_actor_set.includes?(a.name.downcase) }
-log(2, "  ZScript monsters: #{zs_monster_count}, weapons: #{zs_weapon_count}, ammo: #{zs_ammo_count}")
+zs_pickup_count = actordb.count { |a| !a.built_in && a.script_type != "decorate" && pickup_actor_set.includes?(a.name.downcase) }
+log(2, "  ZScript monsters: #{zs_monster_count}, weapons: #{zs_weapon_count}, ammo: #{zs_ammo_count}, pickups: #{zs_pickup_count}")
 
-doomednum_counter = wipe_and_reassign_doomednums(actordb, weapon_actor_set, ammo_actor_set, doomednum_info) # requires/doomednum_assign.cr
+doomednum_counter = wipe_and_reassign_doomednums(actordb, weapon_actor_set, ammo_actor_set, pickup_actor_set, doomednum_info) # requires/doomednum_assign.cr
 
 resolve_sprite_conflicts(actordb) # requires/sprite_conflicts.cr
 
@@ -1092,4 +1245,4 @@ resolve_sound_conflicts(actordb) # requires/sound_conflicts.cr
 
 build_merged_pk3(actordb, weapon_actor_set) # requires/pk3_merge.cr
 
-generate_lua_module(actordb, weapon_actor_set, ammo_actor_set) # requires/lua_gen.cr
+generate_lua_module(actordb, weapon_actor_set, ammo_actor_set, pickup_actor_set) # requires/lua_gen.cr
