@@ -455,47 +455,6 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
       lua_pickup_count += 1
     end
 
-    # Non-ammo pickups: health, armor, powerup, other
-    actordb.each do |actor|
-      next unless pickup_actor_set.includes?(actor.name.downcase) && actor.doomednum != -1
-      next unless should_include_pickup_in_lua(actor)
-
-      kind = actor.pickup_kind
-      lua_key = actor.name.gsub(/[^a-zA-Z0-9_]/, "_")
-      lua_key = "_#{lua_key}" if lua_key[0]?.try(&.ascii_number?)
-
-      source_comment = actor.source_wad_folder != "UNDEFINED" ? "  -- source: #{actor.source_wad_folder}" : ""
-      io << "  #{lua_key} =#{source_comment}\n"
-      io << "  {\n"
-      io << "    id = #{actor.doomednum},\n"
-      io << "    kind = \"#{kind}\",\n"
-      io << "    rank = 2,\n"
-
-      case kind
-      when "health"
-        health_amount = actor.inventory.amount > 0 ? actor.inventory.amount : 10
-        io << "    add_prob = 10,\n"
-        io << "    give = { {health=#{health_amount}} }\n"
-      when "armor"
-        health_equiv = armor_health_equivalent(actor)
-        io << "    add_prob = 7,\n"
-        io << "    give = { {health=#{health_equiv}} }\n"
-      when "powerup"
-        io << "    add_prob = 2,\n"
-        duration = parse_powerup_duration(actor.powerup.duration)
-        if duration
-          io << "    time_limit = #{duration},\n"
-        end
-      else # "other"
-        io << "    add_prob = 5,\n"
-        other_amount = actor.inventory.amount > 0 ? actor.inventory.amount : 5
-        io << "    give = { {health=#{other_amount}} }\n"
-      end
-
-      io << "  },\n"
-      lua_pickup_count += 1
-    end
-
     io << "}\n\n"
 
     # ── OB_MODULES registration: Monsters ──────────────────────────────
