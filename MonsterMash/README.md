@@ -84,7 +84,7 @@ class BLAH
 {
    Default
    {
-      //$MonsterMash SliderZero
+      //#MonsterMash SliderZero
       <code...>
    }
    <code...>
