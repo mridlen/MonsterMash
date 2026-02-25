@@ -112,33 +112,33 @@ def weapon_tier(actor : Actor) : {Float64, Int32, Int32, Float64}
 
   case slot
   when 1  # Melee (fist/chainsaw)
-    {1.0, 10, 7, 10.0}
+    {1.0, 5, 3, 10.0}
   when 2  # Pistol class
-    {1.0, 15, 9, 15.0}
+    {1.0, 7, 4, 15.0}
   when 3  # Shotgun class
-    {1.5, 40, 10, 70.0}
+    {1.5, 20, 5, 70.0}
   when 4  # Chaingun class
-    {2.5, 40, 12, 50.0}
+    {2.5, 20, 6, 50.0}
   when 5  # Rocket launcher class
-    {4.0, 30, 11, 170.0}
+    {4.0, 15, 5, 170.0}
   when 6  # Plasma rifle class
-    {5.0, 25, 10, 80.0}
+    {5.0, 12, 5, 80.0}
   when 7  # BFG class
-    {8.0, 12, 5, 300.0}
+    {8.0, 6, 2, 300.0}
   when 8, 9, 0  # Exotic / overflow slots
-    {8.0, 12, 5, 300.0}
+    {8.0, 6, 2, 300.0}
   else
     # No slot info — estimate from weapon flags and ammo use
     if actor.weapon.bfg
-      {8.0, 12, 5, 300.0}
+      {8.0, 6, 2, 300.0}
     elsif actor.weapon.meleeweapon
-      {1.0, 10, 7, 10.0}
+      {1.0, 5, 3, 10.0}
     elsif actor.weapon.ammouse > 5
-      {6.0, 20, 7, 150.0}   # High ammo use = powerful
+      {6.0, 10, 3, 150.0}   # High ammo use = powerful
     elsif actor.weapon.ammouse > 1
-      {3.0, 35, 11, 80.0}    # Moderate ammo use
+      {3.0, 17, 5, 80.0}    # Moderate ammo use
     else
-      {2.0, 35, 12, 50.0}    # Default — mid-tier
+      {2.0, 17, 6, 50.0}    # Default — mid-tier
     end
   end
 end
@@ -217,6 +217,10 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
     io << "----------------------------------------------------------------\n\n"
     io << "MONSTER_MASH = { }\n\n"
 
+    # Note: everything MUST get float_<name> because that is how
+    #       Obsidian works. Using float_somethingelse_<name> will break
+    #       functionality. That's how the actors are referenced.
+
     # ── control_setup function ──────────────────────────────────────────
     io << "function MONSTER_MASH.control_setup(self)\n"
     io << "  for name, info in pairs(MONSTER_MASH.MONSTERS) do\n"
@@ -230,7 +234,7 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
     io << "    end\n"
     io << "  end\n"
     io << "  for name, info in pairs(MONSTER_MASH.ALLIES) do\n"
-    io << "    local opt = self.options[\"float_ally_\" .. name]\n"
+    io << "    local opt = self.options[\"float_\" .. name]\n"
     io << "    if opt then\n"
     io << "      local factor = opt.value\n"
     io << "      if factor then\n"
@@ -240,7 +244,7 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
     io << "    end\n"
     io << "  end\n"
     io << "  for name, info in pairs(MONSTER_MASH.WEAPONS) do\n"
-    io << "    local opt = self.options[\"float_weap_\" .. name]\n"
+    io << "    local opt = self.options[\"float_\" .. name]\n"
     io << "    if opt then\n"
     io << "      local factor = opt.value\n"
     io << "      if factor then\n"
@@ -248,17 +252,11 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
     io << "      end\n"
     io << "    end\n"
     io << "  end\n"
-    io << "  for name, info in pairs(MONSTER_MASH.AMMO) do\n"
-    io << "    local opt = self.options[\"float_ammo_\" .. name]\n"
-    io << "    if opt then\n"
-    io << "      local factor = opt.value\n"
-    io << "      if factor then\n"
-    io << "        if info.add_prob then info.add_prob = info.add_prob * factor end\n"
-    io << "      end\n"
-    io << "    end\n"
-    io << "  end\n"
     io << "  for name, info in pairs(MONSTER_MASH.PICKUPS) do\n"
-    io << "    local opt = self.options[\"float_pickup_\" .. name]\n"
+    io << "    -- Ammo sliders use float prefix, other pickups use float_\n"
+    io << "    local ammo_opt = self.options[\"float_\" .. name]\n"
+    io << "    local pickup_opt = self.options[\"float_\" .. name]\n"
+    io << "    local opt = ammo_opt or pickup_opt\n"
     io << "    if opt then\n"
     io << "      local factor = opt.value\n"
     io << "      if factor then\n"
@@ -380,9 +378,11 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
 
     io << "}\n\n"
 
-    # ── MONSTER_MASH.AMMO table ──────────────────────────────────────
-    io << "MONSTER_MASH.AMMO =\n{\n"
+    # ── MONSTER_MASH.PICKUPS table ────────────────────────────────────
+    # Contains both ammo and non-ammo pickups so Obsidian can spawn them
+    io << "MONSTER_MASH.PICKUPS =\n{\n"
 
+    # Ammo pickups
     actordb.each do |actor|
       next unless ammo_actor_set.includes?(actor.name.downcase) && actor.doomednum != -1
       next unless should_include_pickup_in_lua(actor)
@@ -404,15 +404,11 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
       io << "    kind = \"ammo\",\n"
       io << "    rank = 2,\n"
       io << "    add_prob = 10,\n"
-      io << "    give = { {ammo=\"#{ammo_type}\",count=#{amount}} }\n"
+      io << "    give = { {ammo=\"#{ammo_type}\",count=#{amount}} },\n"
+      io << "    cluster = { 3,7 },\n"
       io << "  },\n"
       lua_ammo_count += 1
     end
-
-    io << "}\n\n"
-
-    # ── MONSTER_MASH.PICKUPS table ────────────────────────────────────
-    io << "MONSTER_MASH.PICKUPS =\n{\n"
 
     # Non-ammo pickups: health, armor, powerup, other
     actordb.each do |actor|
@@ -474,6 +470,7 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
       next if actor.friendly
       lua_key = actor.name.gsub(/[^a-zA-Z0-9_]/, "_")
       lua_key = "_#{lua_key}" if lua_key[0]?.try(&.ascii_number?)
+      slider_default = actor.slider_zero ? 0 : 1
       io << "    {\n"
       io << "      name = \"float_#{lua_key}\",\n"
       io << "      label = _(\"#{actor.name_with_case}\"),\n"
@@ -481,7 +478,10 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
       io << "      min = 0,\n"
       io << "      max = 20,\n"
       io << "      increment = 0.02,\n"
-      io << "      default = 1,\n"
+      io << "      default = #{slider_default},\n"
+      if actor.slider_zero
+        io << "      tooltip = _(\"slider disabled in configuration\"),\n"
+      end
       io << "      presets = _(\"0:0 (None),0.02:0.02 (Scarce),0.14:0.14 (Less),0.5:0.5 (Plenty),1.2:1.2 (More),3:3 (Heaps),20:20 (INSANE)\"),\n"
       io << "      randomize_group = \"monsters\",\n"
       io << "    },\n"
@@ -506,14 +506,18 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
       next unless actor.friendly
       lua_key = actor.name.gsub(/[^a-zA-Z0-9_]/, "_")
       lua_key = "_#{lua_key}" if lua_key[0]?.try(&.ascii_number?)
+      slider_default = actor.slider_zero ? 0 : 1
       io << "    {\n"
-      io << "      name = \"float_ally_#{lua_key}\",\n"
+      io << "      name = \"float_#{lua_key}\",\n"
       io << "      label = _(\"#{actor.name_with_case}\"),\n"
       io << "      valuator = \"slider\",\n"
       io << "      min = 0,\n"
       io << "      max = 20,\n"
       io << "      increment = 0.02,\n"
-      io << "      default = 1,\n"
+      io << "      default = #{slider_default},\n"
+      if actor.slider_zero
+        io << "      tooltip = _(\"slider disabled in configuration\"),\n"
+      end
       io << "      presets = _(\"0:0 (None),0.02:0.02 (Scarce),0.14:0.14 (Less),0.5:0.5 (Plenty),1.2:1.2 (More),3:3 (Heaps),20:20 (INSANE)\"),\n"
       io << "      randomize_group = \"allies\",\n"
       io << "    },\n"
@@ -537,16 +541,20 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
       next unless should_include_pickup_in_lua(actor)
       lua_key = actor.name.gsub(/[^a-zA-Z0-9_]/, "_")
       lua_key = "_#{lua_key}" if lua_key[0]?.try(&.ascii_number?)
+      slider_default = actor.slider_zero ? 0 : 5
       io << "    {\n"
-      io << "      name = \"float_ammo_#{lua_key}\",\n"
+      io << "      name = \"float_#{lua_key}\",\n"
       io << "      label = _(\"#{actor.name_with_case}\"),\n"
       io << "      valuator = \"slider\",\n"
       io << "      min = 0,\n"
       io << "      max = 20,\n"
       io << "      increment = 0.02,\n"
-      io << "      default = 0.3,\n"
+      io << "      default = #{slider_default},\n"
+      if actor.slider_zero
+        io << "      tooltip = _(\"slider disabled in configuration\"),\n"
+      end
       io << "      presets = _(\"0:0 (None),0.02:0.02 (Scarce),0.14:0.14 (Less),0.5:0.5 (Plenty),1.2:1.2 (More),3:3 (Heaps),20:20 (INSANE)\"),\n"
-      io << "      randomize_group = \"ammo\",\n"
+      io << "      randomize_group = \"pickups\",\n"
       io << "    },\n"
     end
 
@@ -570,14 +578,18 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
       next unless should_include_pickup_in_lua(actor)
       lua_key = actor.name.gsub(/[^a-zA-Z0-9_]/, "_")
       lua_key = "_#{lua_key}" if lua_key[0]?.try(&.ascii_number?)
+      slider_default = actor.slider_zero ? 0 : 0.3
       io << "    {\n"
-      io << "      name = \"float_pickup_#{lua_key}\",\n"
+      io << "      name = \"float_#{lua_key}\",\n"
       io << "      label = _(\"#{actor.name_with_case}\"),\n"
       io << "      valuator = \"slider\",\n"
       io << "      min = 0,\n"
       io << "      max = 20,\n"
       io << "      increment = 0.02,\n"
-      io << "      default = 0.3,\n"
+      io << "      default = #{slider_default},\n"
+      if actor.slider_zero
+        io << "      tooltip = _(\"slider disabled in configuration\"),\n"
+      end
       io << "      presets = _(\"0:0 (None),0.02:0.02 (Scarce),0.14:0.14 (Less),0.5:0.5 (Plenty),1.2:1.2 (More),3:3 (Heaps),20:20 (INSANE)\"),\n"
       io << "      randomize_group = \"pickups\",\n"
       io << "    },\n"
@@ -601,14 +613,18 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
       next unless should_include_weapon_in_lua(actor)
       lua_key = actor.name.gsub(/[^a-zA-Z0-9_]/, "_")
       lua_key = "_#{lua_key}" if lua_key[0]?.try(&.ascii_number?)
+      slider_default = actor.slider_zero ? 0 : 0.3
       io << "    {\n"
-      io << "      name = \"float_weap_#{lua_key}\",\n"
+      io << "      name = \"float_#{lua_key}\",\n"
       io << "      label = _(\"#{actor.name_with_case}\"),\n"
       io << "      valuator = \"slider\",\n"
       io << "      min = 0,\n"
       io << "      max = 20,\n"
       io << "      increment = 0.02,\n"
-      io << "      default = 0.3,\n"
+      io << "      default = #{slider_default},\n"
+      if actor.slider_zero
+        io << "      tooltip = _(\"slider disabled in configuration\"),\n"
+      end
       io << "      presets = _(\"0:0 (None),0.02:0.02 (Scarce),0.14:0.14 (Less),0.5:0.5 (Plenty),1.2:1.2 (More),3:3 (Heaps),20:20 (INSANE)\"),\n"
       io << "      randomize_group = \"weapons\",\n"
       io << "    },\n"

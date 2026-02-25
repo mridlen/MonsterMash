@@ -111,6 +111,12 @@ def wipe_and_reassign_doomednums(
 
   actordb.each_with_index do |actor, actor_index|
     if !actor.built_in && (actor.ismonster || actor.monster)
+      # Skip actors disabled via //#MonsterMash Disable
+      if actor.mm_disabled
+        actordb[actor_index].doomednum = -1
+        log(2, "Skipping doomednum for disabled actor: #{actor.name_with_case}")
+        next
+      end
       file_text = safe_read(actor.file_path)
       lines = file_text.lines
 
@@ -164,6 +170,12 @@ def wipe_and_reassign_doomednums(
   actordb.each_with_index do |actor, actor_index|
     next if actor.built_in
     next unless weapon_actor_set.includes?(actor.name.downcase)
+    # Skip actors disabled via //#MonsterMash Disable
+    if actor.mm_disabled
+      actordb[actor_index].doomednum = -1
+      log(2, "Skipping doomednum for disabled weapon: #{actor.name_with_case}")
+      next
+    end
 
     file_text = safe_read(actor.file_path)
     lines = file_text.lines
@@ -226,6 +238,12 @@ def wipe_and_reassign_doomednums(
   actordb.each_with_index do |actor, actor_index|
     next if actor.built_in
     next unless ammo_actor_set.includes?(actor.name.downcase)
+    # Skip actors disabled via //#MonsterMash Disable
+    if actor.mm_disabled
+      actordb[actor_index].doomednum = -1
+      log(2, "Skipping doomednum for disabled ammo: #{actor.name_with_case}")
+      next
+    end
 
     file_text = safe_read(actor.file_path)
     lines = file_text.lines
@@ -284,6 +302,12 @@ def wipe_and_reassign_doomednums(
   actordb.each_with_index do |actor, actor_index|
     next if actor.built_in
     next unless pickup_actor_set.includes?(actor.name.downcase)
+    # Skip actors disabled via //#MonsterMash Disable
+    if actor.mm_disabled
+      actordb[actor_index].doomednum = -1
+      log(2, "Skipping doomednum for disabled pickup: #{actor.name_with_case}")
+      next
+    end
 
     file_text = safe_read(actor.file_path)
     lines = file_text.lines
@@ -343,6 +367,7 @@ def wipe_and_reassign_doomednums(
   # will be emitted via a MAPINFO DoomEdNums block later.
   actordb.each_with_index do |actor, actor_index|
     next if actor.built_in
+    next if actor.mm_disabled  # Skip actors disabled via //#MonsterMash Disable
     next unless actor.script_type == "zscript" || actor.script_type == "both"
     next unless (actor.ismonster || actor.monster) || weapon_actor_set.includes?(actor.name.downcase) || ammo_actor_set.includes?(actor.name.downcase) || pickup_actor_set.includes?(actor.name.downcase)
     next if actor.doomednum != -1  # already assigned somehow

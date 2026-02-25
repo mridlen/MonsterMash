@@ -59,3 +59,44 @@ MonsterMash is designed to work as a plugin for **Obsidian** (level generator) a
    - Restart Obsidian again
 
    The restart ensures all changes are properly loaded.
+
+## Standalone Usage
+
+You can use MonsterMash as a wad/pk3 file merger only. I've set it up to tag the necessary properties to show up in Ultimate Doom Builder (UDB). Keep in mind this is targeted at ZDoom DECORATE/ZSCRIPT monsters/weapons/pickups only. Monsters/weapons/pickups from games other than Doom II are not currently supported.
+
+## Problem Actors
+
+There are directives you can provide in a DECORATE or ZSCRIPT file
+
+```
+//#MonsterMash Disable
+//#MonsterMash SliderZero
+
+//For example:
+//DECORATE
+actor BLAH 12345
+{
+   //#MonsterMash Disable
+}
+
+//ZSCRIPT
+class BLAH
+{
+   Default
+   {
+      //$MonsterMash SliderZero
+      <code...>
+   }
+   <code...>
+}
+```
+
+These are special commands sent to MonsterMash.
+
+### Disable
+
+Disables the actor in question. It will still remain in the code, but it will not be assigned a doomednum. (Note: If you want to completely disable a wad or pk3, you should just remove it from your Source directory.)
+
+### SliderZero
+
+The slider will be defaulted to "off" in MonsterMash. Useful for disabling weapons you don't want all the time. For example, there are tons of melee weapons that are fairly weak. Or certain weapons are extremely dangerous like the Nuclear Missile. Certain monsters are extremely annoying or extremely dangerous. These are all good candidates for SliderZero.

@@ -357,6 +357,10 @@ class Actor
   property properties_applied : Array(String) = Array(String).new
   property flags_applied : Array(String) = Array(String).new
 
+  # MonsterMash special comment directives (//#MonsterMash SliderZero|Disable)
+  property slider_zero : Bool = false                    # Default slider to 0 (disabled in config)
+  property mm_disabled : Bool = false                    # Do not assign a doomednum
+
   # Ensures base actor is not removed during duplicate checks
   property primary : Bool = false
 

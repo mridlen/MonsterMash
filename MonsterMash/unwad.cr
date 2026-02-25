@@ -299,6 +299,10 @@ full_dir_list.each do |file_path|
   # Strip leading whitespace per line
   input_text = input_text.gsub(/^\s*/, "")
 
+  # Preserve //#MonsterMash directives before stripping comments
+  # Convert to a non-comment token so they survive comment removal
+  input_text = input_text.gsub(/\/\/#MonsterMash\s+(\S+)/i, "MONSTERMASH_DIRECTIVE_\\1")
+
   # Remove // comments
   input_text = input_text.gsub(%r{//[^\n]*}, "")
 
@@ -422,6 +426,22 @@ full_dir_list.each do |file_path|
 
       property_name = line.split[0]?.to_s.downcase
       next if property_name.empty?
+
+      # Handle MonsterMash special directives (preserved from //#MonsterMash comments)
+      if property_name.starts_with?("monstermash_directive_")
+        directive = property_name.sub("monstermash_directive_", "")
+        case directive
+        when "sliderzero"
+          new_actor.slider_zero = true
+          log(2, "  MonsterMash directive: SliderZero for #{new_actor.name_with_case}")
+        when "disable"
+          new_actor.mm_disabled = true
+          log(2, "  MonsterMash directive: Disable for #{new_actor.name_with_case}")
+        else
+          log(1, "  Unknown MonsterMash directive: #{directive} for #{new_actor.name_with_case}")
+        end
+        next
+      end
 
       # Track applied properties/flags
       if property_name =~ /^[\+\-]/
