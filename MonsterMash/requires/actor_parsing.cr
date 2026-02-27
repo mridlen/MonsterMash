@@ -622,3 +622,347 @@ def set_actor_property(actor : Actor, prop_name : String, line : String) : Bool
   end
   true
 end
+
+###############################################################################
+# MAIN PARSING LOOP — Parse all DECORATE/ZSCRIPT files into actordb
+###############################################################################
+
+# Result container for parse_all_actors
+record ParseResult,
+  actordb : Array(Actor),
+  missing_property_names : Hash(String, Array(String)),
+  missing_actor_flags : Hash(String, Array(String))
+
+# Parse all DECORATE/ZSCRIPT actor definitions from the given file list.
+# Returns a ParseResult with the populated actordb and missing property/flag tracking.
+def parse_all_actors(full_dir_list : Array(String), no_touchy : Hash(String, Bool)) : ParseResult
+  log(2, "Starting DECORATE/ZSCRIPT processing...")
+
+  actordb = Array(Actor).new
+  missing_property_names = Hash(String, Array(String)).new
+  missing_actor_flags = Hash(String, Array(String)).new
+
+  full_dir_list.each do |file_path|
+    is_built_in = (no_touchy[file_path] == true)
+
+    # Determine wad folder name and source file
+    path_parts = file_path.split("/")
+    if is_built_in
+      wad_folder_name = path_parts[2]? || "unknown"
+      decorate_source_file = path_parts[3]? || "unknown"
+    else
+      wad_folder_name = path_parts[2]? || "unknown"
+      decorate_source_file = path_parts[4]? || "unknown"
+    end
+
+    log(3, "Processing: #{wad_folder_name} (#{file_path})")
+
+    unless is_built_in
+      # [BUGFIX] V1 had include file handling that used Ruby's $1 syntax.
+      # Now we properly resolve includes and add them to the processing queue.
+      input_file = safe_read(file_path)
+      input_file.each_line do |line|
+        if line.strip =~ /^#include/i
+          if md = line.match(/"([^"]+)"/i)
+            include_name = md[1].upcase
+            new_path = File.join(File.dirname(file_path), "#{include_name}.raw")
+            unless full_dir_list.includes?(new_path)
+              full_dir_list << new_path
+              no_touchy[new_path] = false
+            end
+          end
+        end
+      end
+    end
+
+    # Read and clean the file
+    input_text = safe_read(file_path)
+    next if input_text.empty?
+
+    # Strip leading whitespace per line
+    input_text = input_text.gsub(/^\s*/, "")
+
+    # Preserve //#MonsterMash directives before stripping comments
+    # Convert to a non-comment token so they survive comment removal
+    input_text = input_text.gsub(/\/\/#MonsterMash\s+(\S+)/i, "MONSTERMASH_DIRECTIVE_\\1")
+
+    # Remove // comments
+    input_text = input_text.gsub(%r{//[^\n]*}, "")
+
+    # Remove /* ... */ block comments (non-greedy)
+    input_text = input_text.gsub(/\/\*[\s\S]*?\*\//m, "")
+
+    # Put braces on their own lines
+    input_text = input_text.gsub('{', "\n{\n")
+    input_text = input_text.gsub('}', "\n}\n")
+
+    # Clean up: strip each line, remove blank lines
+    input_text = input_text.split("\n").map(&.strip).reject(&.empty?).join("\n")
+
+    # Split on actor/class definitions (DECORATE uses "actor", ZScript uses "class")
+    input_text = input_text.gsub(/^actor\s+/im, "SPECIALDELIMITER__actor ")
+    input_text = input_text.gsub(/^class\s+/im, "SPECIALDELIMITER__class ")
+    actors = input_text.split("SPECIALDELIMITER__")
+    actors.reject!(&.strip.empty?)
+
+    actors.each_with_index do |actor_text, actor_index|
+      # Extract states before processing
+      states_text = extract_states_text(actor_text)
+      states = parse_states(states_text)
+      actor_no_states = remove_states_block(actor_text)
+
+      # Get case-sensitive version
+      lines_with_case = actor_no_states.lines.map(&.strip).reject(&.empty?)
+      next if lines_with_case.empty?
+      first_line_with_case = lines_with_case.first
+
+      # [BUGFIX] Normalize colon-glued tokens like "RiflePuff:Bulletpuff" into
+      # "RiflePuff : Bulletpuff" so the word-count parser handles inheritance
+      # correctly and the actor name doesn't include a trailing colon.
+      first_line_with_case = first_line_with_case.gsub(/([A-Za-z0-9_]):([A-Za-z])/, "\\1 : \\2")
+      first_line_with_case = first_line_with_case.gsub(/([A-Za-z0-9_]):\s/, "\\1 : ")
+
+      name_with_case = first_line_with_case.split[1]?
+      next unless name_with_case
+
+      # Lowercase version for parsing
+      lines = actor_no_states.lines.map { |l| l.strip.downcase }.reject(&.empty?)
+      next if lines.empty?
+
+      first_line = lines.first
+      # Apply same colon normalization to lowercase line
+      first_line = first_line.gsub(/([a-z0-9_]):([a-z])/, "\\1 : \\2")
+      first_line = first_line.gsub(/([a-z0-9_]):\s/, "\\1 : ")
+      words = first_line.split
+
+      # Remove "native" keyword from actor line if present
+      native = false
+      native_idx = words.index("native")
+      if native_idx
+        native = true
+        words = words[0...native_idx]
+      end
+
+      num_words = words.size
+      log(3, "Actor: \"#{words[1]?}\" from #{file_path}")
+
+      # Create new actor
+      new_actor = Actor.new("#{words[1]?}", actor_index)
+      new_actor.name_with_case = name_with_case
+      new_actor.source_wad_folder = wad_folder_name
+      new_actor.source_file = decorate_source_file
+      new_actor.file_path = file_path
+      new_actor.native = native
+      new_actor.states = states
+      new_actor.actor_text = actor_no_states
+      new_actor.full_actor_text = actor_text
+      new_actor.built_in = is_built_in
+
+      # Parse actor line: actor name [: parent] [replaces target] [doomednum]
+      parse_actor_definition_line(new_actor, words, num_words, first_line)
+
+      # Parse each property/flag line
+      parse_actor_body_lines(new_actor, lines, missing_property_names, missing_actor_flags)
+
+      actordb << new_actor
+    end
+  end
+
+  log(2, "Parsing complete. Total actors loaded: #{actordb.size}")
+
+  # Report missing properties/flags
+  if Config.log_level >= 2
+    unless missing_property_names.empty?
+      log(2, "=== Missing Properties ===")
+      missing_property_names.each { |k, v| log(2, "  #{k}: #{v.uniq.join(", ")}") }
+    end
+    unless missing_actor_flags.empty?
+      log(2, "=== Missing Flags ===")
+      missing_actor_flags.each { |k, v| log(2, "  #{k}: #{v.uniq.join(", ")}") }
+    end
+  end
+
+  ParseResult.new(actordb, missing_property_names, missing_actor_flags)
+end
+
+###############################################################################
+# ACTOR DEFINITION LINE PARSER
+# Parses: actor name [: parent] [replaces target] [doomednum]
+###############################################################################
+
+def parse_actor_definition_line(actor : Actor, words : Array(String), num_words : Int32, first_line : String)
+  # Possible forms:
+  #   actor name                                    (2 words)
+  #   actor name doomednum                          (3 words)
+  #   actor name : parent                           (4 words)
+  #   actor name replaces target                    (4 words)
+  #   actor name : parent doomednum                 (5 words)
+  #   actor name replaces target doomednum          (5 words)
+  #   actor name : parent replaces target           (6 words)
+  #   actor name : parent replaces target doomednum (7 words)
+  #
+  # [BUGFIX] V1 had wrong field indices for 6/7 word forms
+
+  case num_words
+  when 3
+    actor.doomednum = words[2].to_i? || -1
+  when 4
+    if words[2] == ":"
+      actor.inherits = words[3]
+    elsif words[2] == "replaces"
+      actor.replaces = words[3]
+    else
+      log(1, "Unexpected word '#{words[2]}' in actor line: #{first_line}")
+    end
+  when 5
+    if words[2] == ":"
+      actor.inherits = words[3]
+      actor.doomednum = words[4].to_i? || -1
+    elsif words[2] == "replaces"
+      actor.replaces = words[3]
+      actor.doomednum = words[4].to_i? || -1
+    end
+  when 6
+    # actor name : parent replaces target
+    actor.inherits = words[3] if words[2] == ":"
+    actor.replaces = words[5] if words[4] == "replaces"
+  when 7
+    # actor name : parent replaces target doomednum
+    actor.inherits = words[3] if words[2] == ":"
+    actor.replaces = words[5] if words[4] == "replaces"
+    actor.doomednum = words[6].to_i? || -1
+  end
+end
+
+###############################################################################
+# ACTOR BODY LINE PARSER
+# Parses property/flag lines from actor body text
+###############################################################################
+
+def parse_actor_body_lines(actor : Actor, lines : Array(String),
+                           missing_property_names : Hash(String, Array(String)),
+                           missing_actor_flags : Hash(String, Array(String)))
+  lines.each_with_index do |line, index|
+    next if index.zero? # skip actor definition line
+
+    property_name = line.split[0]?.to_s.downcase
+    next if property_name.empty?
+
+    # Handle MonsterMash special directives (preserved from //#MonsterMash comments)
+    if property_name.starts_with?("monstermash_directive_")
+      directive = property_name.sub("monstermash_directive_", "")
+      case directive
+      when "sliderzero"
+        actor.slider_zero = true
+        log(2, "  MonsterMash directive: SliderZero for #{actor.name_with_case}")
+      when "disable"
+        actor.mm_disabled = true
+        log(2, "  MonsterMash directive: Disable for #{actor.name_with_case}")
+      else
+        log(1, "  Unknown MonsterMash directive: #{directive} for #{actor.name_with_case}")
+      end
+      next
+    end
+
+    # Track applied properties/flags
+    if property_name =~ /^[\+\-]/
+      line.split.each { |flag| actor.flags_applied << flag }
+    elsif !%w[{ } action const var #include].includes?(property_name)
+      actor.properties_applied << property_name
+    end
+
+    # Handle special keywords
+    if property_name == "action" || property_name == "const"
+      log(3, "  - #{property_name}: #{line}")
+      next
+    end
+
+    # Handle variable declarations
+    if property_name == "var"
+      var_type = line.split[1]?.to_s
+      var_name = line.split[2]?.to_s
+      actor.user_vars[var_name] = var_type
+      next
+    end
+
+    # Handle "monster" keyword (which also enables ISMONSTER flag and more)
+    if property_name =~ /^monster/
+      actor.monster = true
+      # Handle flags concatenated after "monster" (e.g., "monster+boss")
+      remaining = line.lchop("monster").lstrip
+      if !remaining.empty?
+        # Process remaining flags by re-normalizing
+        remaining = remaining.gsub(/\+\s*/, " +").gsub(/\-\s*/, " -").lstrip
+        remaining.split.each do |flag|
+          # [BUGFIX] V1 used == instead of = for flag_boolean = false
+          flag_val = (flag[0] == '+')
+          fname = flag.lchop
+          unless set_actor_flag(actor, fname, flag_val)
+            log(3, "  Unrecognized flag after monster: #{fname}")
+          end
+        end
+      end
+      next
+    end
+
+    # Handle boolean flags (+FLAG / -FLAG)
+    if property_name =~ /^[\+\-]/
+      # Normalize spacing: "+FLAG -FLAG2" etc.
+      normalized = line.gsub(/\+\s*/, " +").gsub(/\-\s*/, " -").lstrip
+      normalized.split.each do |flag|
+        # [BUGFIX] V1: `flag_boolean == false` was comparison, not assignment
+        flag_val = (flag[0] == '+')
+        fname = flag.lchop.downcase
+
+        unless set_actor_flag(actor, fname, flag_val)
+          # Track missing flags
+          missing_actor_flags[fname] ||= Array(String).new
+          missing_actor_flags[fname] << actor.source_wad_folder
+          missing_actor_flags[fname].uniq!
+        end
+      end
+      next
+    end
+
+    # Handle "+ismonster" as a property name (special case)
+    if property_name == "+ismonster"
+      actor.ismonster = true
+      next
+    end
+
+    # Skip structural tokens
+    next if property_name == "{" || property_name == "}" || property_name == "#include"
+
+    # Try setting as a known property
+    unless set_actor_property(actor, property_name, line)
+      # Track missing properties
+      missing_property_names[property_name] ||= Array(String).new
+      missing_property_names[property_name] << actor.source_wad_folder
+    end
+  end
+end
+
+###############################################################################
+# SPAWN STATE VISIBILITY CHECK
+###############################################################################
+
+# Check if an actor has a visible spawn state (not TNT1-only)
+def has_visible_spawn_state(actor : Actor) : Bool
+  spawn_text = actor.states["spawn"]?
+  return false if spawn_text.nil? || spawn_text.strip.empty?
+
+  spawn_text.each_line do |line|
+    stripped = line.strip
+    next if stripped.empty?
+    next if stripped.starts_with?("//")
+    # First token of a state line is the sprite prefix
+    sprite = stripped.split(/\s+/).first?
+    next unless sprite
+    # Skip directives
+    next if sprite.downcase.in?("goto", "stop", "loop", "wait")
+    # The sprite is valid if it's not TNT1
+    prefix = sprite.size >= 4 ? sprite[0, 4].upcase : sprite.upcase
+    return prefix != "TNT1"
+  end
+  false
+end

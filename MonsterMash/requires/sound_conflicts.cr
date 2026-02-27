@@ -231,17 +231,21 @@ def resolve_sound_conflicts(actordb : Array(Actor))
       end
 
       # Generate a unique new lump name.
-      # Strategy: append a short WAD-derived suffix to keep it recognizable.
-      # GZDoom lump names are typically 8 chars max for WAD compatibility,
-      # but PK3 supports longer names. We'll use: LUMP_WADABBREV
-      wad_abbrev = entry[:wad_name].gsub(/[^a-zA-Z0-9]/, "")[0..3].upcase
-      candidate = "#{lump}_#{wad_abbrev}"
+      # Strategy: truncate lump + append WAD-derived suffix, keeping total <= 8 chars.
+      # GZDoom auto-detects DS* sound lumps by name, so longer names risk
+      # matching on the first 8 characters and overwriting IWAD sounds.
+      wad_abbrev = entry[:wad_name].gsub(/[^a-zA-Z0-9]/, "")[0..1].upcase  # 2-char WAD abbreviation
+      max_base = 8 - 1 - wad_abbrev.size  # 1 for underscore separator
+      truncated_lump = lump[0...max_base]
+      candidate = "#{truncated_lump}_#{wad_abbrev}"
 
-      # Ensure uniqueness
+      # Ensure uniqueness — swap last char for a digit if needed
       suffix_counter = 0
       while all_sound_lumps.includes?(candidate)
         suffix_counter += 1
-        candidate = "#{lump}_#{wad_abbrev}#{suffix_counter}"
+        # Trim further to fit the counter digit within 8 chars
+        max_with_counter = 8 - 1 - suffix_counter.to_s.size
+        candidate = "#{lump[0...max_with_counter]}_#{suffix_counter}"
       end
       all_sound_lumps << candidate
 

@@ -53,6 +53,10 @@ def process_script_dir(dir : String, wad_name : String, pk3_build_dir : String)
       end
     }.join("\n")
 
+    # Strip "Replaces <ActorName>" from actor lines — Monster Mash assigns
+    # its own doomednums, so replacements would hijack vanilla actors.
+    content = content.gsub(/\s+replaces\s+\w+/i, "")
+
     # Match #include "FILENAME" and update path
     content = content.gsub(/^(\s*#include\s+")([^"]+)(")/mi) do |match|
       prefix = $1
@@ -94,6 +98,149 @@ def process_script_dir(dir : String, wad_name : String, pk3_build_dir : String)
       log(3, "  Updated includes in: mm_actors/#{wad_name}/#{filename}")
     end
   end
+end
+
+# Inject Weapon.SlotNumber into DECORATE/ZSCRIPT actor definitions.
+# This replaces KEYCONF-based slot assignment with inline properties,
+# which is more reliable for merged PK3s.
+def inject_weapon_slot_numbers(actordb : Array(Actor), weapon_actor_set : Set(String), pk3_build_dir : String)
+  log(2, "=== Injecting Weapon.SlotNumber into actor definitions ===")
+  inject_count = 0
+  skip_count = 0
+
+  actordb.each do |actor|
+    next if actor.built_in
+    next unless weapon_actor_set.includes?(actor.name.downcase)
+    next if actor.source_wad_folder == "UNDEFINED"
+
+    slot = infer_weapon_slot(actor)  # helpers.cr
+    actor_dir = normalize_path(File.join(pk3_build_dir, "mm_actors", actor.source_wad_folder))
+    next unless Dir.exists?(actor_dir)
+
+    # Collect all script files in this WAD's actor directory
+    glob_pattern = normalize_path(File.join(actor_dir, "**", "*"))
+    log(3, "  Globbing: #{glob_pattern}")
+    script_files = Dir.glob(glob_pattern).select { |f|
+      File.file?(f) && (f.downcase.ends_with?(".raw") || f.downcase.ends_with?(".zs") ||
+                          f.downcase.ends_with?(".dec") || f.downcase.ends_with?(".txt"))
+    }
+    log(3, "  Found #{script_files.size} script files for #{actor.name_with_case}: #{script_files.map { |f| File.basename(f) }}")
+
+    actor_name_lower = actor.name.downcase
+    injected = false
+
+    script_files.each do |file_path|
+      next if injected
+      content = File.read(file_path)
+      content_lower = content.downcase
+
+      # Check if an uncommented Weapon.SlotNumber already exists in this file
+      has_active_slotnumber = content.lines.any? { |line|
+        stripped = line.strip
+        !stripped.starts_with?("//") && stripped.downcase.includes?("weapon.slotnumber")
+      }
+      if has_active_slotnumber
+        skip_count += 1
+        injected = true
+        log(3, "  SlotNumber already present: #{actor.name_with_case} in #{File.basename(file_path)}")
+        next
+      end
+
+      is_zscript = actor.script_type == "zscript" || actor.script_type == "both" ||
+                   file_path.downcase.ends_with?(".zs")
+
+      if is_zscript
+        # ZSCRIPT: Insert inside Default { } block
+        # Match: "Default" followed by "{" (possibly on same or next line)
+        # Find the actor's class definition first
+        class_pattern = /class\s+#{Regex.escape(actor_name_lower)}\b/im
+        unless content =~ class_pattern
+          log(3, "  ZSCRIPT class pattern not found for #{actor_name_lower} in #{File.basename(file_path)}")
+          next
+        end
+
+        # Find the Default block within this class
+        # Insert before the closing brace of Default, or after the opening brace
+        lines = content.lines
+        in_default = false
+        default_open_brace_line = -1
+        brace_depth = 0
+
+        lines.each_with_index do |line, i|
+          stripped = line.strip.downcase
+          if !in_default && stripped =~ /^default\b/
+            in_default = true
+            if stripped.includes?("{")
+              default_open_brace_line = i
+              brace_depth = 1
+            end
+            next
+          end
+          if in_default && default_open_brace_line == -1 && line.includes?("{")
+            default_open_brace_line = i
+            brace_depth = 1
+            next
+          end
+          if in_default && default_open_brace_line >= 0
+            brace_depth += line.count('{') - line.count('}')
+            if brace_depth <= 0
+              # Found closing brace of Default — insert before it
+              indent = "        "  # Match typical ZSCRIPT indentation
+              lines.insert(i, "#{indent}Weapon.SlotNumber #{slot};")
+              content = lines.join("\n")
+              File.write(file_path, content)
+              inject_count += 1
+              injected = true
+              log(2, "  ZSCRIPT slot #{slot}: #{actor.name_with_case} in #{File.basename(file_path)}")
+              break
+            end
+          end
+        end
+      else
+        # DECORATE: Insert before the States block
+        # Find the actor definition
+        actor_pattern = /^\s*actor\s+#{Regex.escape(actor_name_lower)}\b/im
+        unless content =~ actor_pattern
+          log(3, "  DECORATE actor pattern not found for #{actor_name_lower} in #{File.basename(file_path)}")
+          next
+        end
+        log(3, "  DECORATE actor pattern MATCHED for #{actor_name_lower} in #{File.basename(file_path)}")
+
+        lines = content.lines
+        in_actor = false
+        actor_brace_depth = 0
+
+        lines.each_with_index do |line, i|
+          stripped = line.strip.downcase
+          if !in_actor && stripped =~ /^\s*actor\s+#{Regex.escape(actor_name_lower)}\b/i
+            in_actor = true
+            actor_brace_depth += line.count('{') - line.count('}')
+            next
+          end
+          next unless in_actor
+          actor_brace_depth += line.count('{') - line.count('}')
+
+          # Insert before the States block
+          if stripped =~ /^states\b/
+            indent = "  "  # Match typical DECORATE indentation
+            lines.insert(i, "#{indent}Weapon.SlotNumber #{slot}")
+            content = lines.join("\n")
+            File.write(file_path, content)
+            inject_count += 1
+            injected = true
+            log(2, "  DECORATE slot #{slot}: #{actor.name_with_case} in #{File.basename(file_path)}")
+            break
+          end
+        end
+      end
+    end
+
+    unless injected
+      log(1, "  Could not inject SlotNumber for: #{actor.name_with_case} (slot #{slot})")
+    end
+  end
+
+  log(2, "Weapon.SlotNumber injection complete: #{inject_count} injected, #{skip_count} already present")
 end
 
 def build_merged_pk3(actordb : Array(Actor), weapon_actor_set : Set(String))
@@ -401,13 +548,19 @@ def build_merged_pk3(actordb : Array(Actor), weapon_actor_set : Set(String))
   end
 
   ###############################################################################
+  # INJECT WEAPON SLOT NUMBERS INTO DECORATE/ZSCRIPT
+  # Replaces KEYCONF-based slot assignment with inline Weapon.SlotNumber
+  ###############################################################################
+
+  inject_weapon_slot_numbers(actordb, weapon_actor_set, PK3_BUILD_DIR)
+
+  ###############################################################################
   # WRITE CONCATENATED TEXT LUMPS
   ###############################################################################
 
   log(2, "Writing concatenated text lumps...")
   log(2, "  #{text_lumps.size} distinct lump types found")
 
-  keyconf_was_processed = false
 
   text_lumps.each do |canonical_name, entries|
     merged = String.build do |io|
@@ -500,88 +653,11 @@ def build_merged_pk3(actordb : Array(Actor), weapon_actor_set : Set(String))
       end
     end
 
-    # Post-process KEYCONF: sanitize for merged PK3 compatibility.
-    # Individual weapon mods use KEYCONF for their standalone weapon setup, but
-    # when merged, these commands conflict:
-    #   - setslot: clears the entire slot, breaking all other weapons in that slot
-    #   - clearplayerclasses / addplayerclass: replaces the default player class
-    #   - weaponsection: creates isolated weapon sections (not needed for addslotdefault)
-    # We convert all setslot commands to addslotdefault (which safely adds weapons
-    # to slots without clearing them), and strip destructive player class commands.
-    # Standard Doom weapons already have default slot assignments, so we skip them.
+    # Skip KEYCONF — weapon slots are now assigned via Weapon.SlotNumber
+    # directly in DECORATE/ZSCRIPT files by inject_weapon_slot_numbers().
     if canonical_name == "keyconf"
-      keyconf_was_processed = true
-      keyconf_fixes = 0
-      standard_weapons = Set{
-        "fist", "chainsaw", "pistol", "shotgun", "supershotgun",
-        "chaingun", "rocketlauncher", "plasmarifle", "bfg9000",
-      }
-
-      new_lines = [] of String
-      merged.each_line do |line|
-        stripped = line.strip.downcase
-
-        # Strip clearplayerclasses / addplayerclass — destructive in merged context
-        if stripped.starts_with?("clearplayerclasses") || stripped.starts_with?("addplayerclass")
-          keyconf_fixes += 1
-          next
-        end
-
-        # Strip weaponsection — not needed when using addslotdefault only
-        if stripped.starts_with?("weaponsection")
-          keyconf_fixes += 1
-          next
-        end
-
-        # Convert setslot to addslotdefault
-        if stripped =~ /^setslot\s+(\d+)\s+(.+)/i
-          slot = $1
-          weapons_str = $2
-          weapons = weapons_str.split(/\s+/)
-          weapons.each do |weapon|
-            next if standard_weapons.includes?(weapon.downcase)
-            new_lines << "addslotdefault #{slot} #{weapon}"
-            keyconf_fixes += 1
-          end
-          next  # Skip original setslot line
-        end
-
-        new_lines << line
-      end
-
-      merged = new_lines.join("\n")
-      log(2, "  KEYCONF: sanitized #{keyconf_fixes} directive(s) (setslot->addslotdefault, stripped player classes)")
-
-      # [BUGFIX] Ensure ALL weapons have a slot assignment in KEYCONF.
-      # Weapons that lack both a KEYCONF entry and Weapon.SlotNumber in their
-      # DECORATE (like the Axe) will be invisible in-game — no key to select them.
-      # Collect weapons already assigned in KEYCONF, then generate addslotdefault
-      # entries for any weapons in weapon_actor_set that are missing.
-      weapons_in_keyconf = Set(String).new
-      merged.each_line do |line|
-        stripped = line.strip.downcase
-        if stripped =~ /^addslotdefault\s+\d+\s+(\S+)/i
-          weapons_in_keyconf << $1.downcase
-        end
-      end
-
-      slot_additions = [] of String
-      actordb.each do |actor|
-        next if actor.built_in
-        next unless weapon_actor_set.includes?(actor.name.downcase)
-        next if weapons_in_keyconf.includes?(actor.name.downcase)
-
-        slot = infer_weapon_slot(actor)
-        slot_additions << "addslotdefault #{slot} #{actor.name_with_case}"
-        log(3, "  KEYCONF auto-slot: #{actor.name_with_case} -> slot #{slot}")
-      end
-
-      if slot_additions.size > 0
-        merged += "\n\n// Auto-generated slot assignments for weapons missing KEYCONF entries\n"
-        merged += slot_additions.join("\n")
-        merged += "\n"
-        log(2, "  KEYCONF: auto-assigned #{slot_additions.size} weapon(s) to slots")
-      end
+      log(2, "  KEYCONF: skipping — slot assignments handled via Weapon.SlotNumber in actor definitions")
+      next
     end
 
     # Post-process MAPINFO: strip existing DoomEdNums blocks so they can be
@@ -954,6 +1030,51 @@ def build_merged_pk3(actordb : Array(Actor), weapon_actor_set : Set(String))
       end
     end
 
+    # Post-process LANGUAGE: consolidate duplicate section headers.
+    # GZDoom LANGUAGE lumps use [enu default] etc. as section headers.
+    # When merging multiple WADs, each may have its own header — we group
+    # all entries under a single header per language section, preserving
+    # WAD source comments (Begin/End markers).
+    if canonical_name == "language"
+      sections = Hash(String, Array(String)).new  # header -> lines (including comments)
+      current_header = "[enu default]"  # default if entries appear before any header
+      header_block = Array(String).new  # accumulates lines for file header comments
+
+      in_file_header = true  # true while we're in the top comment block
+
+      merged.each_line do |line|
+        stripped = line.strip
+
+        # Preserve the auto-generated comment block at the top separately
+        if in_file_header && (stripped.starts_with?("//") || stripped.empty?)
+          header_block << line.rstrip
+          next
+        end
+        in_file_header = false
+
+        if stripped =~ /^\[.+\]$/
+          # Section header like [enu default] — normalize to lowercase
+          current_header = stripped.downcase
+          sections[current_header] ||= Array(String).new
+        else
+          sections[current_header] ||= Array(String).new
+          sections[current_header] << line.rstrip
+        end
+      end
+
+      merged = String.build do |io|
+        header_block.each { |l| io << l << "\n" }
+        io << "\n"
+
+        sections.each do |header, lines|
+          io << header << "\n\n"
+          lines.each { |l| io << l << "\n" }
+          io << "\n"
+        end
+      end
+      log(2, "  LANGUAGE: consolidated #{sections.size} section(s)")
+    end
+
     lump_output_path = normalize_path(File.join(PK3_BUILD_DIR, output_name))
     # On Windows, a resource directory with the same name (case-insensitive) may
     # already exist (e.g., "textures/" dir vs "TEXTURES" lump). Add .lmp extension
@@ -1003,34 +1124,6 @@ def build_merged_pk3(actordb : Array(Actor), weapon_actor_set : Set(String))
     else
       File.write(mapinfo_path, doomednums_block.lstrip)
       log(2, "  MAPINFO: created with DoomEdNums block for #{zscript_ednum_entries.size} ZScript actor(s)")
-    end
-  end
-
-  # [BUGFIX] If no WAD contributed a KEYCONF, generate one from scratch so all
-  # weapons get slot assignments. Without this, weapons from WADs that rely on
-  # Weapon.SlotNumber (or have no slot at all) will be unselectable in-game.
-  unless keyconf_was_processed
-    slot_additions = [] of String
-    actordb.each do |actor|
-      next if actor.built_in
-      next unless weapon_actor_set.includes?(actor.name.downcase)
-
-      slot = infer_weapon_slot(actor)
-      slot_additions << "addslotdefault #{slot} #{actor.name_with_case}"
-    end
-
-    if slot_additions.size > 0
-      keyconf_content = String.build do |io|
-        io << "// ============================================================\n"
-        io << "// KEYCONF — Monster Mash (auto-generated)\n"
-        io << "// No WADs contributed KEYCONF entries, so all weapon slot\n"
-        io << "// assignments are auto-generated from DECORATE properties.\n"
-        io << "// ============================================================\n\n"
-        slot_additions.each { |line| io << line << "\n" }
-      end
-      keyconf_path = normalize_path(File.join(PK3_BUILD_DIR, "KEYCONF"))
-      File.write(keyconf_path, keyconf_content)
-      log(2, "  KEYCONF: generated from scratch with #{slot_additions.size} weapon slot assignment(s)")
     end
   end
 

@@ -60,6 +60,13 @@ MonsterMash is designed to work as a plugin for **Obsidian** (level generator) a
 
    The restart ensures all changes are properly loaded.
 
+## Included Mods
+
+   I have included two mods that are useful for using this mod:
+   - target-spy - this is useful to get names of monsters for troubleshooting purposes
+   - big_backpack - because some monsters will require you to use a lot of ammo
+   They should both be considered optional, although target-spy is needed if you want to file a bug report.
+
 ## Standalone Usage
 
 You can use MonsterMash as a wad/pk3 file merger only. I've set it up to tag the necessary properties to show up in Ultimate Doom Builder (UDB). Keep in mind this is targeted at ZDoom DECORATE/ZSCRIPT monsters/weapons/pickups only. Monsters/weapons/pickups from games other than Doom II are not currently supported.

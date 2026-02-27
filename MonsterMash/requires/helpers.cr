@@ -2,6 +2,57 @@
 # helpers.cr — Utility functions for Unwad / Monster Mash
 ###############################################################################
 
+###############################################################################
+# CONFIGURATION — Log level from CLI flags
+###############################################################################
+
+# ---------------------------------------------------------------------------
+# Verbosity flags: -v = warnings, -vv = info, -vvv = debug
+# Log levels: 0 = errors only, 1 = warnings, 2 = info, 3 = debug/verbose
+# ---------------------------------------------------------------------------
+module Config
+  @@log_level : Int32 = if ARGV.includes?("-vvv")
+                           3
+                         elsif ARGV.includes?("-vv")
+                           2
+                         elsif ARGV.includes?("-v")
+                           1
+                         else
+                           0  # default: errors only
+                         end
+
+  def self.log_level
+    @@log_level
+  end
+end
+
+LOG_FILE = File.open("unwad.log", "w")
+LOG_FILE.puts "=== Unwad V4 Log Started: #{Time.local} ==="
+LOG_FILE.flush
+
+def log(level : Int32, msg : String)
+  return if level > Config.log_level
+  prefix = case level
+           when 0 then "[ERROR]"
+           when 1 then "[WARN] "
+           when 2 then "[INFO] "
+           else        "[DEBUG]"
+           end
+  line = "#{prefix} #{msg}"
+  puts line
+  LOG_FILE.puts line
+  LOG_FILE.flush
+end
+
+at_exit do
+  LOG_FILE.puts "=== Log Ended: #{Time.local} ==="
+  LOG_FILE.close
+end
+
+###############################################################################
+# GENERAL UTILITIES
+###############################################################################
+
 # Check if a string is a valid integer
 def numeric?(str : String) : Bool
   str.to_i? != nil
@@ -204,6 +255,12 @@ def infer_weapon_slot(actor : Actor) : Int32
     1
   elsif actor.weapon.bfg
     7
+  elsif actor.weapon.ammotype.downcase == "shell"
+    3
+  elsif actor.weapon.ammotype.downcase == "cell"
+    6
+  elsif actor.weapon.ammotype.downcase == "rocketammo"
+    5
   elsif actor.weapon.ammouse > 5
     6
   elsif actor.weapon.ammouse > 1
