@@ -146,8 +146,17 @@ def extract_pk3(pk3_path : String, dest_dir : String)
   log(2, "  PK3 extracted: #{files_extracted} files, #{root_lumps_moved} root lumps → defs/")
 end
 
-PK3_BUILD_DIR = "./PK3_Build"
-PK3_OUTPUT    = "./Completed/monster_mash.pk3"
+###############################################################################
+# DIRECTORY CONSTANTS
+###############################################################################
+
+SOURCE_DIR         = "./Source"
+PROCESSING_DIR     = "./Processing"
+COMPLETED_DIR      = "./Completed"
+IWADS_DIR          = "./IWADs"
+IWADS_EXTRACTED_DIR = "./IWADs_Extracted"
+PK3_BUILD_DIR      = "./PK3_Build"
+PK3_OUTPUT         = "#{COMPLETED_DIR}/monster_mash.pk3"
 
 # Known resource directories — contents get copied flat into the PK3.
 # These hold binary files (sprites, sounds, etc.) identified by filename.

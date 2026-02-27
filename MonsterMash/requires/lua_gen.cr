@@ -7,18 +7,18 @@
 ###############################################################################
 
 # Determine attack type from DECORATE states
-# "melee" = only has Melee state, no Missile state
-# "missile" = has Missile state (ranged attack)
-# "combo" = has both Melee and Missile states
+# Returns "melee", "missile", or "hitscan" only (Obsidian's valid attack types).
+# If a monster has both Melee and Missile states, "missile" wins (ranged is the
+# primary threat, matching how vanilla Doom classifies Imp etc.)
 def detect_attack_type(actor : Actor) : String
   has_melee = actor.states.has_key?("melee")
   has_missile = actor.states.has_key?("missile")
-  if has_melee && has_missile
-    "combo"
+  if has_missile
+    "missile"
   elsif has_melee
     "melee"
   else
-    "missile"
+    "missile"  # Default — most custom monsters are ranged
   end
 end
 
@@ -34,6 +34,54 @@ def difficulty_tier(health : Int32) : {Int32, Float64, Float64}
   when 1001..2000 then {18, 0.5, 80.0}  # Boss-tier (Cyberdemon-class)
   when 2001..4000 then {12, 0.4, 120.0} # Super-boss
   else                 {7, 0.3, 200.0}  # Ultra-boss (4000+)
+  end
+end
+
+# Determine boss_type from health tier.
+# Returns nil for non-boss monsters (health <= 500).
+def boss_type_for_health(health : Int32) : String?
+  case health
+  when  501..1000 then "minor"   # Baron-class
+  when 1001..2000 then "tough"   # Cyberdemon-class
+  when 2001..     then "nasty"   # Super-boss / Ultra-boss
+  else                 nil        # Not a boss
+  end
+end
+
+# Determine weapon preferences based on health tier.
+# Returns a Lua table string like "{ shotty=1.5, chain=1.3 }".
+# Modelled after vanilla Doom monster entries in games/doom/monsters.lua.
+# Built-in weapon keys: shotty, chain, super, launch, plasma, bfg
+def weap_prefs_for_health(health : Int32) : String
+  case health
+  when     ..60    # Fodder — any basic weapon works
+    "{ shotty=1.2, chain=1.5 }"
+  when   61..200   # Low-tier (Imp-class)
+    "{ shotty=1.5, chain=1.25, super=1.2 }"
+  when  201..500   # Mid-tier (Cacodemon/Revenant-class)
+    "{ launch=1.5, super=1.5, chain=1.2, plasma=1.2 }"
+  when  501..1000  # Heavy (Baron-class)
+    "{ launch=1.75, super=1.5, plasma=1.75, bfg=1.5 }"
+  when 1001..2000  # Boss-tier (Cyberdemon-class)
+    "{ launch=1.5, plasma=1.5, bfg=10.0 }"
+  else             # Super-boss / Ultra-boss (2001+)
+    "{ bfg=10.0 }"
+  end
+end
+
+# Determine how far into an episode a monster should appear (1..9).
+# Lower = appears earlier, higher = later in the episode.
+# Based on vanilla Doom progression in games/doom/monsters.lua.
+def monster_level_for_health(health : Int32) : Float64
+  case health
+  when     ..60  then 1.0   # Fodder — from the start (zombie, imp)
+  when   61..150 then 2.0   # Low-tier (gunner, skull, demon)
+  when  151..300 then 4.0   # Mid-tier (revenant, caco)
+  when  301..500 then 5.0   # Upper-mid (knight, arach, mancubus)
+  when  501..1000 then 6.0  # Heavy / minor boss (baron)
+  when 1001..2000 then 7.0  # Boss-tier (Cyberdemon-class)
+  when 2001..4000 then 8.0  # Super-boss
+  else                 9.0  # Ultra-boss (Spiderdemon-class)
   end
 end
 
@@ -295,11 +343,18 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
       io << "    id = #{actor.doomednum},\n"
       io << "    r = #{actor.radius.to_i},\n"
       io << "    h = #{actor.height},\n"
+      io << "    level = #{monster_level_for_health(actor.health)},\n"
       io << "    prob = #{prob},\n"
       io << "    health = #{actor.health},\n"
       io << "    damage = #{damage},\n"
       io << "    attack = \"#{attack}\",\n"
-      io << "    density = #{density}\n"
+      io << "    density = #{density},\n"
+      io << "    weap_prefs = #{weap_prefs_for_health(actor.health)},\n"
+      boss_type = boss_type_for_health(actor.health)
+      if boss_type
+        io << "    boss_type = \"#{boss_type}\",\n"
+        io << "    boss_prob = 50,\n"
+      end
       io << "  },\n"
       lua_monster_count += 1
     end
@@ -350,7 +405,19 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
       next unless should_include_weapon_in_lua(actor)
 
       attack = detect_weapon_attack_type(actor)
-      level, pref, add_prob, damage = weapon_tier(actor)
+      level, pref, add_prob, tier_damage = weapon_tier(actor)
+
+      # Calculate damage from Fire state actions — fallback to tier estimate
+      # requires/weapon_damage_calc.cr
+      calc_damage = calculate_weapon_damage(actor, actordb)
+      damage = calc_damage > 0 ? calc_damage : tier_damage
+
+      # Calculate rate from Fire state ticks — fallback to 0.9
+      # requires/weapon_damage_calc.cr
+      fire_text = actor.states["fire"]? || ""
+      calc_rate = calculate_fire_rate(fire_text)
+      rate = calc_rate > 0 ? calc_rate : 0.9
+
       ammo_type = map_ammo_type(actor.weapon.ammotype)
       ammo_per = actor.weapon.ammouse > 0 ? actor.weapon.ammouse : 1
       ammo_give = actor.weapon.ammogive > 0 ? actor.weapon.ammogive : 10
@@ -367,8 +434,8 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
       io << "    pref = #{pref},\n"
       io << "    add_prob = #{add_prob},\n"
       io << "    attack = \"#{attack}\",\n"
-      io << "    rate = 0.9,\n"
-      io << "    damage = #{damage},\n"
+      io << "    rate = #{rate.round(2)},\n"
+      io << "    damage = #{damage.round(1)},\n"
       io << "    ammo = \"#{ammo_type}\",\n"
       io << "    per = #{ammo_per},\n"
       io << "    give = { {ammo=\"#{ammo_type}\",count=#{ammo_give}} }\n"
@@ -403,7 +470,7 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
       io << "    id = #{actor.doomednum},\n"
       io << "    kind = \"ammo\",\n"
       io << "    rank = 2,\n"
-      io << "    add_prob = 10,\n"
+      io << "    add_prob = 40,\n"
       io << "    give = { {ammo=\"#{ammo_type}\",count=#{amount}} },\n"
       io << "    cluster = { 3,7 },\n"
       io << "  },\n"

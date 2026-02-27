@@ -32,7 +32,7 @@ def resolve_sprite_conflicts(actordb : Array(Actor))
 
   sprite_prefix = Hash(String, Array(Tuple(String, String))).new
 
-  sprite_files = (Dir.glob("./Processing/*/sprites/*") + Dir.glob("./Processing/*/sprites/**/*") + Dir.glob("./IWADs_Extracted/*/sprites/*") + Dir.glob("./IWADs_Extracted/*/sprites/**/*")).map { |p| normalize_path(p) }
+  sprite_files = (Dir.glob("#{PROCESSING_DIR}/*/sprites/*") + Dir.glob("#{PROCESSING_DIR}/*/sprites/**/*") + Dir.glob("#{IWADS_EXTRACTED_DIR}/*/sprites/*") + Dir.glob("#{IWADS_EXTRACTED_DIR}/*/sprites/**/*")).map { |p| normalize_path(p) }
   sprite_files.each do |path|
     next if File.directory?(path)
     key = path.split("/").last.split(".").first[0..3].upcase
@@ -92,7 +92,7 @@ def resolve_sprite_conflicts(actordb : Array(Actor))
     wads_with_prefix.each do |wad_name, new_prefix|
       next if new_prefix == key # Skip the WAD that keeps the original prefix
 
-      list_of_sprites = Dir.glob("./Processing/#{wad_name}/sprites/#{key}*").map { |p| normalize_path(p) }
+      list_of_sprites = Dir.glob("#{PROCESSING_DIR}/#{wad_name}/sprites/#{key}*").map { |p| normalize_path(p) }
       renamed_sprite_count = 0
       list_of_sprites.each do |sprite|
         dir = File.dirname(sprite)
@@ -107,8 +107,8 @@ def resolve_sprite_conflicts(actordb : Array(Actor))
       # Update DECORATE and ZSCRIPT references
       # Collect all script files for this WAD (DECORATE + ZSCRIPT + their includes)
       script_files = Array(String).new
-      dec_main = "./Processing/#{wad_name}/defs/DECORATE.raw"
-      zsc_main = "./Processing/#{wad_name}/defs/ZSCRIPT.raw"
+      dec_main = "#{PROCESSING_DIR}/#{wad_name}/defs/DECORATE.raw"
+      zsc_main = "#{PROCESSING_DIR}/#{wad_name}/defs/ZSCRIPT.raw"
       script_files += collect_decorate_files(dec_main) if File.exists?(dec_main)
       script_files += collect_decorate_files(zsc_main) if File.exists?(zsc_main)
       script_files.uniq!
@@ -156,7 +156,7 @@ def resolve_sprite_conflicts(actordb : Array(Actor))
   log(2, "=== Sprite Prefix Inventory (per WAD, post-rename) ===")
 
   wad_prefix_inventory = Hash(String, Hash(String, Int32)).new
-  sprite_inventory_files = Dir.glob("./Processing/*/sprites/**/*").map { |p| normalize_path(p) }
+  sprite_inventory_files = Dir.glob("#{PROCESSING_DIR}/*/sprites/**/*").map { |p| normalize_path(p) }
   sprite_inventory_files.each do |path|
     next if File.directory?(path)
     wad = path.split("/")[2]

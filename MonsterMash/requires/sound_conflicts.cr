@@ -149,7 +149,7 @@ def resolve_sound_conflicts(actordb : Array(Actor))
   sound_inventory = Hash(String, Array(NamedTuple(path: String, wad_name: String, is_iwad: Bool))).new
 
   # Scan IWAD sounds first
-  iwad_sound_files = Dir.glob("./IWADs_Extracted/*/sounds/*").map { |p| normalize_path(p) }
+  iwad_sound_files = Dir.glob("#{IWADS_EXTRACTED_DIR}/*/sounds/*").map { |p| normalize_path(p) }
   iwad_sound_files.each do |path|
     next if File.directory?(path)
     lump = File.basename(path, File.extname(path)).upcase
@@ -160,7 +160,7 @@ def resolve_sound_conflicts(actordb : Array(Actor))
 
   # Scan mod sounds (both sounds/ and music/ — jeutool often miscategorizes
   # sound effects as "music" for WADs without proper S_START/S_END markers)
-  mod_sound_files = (Dir.glob("./Processing/*/sounds/*") + Dir.glob("./Processing/*/music/*")).map { |p| normalize_path(p) }
+  mod_sound_files = (Dir.glob("#{PROCESSING_DIR}/*/sounds/*") + Dir.glob("#{PROCESSING_DIR}/*/music/*")).map { |p| normalize_path(p) }
   mod_sound_files.each do |path|
     next if File.directory?(path)
     lump = File.basename(path, File.extname(path)).upcase
@@ -462,7 +462,7 @@ def resolve_sound_conflicts(actordb : Array(Actor))
 
     # Write the synthetic SNDINFO if we generated any mappings
     if sndinfo_lines.size > 4  # More than just the header comments
-      sndinfo_path = normalize_path("./Processing/#{wad_name}/defs/SNDINFO.raw")
+      sndinfo_path = normalize_path("#{PROCESSING_DIR}/#{wad_name}/defs/SNDINFO.raw")
       Dir.mkdir_p(File.dirname(sndinfo_path))
       File.write(sndinfo_path, sndinfo_lines.join("\n") + "\n")
       synthetic_sndinfo_count += 1

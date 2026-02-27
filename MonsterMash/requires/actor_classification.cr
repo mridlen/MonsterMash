@@ -358,7 +358,7 @@ def detect_zscript_classes(actordb : Array(Actor), actors_by_name : Hash(String,
   {"doomimspecies", "doomimp"}.each { |n| monster_base_classes.add(n) }
 
   # Collect all ZScript files in Processing/
-  zscript_raw_files = Dir.glob("./Processing/*/defs/ZSCRIPT.raw").map { |p| normalize_path(p) }
+  zscript_raw_files = Dir.glob("#{PROCESSING_DIR}/*/defs/ZSCRIPT.raw").map { |p| normalize_path(p) }
 
   # Data structure: class_name_lc => {name_with_case, parent_lc, file_path, has_monster_flag, has_fire_state}
   zscript_class_info = Hash(String, NamedTuple(

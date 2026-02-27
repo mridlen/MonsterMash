@@ -238,11 +238,11 @@ end
 # Used during sound conflict resolution to find existing SNDINFO files.
 def sndinfo_candidates(wad_name : String) : Array(String)
   [
-    "./Processing/#{wad_name}/defs/SNDINFO.raw",
-    "./Processing/#{wad_name}/defs/sndinfo.raw",
-    "./Processing/#{wad_name}/defs/SNDINFO.txt",
-    "./Processing/#{wad_name}/defs/sndinfo.txt",
-    "./Processing/#{wad_name}/defs/SNDINFO.lmp",
+    "#{PROCESSING_DIR}/#{wad_name}/defs/SNDINFO.raw",
+    "#{PROCESSING_DIR}/#{wad_name}/defs/sndinfo.raw",
+    "#{PROCESSING_DIR}/#{wad_name}/defs/SNDINFO.txt",
+    "#{PROCESSING_DIR}/#{wad_name}/defs/sndinfo.txt",
+    "#{PROCESSING_DIR}/#{wad_name}/defs/SNDINFO.lmp",
   ].map { |p| normalize_path(p) }
 end
 
