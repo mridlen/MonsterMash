@@ -108,6 +108,19 @@ DEFAULT_SNDINFO = {
   "brain/cube" => "dsboscub", "brain/cubeboom" => "dsfirxpl",
   # World / misc
   "world/barrelx" => "dsbarexp", "misc/gibbed" => "dsslop",
+  # Player weapons
+  "weapons/sawup" => "dssawup", "weapons/sawidl" => "dssawidl",
+  "weapons/sawfull" => "dssawful", "weapons/sawhit" => "dssawhit",
+  "weapons/pistol" => "dspistol", "weapons/shotgf" => "dsshotgn",
+  "weapons/shotgr" => "dssgcock", "weapons/sshotf" => "dsdshtgn",
+  "weapons/sshoto" => "dsdbopn", "weapons/sshotc" => "dsdbcls",
+  "weapons/sshotl" => "dsdbload",
+  "weapons/chngun" => "dschgun", "weapons/rocklf" => "dsrlaunc",
+  "weapons/rockrx" => "dsbarexp", "weapons/plasmaf" => "dsplasma",
+  "weapons/plasmax" => "dsfirxpl", "weapons/bfgf" => "dsbfg",
+  "weapons/bfgx" => "dsrxplod",
+  # Misc player sounds
+  "*fist" => "dspunch",
 }
 
 # GZDoom default $random groupings: parent_logical → [child_logicals]

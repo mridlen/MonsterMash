@@ -37,9 +37,15 @@ def difficulty_tier(health : Int32) : {Int32, Float64, Float64}
   end
 end
 
-# Determine boss_type from health tier.
+# Determine boss_type from health tier and name.
 # Returns nil for non-boss monsters (health <= 500).
-def boss_type_for_health(health : Int32) : String?
+# Monsters with "rocket" or "bfg" in their name are always "nasty".
+def boss_type_for_health(health : Int32, name : String = "") : String?
+  lower_name = name.downcase
+  if lower_name.includes?("rocket") || lower_name.includes?("bfg")
+    return "nasty"
+  end
+
   case health
   when  501..1000 then "minor"   # Baron-class
   when 1001..2000 then "tough"   # Cyberdemon-class
@@ -158,35 +164,38 @@ end
 def weapon_tier(actor : Actor) : {Float64, Int32, Int32, Float64}
   slot = actor.weapon.slotnumber
 
+  # add_prob values calibrated to vanilla Doom range (20-70) so modded
+  # weapons compete fairly in Obsidian's decide_weapon() probability pool.
+  # level values staggered within slots to spread new_weapons across levels.
   case slot
   when 1  # Melee (fist/chainsaw)
-    {1.0, 5, 3, 10.0}
+    {1.0, 5, 15, 10.0}
   when 2  # Pistol class
-    {1.0, 7, 4, 15.0}
+    {1.2, 7, 20, 15.0}
   when 3  # Shotgun class
-    {1.5, 20, 5, 70.0}
+    {1.8, 20, 35, 70.0}
   when 4  # Chaingun class
-    {2.5, 20, 6, 50.0}
+    {3.0, 20, 35, 50.0}
   when 5  # Rocket launcher class
-    {4.0, 15, 5, 170.0}
+    {4.5, 15, 40, 170.0}
   when 6  # Plasma rifle class
-    {5.0, 12, 5, 80.0}
+    {5.5, 12, 35, 80.0}
   when 7  # BFG class
-    {8.0, 6, 2, 300.0}
+    {8.0, 6, 20, 300.0}
   when 8, 9, 0  # Exotic / overflow slots
-    {8.0, 6, 2, 300.0}
+    {8.0, 6, 20, 300.0}
   else
     # No slot info — estimate from weapon flags and ammo use
     if actor.weapon.bfg
-      {8.0, 6, 2, 300.0}
+      {8.0, 6, 20, 300.0}
     elsif actor.weapon.meleeweapon
-      {1.0, 5, 3, 10.0}
+      {1.0, 5, 15, 10.0}
     elsif actor.weapon.ammouse > 5
-      {6.0, 10, 3, 150.0}   # High ammo use = powerful
+      {6.5, 10, 30, 150.0}   # High ammo use = powerful
     elsif actor.weapon.ammouse > 1
-      {3.0, 17, 5, 80.0}    # Moderate ammo use
+      {3.5, 17, 35, 80.0}    # Moderate ammo use
     else
-      {2.0, 17, 6, 50.0}    # Default — mid-tier
+      {2.5, 17, 35, 50.0}    # Default — mid-tier
     end
   end
 end
@@ -350,7 +359,7 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
       io << "    attack = \"#{attack}\",\n"
       io << "    density = #{density},\n"
       io << "    weap_prefs = #{weap_prefs_for_health(actor.health)},\n"
-      boss_type = boss_type_for_health(actor.health)
+      boss_type = boss_type_for_health(actor.health, actor.name)
       if boss_type
         io << "    boss_type = \"#{boss_type}\",\n"
         io << "    boss_prob = 50,\n"
@@ -470,9 +479,9 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
       io << "    id = #{actor.doomednum},\n"
       io << "    kind = \"ammo\",\n"
       io << "    rank = 2,\n"
-      io << "    add_prob = 40,\n"
+      io << "    add_prob = 60,\n"
       io << "    give = { {ammo=\"#{ammo_type}\",count=#{amount}} },\n"
-      io << "    cluster = { 3,7 },\n"
+      io << "    cluster = { 4,9 },\n"
       io << "  },\n"
       lua_ammo_count += 1
     end
@@ -608,7 +617,7 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
       next unless should_include_pickup_in_lua(actor)
       lua_key = actor.name.gsub(/[^a-zA-Z0-9_]/, "_")
       lua_key = "_#{lua_key}" if lua_key[0]?.try(&.ascii_number?)
-      slider_default = actor.slider_zero ? 0 : 5
+      slider_default = actor.slider_zero ? 0 : 10
       io << "    {\n"
       io << "      name = \"float_#{lua_key}\",\n"
       io << "      label = _(\"#{actor.name_with_case}\"),\n"
@@ -680,7 +689,7 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
       next unless should_include_weapon_in_lua(actor)
       lua_key = actor.name.gsub(/[^a-zA-Z0-9_]/, "_")
       lua_key = "_#{lua_key}" if lua_key[0]?.try(&.ascii_number?)
-      slider_default = actor.slider_zero ? 0 : 0.3
+      slider_default = actor.slider_zero ? 0 : 1
       io << "    {\n"
       io << "      name = \"float_#{lua_key}\",\n"
       io << "      label = _(\"#{actor.name_with_case}\"),\n"
@@ -693,7 +702,7 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
         io << "      tooltip = _(\"slider disabled in configuration\"),\n"
       end
       io << "      presets = _(\"0:0 (None),0.02:0.02 (Scarce),0.14:0.14 (Less),0.5:0.5 (Plenty),1.2:1.2 (More),3:3 (Heaps),20:20 (INSANE)\"),\n"
-      io << "      randomize_group = \"weapons\",\n"
+      io << "      randomize_group = \"pickups\",\n"
       io << "    },\n"
     end
 

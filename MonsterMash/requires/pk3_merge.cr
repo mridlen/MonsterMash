@@ -988,17 +988,31 @@ def build_merged_pk3(actordb : Array(Actor), weapon_actor_set : Set(String))
         merged = fixed_lines.join("\n")
         log(2, "  SNDINFO: renamed #{sndinfo_rename_count} logical name(s) to WAD-specific namespaces")
 
-        # Pass 3: Update DECORATE files for affected WADs to use the new logical names.
+        # Pass 3: Update DECORATE/ZSCRIPT files for affected WADs to use the new logical names.
         decorate_rename_count = 0
         wad_rename_map.each do |wad_name, renames|
           actor_dir = normalize_path(File.join(PK3_BUILD_DIR, "mm_actors", wad_name))
+          log(2, "    Pass 3: checking actor_dir: #{actor_dir} (exists=#{Dir.exists?(actor_dir)})")
           next unless Dir.exists?(actor_dir)
 
-          # Find all DECORATE/ZSCRIPT files in this WAD's actor directory
-          script_files = Dir.glob(File.join(actor_dir, "**", "*")).select { |f|
-            File.file?(f) && (f.downcase.ends_with?(".raw") || f.downcase.ends_with?(".zs") ||
-                              f.downcase.ends_with?(".dec") || f.downcase.ends_with?(".txt"))
-          }
+          # Find all DECORATE/ZSCRIPT files in this WAD's actor directory.
+          # Uses Dir.each_child + recursive scan instead of Dir.glob, which can
+          # fail to match files on Windows with relative/normalized paths.
+          script_files = [] of String
+          dirs_to_scan_p3 = [actor_dir]
+          while !dirs_to_scan_p3.empty?
+            scan_dir = dirs_to_scan_p3.pop
+            Dir.each_child(scan_dir) do |child|
+              child_path = normalize_path(File.join(scan_dir, child))
+              if File.directory?(child_path)
+                dirs_to_scan_p3 << child_path
+              elsif child.downcase.ends_with?(".raw") || child.downcase.ends_with?(".zs") ||
+                    child.downcase.ends_with?(".dec") || child.downcase.ends_with?(".txt")
+                script_files << child_path
+              end
+            end
+          end
+          log(2, "    Pass 3: #{wad_name} — #{script_files.size} script file(s), #{renames.size} rename(s)")
 
           # Sort renames by length descending to avoid partial matches
           sorted_renames = renames.to_a.sort_by { |old_n, _| -old_n.size }
@@ -1009,20 +1023,26 @@ def build_merged_pk3(actordb : Array(Actor), weapon_actor_set : Set(String))
 
             new_text = text
             sorted_renames.each do |old_name, new_name|
-              # In DECORATE, sound names appear in quotes:
+              # In DECORATE/ZSCRIPT, sound names appear in quotes:
               #   SeeSound "Grunt/See"
               #   A_PlaySound("skull/melee", CHAN_WEAPON)
               # Match the exact logical name inside quotes, case-insensitive
               escaped = Regex.escape(old_name)
+              log(3, "      Trying regex on #{File.basename(file_path)}: old=#{old_name} escaped=#{escaped}")
               new_text = new_text.gsub(/(["'])#{escaped}(["',\s)"])/mi) { "#{$1}#{new_name}#{$2}" }
               # Also match at end of quoted string: "Grunt/See"
               new_text = new_text.gsub(/(["'])#{escaped}(["'])/mi) { "#{$1}#{new_name}#{$2}" }
+              log(3, "      Result: changed=#{new_text != text}")
             end
 
             if new_text != text
               File.write(file_path, new_text)
               log(2, "    DECORATE fix: #{File.basename(file_path)} in #{wad_name}")
               decorate_rename_count += 1
+            else
+              log(2, "    DECORATE unchanged: #{File.basename(file_path)} in #{wad_name} (no matches)")
+              # Log first 200 chars to help debug
+              log(3, "      File preview: #{text[0, 200].gsub("\n", "\\n")}")
             end
           end
         end
