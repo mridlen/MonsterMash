@@ -37,6 +37,20 @@ def difficulty_tier(health : Int32) : {Int32, Float64, Float64}
   end
 end
 
+# Return a sortable tier index and display label for a monster's health.
+# Used for grouping monsters by difficulty in OB_MODULES UI headers.
+def difficulty_tier_info(health : Int32) : {Int32, String}
+  case health
+  when     ..60  then {1, "Fodder (0-60 HP)"}
+  when   61..200 then {2, "Low-tier (61-200 HP)"}
+  when  201..500 then {3, "Mid-tier (201-500 HP)"}
+  when  501..1000 then {4, "Heavy (501-1000 HP)"}
+  when 1001..2000 then {5, "Boss-tier (1001-2000 HP)"}
+  when 2001..4000 then {6, "Super-boss (2001-4000 HP)"}
+  else                 {7, "Ultra-boss (4000+ HP)"}
+  end
+end
+
 # Determine boss_type from health tier and name.
 # Returns nil for non-boss monsters (health <= 500).
 # Monsters with "rocket" or "bfg" in their name are always "nasty".
@@ -162,7 +176,7 @@ end
 # Doom weapon slots: 1=melee, 2=pistol, 3=shotgun, 4=chaingun, 5=rocket, 6=plasma, 7=BFG
 # Returns {level, pref, add_prob, damage_estimate}
 def weapon_tier(actor : Actor) : {Float64, Int32, Int32, Float64}
-  slot = actor.weapon.slotnumber
+  slot = infer_weapon_slot(actor)  # helpers.cr
 
   # add_prob values calibrated to vanilla Doom range (20-70) so modded
   # weapons compete fairly in Obsidian's decide_weapon() probability pool.
@@ -311,10 +325,11 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
     # ── MONSTER_MASH.MONSTERS table ────────────────────────────────────
     io << "MONSTER_MASH.MONSTERS =\n{\n"
 
-    actordb.each do |actor|
-      next unless (actor.ismonster || actor.monster) && actor.doomednum != -1
-      next unless should_include_in_lua(actor)
-      next if actor.friendly  # Friendly monsters go in ALLIES table
+    # Sort monsters by difficulty tier, then alphabetically (case-insensitive) within each tier
+    sorted_monsters = actordb.select { |a| (a.ismonster || a.monster) && a.doomednum != -1 && should_include_in_lua(a) && !a.friendly }
+      .sort_by { |a| {difficulty_tier_info(a.health)[0], a.name.downcase} }
+
+    sorted_monsters.each do |actor|
 
       attack = detect_attack_type(actor)
       prob, density, damage = difficulty_tier(actor.health)
@@ -358,10 +373,11 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
     # ── MONSTER_MASH.ALLIES table ─────────────────────────────────────
     io << "MONSTER_MASH.ALLIES =\n{\n"
 
-    actordb.each do |actor|
-      next unless (actor.ismonster || actor.monster) && actor.doomednum != -1
-      next unless should_include_in_lua(actor)
-      next unless actor.friendly  # Only friendly monsters
+    # Sort allies by difficulty tier, then alphabetically (case-insensitive) within each tier
+    sorted_allies = actordb.select { |a| (a.ismonster || a.monster) && a.doomednum != -1 && should_include_in_lua(a) && a.friendly }
+      .sort_by { |a| {difficulty_tier_info(a.health)[0], a.name.downcase} }
+
+    sorted_allies.each do |actor|
 
       attack = detect_attack_type(actor)
       prob, density, damage = difficulty_tier(actor.health)
@@ -394,9 +410,12 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
     # ── MONSTER_MASH.WEAPONS table ──────────────────────────────────────
     io << "MONSTER_MASH.WEAPONS =\n{\n"
 
-    actordb.each do |actor|
-      next unless weapon_actor_set.includes?(actor.name.downcase) && actor.doomednum != -1
-      next unless should_include_weapon_in_lua(actor)
+    # Sort weapons by slot number (using infer_weapon_slot from helpers.cr),
+    # then alphabetically (case-insensitive) within each slot
+    sorted_weapons = actordb.select { |a| weapon_actor_set.includes?(a.name.downcase) && a.doomednum != -1 && should_include_weapon_in_lua(a) }
+      .sort_by { |a| {infer_weapon_slot(a), a.name.downcase} }
+
+    sorted_weapons.each do |actor|
 
       attack = detect_weapon_attack_type(actor)
       level, pref, add_prob, tier_damage = weapon_tier(actor)
@@ -443,10 +462,11 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
     # Contains both ammo and non-ammo pickups so Obsidian can spawn them
     io << "MONSTER_MASH.PICKUPS =\n{\n"
 
-    # Ammo pickups
-    actordb.each do |actor|
-      next unless ammo_actor_set.includes?(actor.name.downcase) && actor.doomednum != -1
-      next unless should_include_pickup_in_lua(actor)
+    # Ammo pickups — sorted alphabetically (case-insensitive)
+    sorted_ammo = actordb.select { |a| ammo_actor_set.includes?(a.name.downcase) && a.doomednum != -1 && should_include_pickup_in_lua(a) }
+      .sort_by { |a| a.name.downcase }
+
+    sorted_ammo.each do |actor|
 
       # Ammo type: use map_ammo_type so the string matches what weapons reference
       ammo_type = map_ammo_type(actor.name)
@@ -471,10 +491,11 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
       lua_ammo_count += 1
     end
 
-    # Non-ammo pickups: health, armor, powerup, other
-    actordb.each do |actor|
-      next unless pickup_actor_set.includes?(actor.name.downcase) && actor.doomednum != -1
-      next unless should_include_pickup_in_lua(actor)
+    # Non-ammo pickups: health, armor, powerup, other — sorted alphabetically (case-insensitive)
+    sorted_pickups = actordb.select { |a| pickup_actor_set.includes?(a.name.downcase) && a.doomednum != -1 && should_include_pickup_in_lua(a) }
+      .sort_by { |a| a.name.downcase }
+
+    sorted_pickups.each do |actor|
 
       kind = actor.pickup_kind
       lua_key = actor.name.gsub(/[^a-zA-Z0-9_]/, "_")
@@ -525,10 +546,19 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
     io << "  hooks =\n  {\n    setup = MONSTER_MASH.control_setup\n  },\n"
     io << "  options =\n  {\n"
 
-    actordb.each do |actor|
-      next unless (actor.ismonster || actor.monster) && actor.doomednum != -1
-      next unless should_include_in_lua(actor)
-      next if actor.friendly
+    # Reuse sorted_monsters from the data table above — grouped by difficulty tier with headers
+    current_tier = -1
+    sorted_monsters.each do |actor|
+      # Emit tier header when entering a new difficulty group
+      tier_index, tier_label = difficulty_tier_info(actor.health)
+      if tier_index != current_tier
+        current_tier = tier_index
+        io << "    {\n"
+        io << "      name = \"header_monstertier#{current_tier}\",\n"
+        io << "      label = _(\"#{tier_label}\"),\n"
+        io << "    },\n"
+      end
+
       lua_key = actor.name.gsub(/[^a-zA-Z0-9_]/, "_")
       lua_key = "_#{lua_key}" if lua_key[0]?.try(&.ascii_number?)
       slider_default = actor.slider_zero ? 0 : 1
@@ -561,10 +591,19 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
     io << "  hooks =\n  {\n    setup = MONSTER_MASH.control_setup\n  },\n"
     io << "  options =\n  {\n"
 
-    actordb.each do |actor|
-      next unless (actor.ismonster || actor.monster) && actor.doomednum != -1
-      next unless should_include_in_lua(actor)
-      next unless actor.friendly
+    # Reuse sorted_allies from the data table above — grouped by difficulty tier with headers
+    current_tier = -1
+    sorted_allies.each do |actor|
+      # Emit tier header when entering a new difficulty group
+      tier_index, tier_label = difficulty_tier_info(actor.health)
+      if tier_index != current_tier
+        current_tier = tier_index
+        io << "    {\n"
+        io << "      name = \"header_allytier#{current_tier}\",\n"
+        io << "      label = _(\"#{tier_label}\"),\n"
+        io << "    },\n"
+      end
+
       lua_key = actor.name.gsub(/[^a-zA-Z0-9_]/, "_")
       lua_key = "_#{lua_key}" if lua_key[0]?.try(&.ascii_number?)
       slider_default = actor.slider_zero ? 0 : 1
@@ -597,9 +636,8 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
     io << "  hooks =\n  {\n    setup = MONSTER_MASH.control_setup\n  },\n"
     io << "  options =\n  {\n"
 
-    actordb.each do |actor|
-      next unless ammo_actor_set.includes?(actor.name.downcase) && actor.doomednum != -1
-      next unless should_include_pickup_in_lua(actor)
+    # Reuse sorted_ammo from the data table above
+    sorted_ammo.each do |actor|
       lua_key = actor.name.gsub(/[^a-zA-Z0-9_]/, "_")
       lua_key = "_#{lua_key}" if lua_key[0]?.try(&.ascii_number?)
       slider_default = actor.slider_zero ? 0 : 10
@@ -633,10 +671,8 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
     io << "  hooks =\n  {\n    setup = MONSTER_MASH.control_setup\n  },\n"
     io << "  options =\n  {\n"
 
-    # Non-ammo pickups only (health, armor, powerup, other)
-    actordb.each do |actor|
-      next unless pickup_actor_set.includes?(actor.name.downcase) && actor.doomednum != -1
-      next unless should_include_pickup_in_lua(actor)
+    # Reuse sorted_pickups from the data table above
+    sorted_pickups.each do |actor|
       lua_key = actor.name.gsub(/[^a-zA-Z0-9_]/, "_")
       lua_key = "_#{lua_key}" if lua_key[0]?.try(&.ascii_number?)
       slider_default = actor.slider_zero ? 0 : 0.3
@@ -669,12 +705,23 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
     io << "  hooks =\n  {\n    setup = MONSTER_MASH.control_setup\n  },\n"
     io << "  options =\n  {\n"
 
-    actordb.each do |actor|
-      next unless weapon_actor_set.includes?(actor.name.downcase) && actor.doomednum != -1
-      next unless should_include_weapon_in_lua(actor)
+    # Reuse sorted_weapons from the data table above — grouped by slot with headers
+    current_slot = -999  # sentinel so first weapon always triggers a header
+    sorted_weapons.each do |actor|
+      # Emit slot header when entering a new slot group
+      weapon_slot = infer_weapon_slot(actor)  # helpers.cr
+      if weapon_slot != current_slot
+        current_slot = weapon_slot
+        io << "    {\n"
+        io << "      name = \"header_slotnumber#{current_slot}\",\n"
+        io << "      label = _(\"Slot Number #{current_slot}\"),\n"
+        io << "    },\n"
+      end
+
       lua_key = actor.name.gsub(/[^a-zA-Z0-9_]/, "_")
       lua_key = "_#{lua_key}" if lua_key[0]?.try(&.ascii_number?)
-      slider_default = actor.slider_zero ? 0 : 1
+      slider_default = 0  # All weapons default to 0 — user selects their own loadout
+      # Note: SliderZero behavior preserved via actor.slider_zero for future revert
       io << "    {\n"
       io << "      name = \"float_#{lua_key}\",\n"
       io << "      label = _(\"#{actor.name_with_case}\"),\n"
