@@ -281,6 +281,7 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
   lua_weapon_count = 0
   lua_ammo_count = 0
   lua_pickup_count = 0
+  lua_nice_item_count = 0
 
   lua = String.build do |io|
     io << "----------------------------------------------------------------\n"
@@ -317,6 +318,14 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
     io << "      local P = GAME.PICKUPS and GAME.PICKUPS[name]\n"
     io << "      if P and P.add_prob then\n"
     io << "        P.add_prob = P.add_prob * factor\n"
+    io << "      end\n"
+    io << "      -- Nice Items\n"
+    io << "      local N = GAME.NICE_ITEMS and GAME.NICE_ITEMS[name]\n"
+    io << "      if N then\n"
+    io << "        if N.add_prob then N.add_prob = N.add_prob * factor end\n"
+    io << "        if N.start_prob then N.start_prob = N.start_prob * factor end\n"
+    io << "        if N.closet_prob then N.closet_prob = N.closet_prob * factor end\n"
+    io << "        if N.secret_prob then N.secret_prob = N.secret_prob * factor end\n"
     io << "      end\n"
     io << "    end\n"
     io << "  end\n"
@@ -491,10 +500,39 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
       lua_ammo_count += 1
     end
 
-    # Non-ammo pickups: health, armor, powerup, other — sorted alphabetically (case-insensitive)
-    sorted_pickups = actordb.select { |a| pickup_actor_set.includes?(a.name.downcase) && a.doomednum != -1 && should_include_pickup_in_lua(a) }
+    # Non-ammo pickups: split into PICKUPS (low-value health/armor) vs NICE_ITEMS (high-value + powerups + other)
+    # PICKUPS: health items with amount < 100, armor items with health-equivalent < 100
+    # NICE_ITEMS: health >= 100, armor >= 100, all powerups, all "other"
+    all_pickups = actordb.select { |a| pickup_actor_set.includes?(a.name.downcase) && a.doomednum != -1 && should_include_pickup_in_lua(a) }
       .sort_by { |a| a.name.downcase }
 
+    # Partition into basic pickups vs nice items
+    sorted_pickups = [] of Actor    # low-value health/armor → PICKUPS table
+    sorted_nice_items = [] of Actor # everything else → NICE_ITEMS table
+
+    all_pickups.each do |actor|
+      kind = actor.pickup_kind
+      case kind
+      when "health"
+        health_amount = actor.inventory.amount > 0 ? actor.inventory.amount : 10
+        if health_amount < 100
+          sorted_pickups << actor
+        else
+          sorted_nice_items << actor
+        end
+      when "armor"
+        health_equiv = armor_health_equivalent(actor)  # lua_gen.cr
+        if health_equiv < 100
+          sorted_pickups << actor
+        else
+          sorted_nice_items << actor
+        end
+      else # "powerup", "other" — always nice items
+        sorted_nice_items << actor
+      end
+    end
+
+    # Emit basic pickups (low-value health and armor only)
     sorted_pickups.each do |actor|
 
       kind = actor.pickup_kind
@@ -514,23 +552,65 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
         io << "    add_prob = 10,\n"
         io << "    give = { {health=#{health_amount}} }\n"
       when "armor"
-        health_equiv = armor_health_equivalent(actor)
+        health_equiv = armor_health_equivalent(actor)  # lua_gen.cr
         io << "    add_prob = 7,\n"
         io << "    give = { {health=#{health_equiv}} }\n"
+      end
+
+      io << "  },\n"
+      lua_pickup_count += 1
+    end
+
+    io << "}\n\n"
+
+    # ── MONSTER_MASH.NICE_ITEMS table ──────────────────────────────────
+    # High-value pickups: health >= 100 (Soulsphere-class), armor >= 100 (green armor+),
+    # all powerups, and all "other" category items
+    io << "MONSTER_MASH.NICE_ITEMS =\n{\n"
+
+    sorted_nice_items.each do |actor|
+
+      kind = actor.pickup_kind
+      lua_key = actor.name.gsub(/[^a-zA-Z0-9_]/, "_")
+      lua_key = "_#{lua_key}" if lua_key[0]?.try(&.ascii_number?)
+
+      source_comment = actor.source_wad_folder != "UNDEFINED" ? "  -- source: #{actor.source_wad_folder}" : ""
+      io << "  #{lua_key} =#{source_comment}\n"
+      io << "  {\n"
+      io << "    id = #{actor.doomednum},\n"
+      io << "    kind = \"#{kind}\",\n"
+
+      case kind
+      when "health"
+        health_amount = actor.inventory.amount > 0 ? actor.inventory.amount : 10
+        io << "    add_prob = 5,\n"
+        io << "    closet_prob = 5,\n"
+        io << "    secret_prob = 30,\n"
+        io << "    give = { {health=#{health_amount}} },\n"
+      when "armor"
+        health_equiv = armor_health_equivalent(actor)  # lua_gen.cr
+        io << "    add_prob = 5,\n"
+        io << "    closet_prob = 10,\n"
+        io << "    secret_prob = 20,\n"
+        io << "    give = { {health=#{health_equiv}} },\n"
       when "powerup"
         io << "    add_prob = 2,\n"
+        io << "    closet_prob = 5,\n"
+        io << "    secret_prob = 20,\n"
         duration = parse_powerup_duration(actor.powerup.duration)
         if duration
           io << "    time_limit = #{duration},\n"
         end
       else # "other"
-        io << "    add_prob = 5,\n"
         other_amount = actor.inventory.amount > 0 ? actor.inventory.amount : 5
-        io << "    give = { {health=#{other_amount}} }\n"
+        io << "    add_prob = 5,\n"
+        io << "    closet_prob = 10,\n"
+        io << "    secret_prob = 10,\n"
+        io << "    give = { {health=#{other_amount}} },\n"
       end
 
       io << "  },\n"
-      lua_pickup_count += 1
+      lua_nice_item_count += 1
     end
 
     io << "}\n\n"
@@ -694,6 +774,40 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
 
     io << "  },\n}\n\n"
 
+    # ── OB_MODULES registration: Nice Items ─────────────────────────
+    io << "OB_MODULES[\"monster_mash_nice_items\"] =\n{\n"
+    io << "  name = \"monster_mash_nice_items_control\",\n"
+    io << "  label = _(\"Monster Mash Nice Items\"),\n"
+    io << "  game = \"doomish\",\n"
+    io << "  port = \"zdoom\",\n"
+    io << "  where = \"pickup\",\n"
+    io << "  tables =\n  {\n    MONSTER_MASH\n  },\n"
+    io << "  hooks =\n  {\n    setup = MONSTER_MASH.control_setup\n  },\n"
+    io << "  options =\n  {\n"
+
+    # Reuse sorted_nice_items from the data table above
+    sorted_nice_items.each do |actor|
+      lua_key = actor.name.gsub(/[^a-zA-Z0-9_]/, "_")
+      lua_key = "_#{lua_key}" if lua_key[0]?.try(&.ascii_number?)
+      slider_default = actor.slider_zero ? 0 : 0.3
+      io << "    {\n"
+      io << "      name = \"float_#{lua_key}\",\n"
+      io << "      label = _(\"#{actor.name_with_case}\"),\n"
+      io << "      valuator = \"slider\",\n"
+      io << "      min = 0,\n"
+      io << "      max = 20,\n"
+      io << "      increment = 0.02,\n"
+      io << "      default = #{slider_default},\n"
+      if actor.slider_zero
+        io << "      tooltip = _(\"slider disabled in configuration\"),\n"
+      end
+      io << "      presets = _(\"0:0 (None),0.02:0.02 (Scarce),0.14:0.14 (Less),0.5:0.5 (Plenty),1.2:1.2 (More),3:3 (Heaps),20:20 (INSANE)\"),\n"
+      io << "      randomize_group = \"pickups\",\n"
+      io << "    },\n"
+    end
+
+    io << "  },\n}\n\n"
+
     # ── OB_MODULES registration: Weapons ─────────────────────────────
     io << "OB_MODULES[\"monster_mash_weapons\"] =\n{\n"
     io << "  name = \"monster_mash_weapons_control\",\n"
@@ -750,6 +864,7 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
   log(2, "Lua weapons included: #{lua_weapon_count}")
   log(2, "Lua ammo included: #{lua_ammo_count}")
   log(2, "Lua pickups included: #{lua_pickup_count}")
+  log(2, "Lua nice items included: #{lua_nice_item_count}")
 
   puts lua if Config.log_level >= 3
 end

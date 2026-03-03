@@ -52,7 +52,8 @@ MonsterMash is designed to work as a plugin for **Obsidian** (level generator) a
    Addons → [x] MonsterMash
    ```
 
-2. **Making Changes**: If you modify WAD files or settings:
+2. **Making Changes**: If you modify WAD files:
+   - Re-run the unwad.exe and wait for it to complete
    - Disable the addon in Obsidian
    - Restart Obsidian
    - Re-enable the addon
