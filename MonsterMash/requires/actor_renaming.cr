@@ -131,7 +131,8 @@ def refresh_actordb(actordb : Array(Actor))
   actordb.reject! do |actor|
     next false if actor.native == true
 
-    regex = /^\s*actor\s+#{Regex.escape(actor.name)}/mi
+    # Match both DECORATE ("actor Name") and ZScript ("class Name")
+    regex = /^\s*(?:actor|class)\s+#{Regex.escape(actor.name)}/mi
     all_files = [actor.file_path]
 
     # Check includes

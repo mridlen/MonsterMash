@@ -706,9 +706,12 @@ def parse_all_actors(full_dir_list : Array(String), no_touchy : Hash(String, Boo
     actors.reject!(&.strip.empty?)
 
     actors.each_with_index do |actor_text, actor_index|
-      # Extract states before processing
-      states_text = extract_states_text(actor_text)
-      states = parse_states(states_text)
+      # Extract actor name early for debug logging
+      early_name = actor_text.lines.first?.try(&.strip.split[1]?) || "unknown_#{actor_index}"
+
+      # Extract states before processing  # helpers.cr
+      states_text = extract_states_text(actor_text, early_name)
+      states = parse_states(states_text, early_name)
       actor_no_states = remove_states_block(actor_text)
 
       # Get case-sensitive version

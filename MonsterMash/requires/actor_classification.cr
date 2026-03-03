@@ -521,6 +521,19 @@ def detect_zscript_classes(actordb : Array(Actor), actors_by_name : Hash(String,
         new_actor.inherits = info[:parent_lc]
         new_actor.built_in = false
 
+        # Extract states from ZScript source so DPS estimation works  # helpers.cr
+        zs_content = safe_read(info[:file_path])
+        # Find this class's body in the file
+        if class_md = zs_content.match(/class\s+#{Regex.escape(info[:name_with_case])}\s*[^{]*\{/mi)
+          class_start = class_md.end(0).not_nil! - 1  # position of the opening brace
+          class_body = extract_balanced_braces(zs_content, class_start)
+          if class_body
+            states_text = extract_states_text(class_body, info[:name_with_case])
+            new_actor.states = parse_states(states_text, info[:name_with_case])
+            log(3, "  ZScript states extracted: #{info[:name_with_case]} (#{new_actor.states.keys.join(", ")})")
+          end
+        end
+
         if is_monster
           new_actor.ismonster = true
           new_actor.monster = info[:has_monster_flag]

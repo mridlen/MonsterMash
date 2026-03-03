@@ -172,7 +172,7 @@ def remove_states_block(actor_text : String) : String
 end
 
 # Extract the states block text (content between braces after "states")
-def extract_states_text(actor_text : String) : String?
+def extract_states_text(actor_text : String, actor_name : String = "") : String?
   if md = actor_text.match(/states\s*\{/mi)
     states_start = md.begin(0).not_nil!
     brace_start = actor_text.index('{', states_start)
@@ -181,20 +181,34 @@ def extract_states_text(actor_text : String) : String?
       if matched && matched.size > 2
         # Strip outer braces
         return matched[1..-2].strip
+      else
+        log(3, "  extract_states_text: brace match failed for #{actor_name} (matched=#{matched.nil? ? "nil" : matched.size.to_s} chars)")
       end
+    else
+      log(3, "  extract_states_text: no opening brace found after 'states' for #{actor_name}")
     end
+  else
+    log(3, "  extract_states_text: no 'states' keyword found for #{actor_name}")
+    preview = actor_text[0, Math.min(300, actor_text.size)].gsub("\n", "\\n")
+    log(3, "    actor_text preview: #{preview}")
   end
   nil
 end
 
 # Parse states text into a hash of state_label => state_content
-def parse_states(states_text : String?) : Hash(String, String)
+def parse_states(states_text : String?, actor_name : String = "") : Hash(String, String)
   states = Hash(String, String).new
   return states if states_text.nil?
 
   parts = states_text.not_nil!.split(/^(\S+)\:/m)
   # First element is anything before the first label — discard
   parts.shift if parts.size > 0
+
+  # Debug: log when no labels found in non-empty states text
+  if parts.size < 2 && !states_text.not_nil!.strip.empty?
+    preview = states_text.not_nil![0, Math.min(300, states_text.not_nil!.size)].gsub("\n", "\\n")
+    log(3, "  parse_states: no labels found for #{actor_name} — preview: #{preview}")
+  end
 
   (0...parts.size).step(2) do |i|
     break if i + 1 >= parts.size
@@ -251,15 +265,17 @@ end
 def infer_weapon_slot(actor : Actor) : Int32
   slot = actor.weapon.slotnumber
   return slot unless slot == -1
+  # Strip quotes from ammotype — DECORATE values may include embedded quotes
+  ammo = actor.weapon.ammotype.downcase.gsub("\"", "")
   if actor.weapon.meleeweapon || actor.weapon.noalert
     1
   elsif actor.weapon.bfg
     7
-  elsif actor.weapon.ammotype.downcase == "shell"
+  elsif ammo == "shell"
     3
-  elsif actor.weapon.ammotype.downcase == "cell"
+  elsif ammo == "cell"
     6
-  elsif actor.weapon.ammotype.downcase == "rocketammo"
+  elsif ammo == "rocketammo"
     5
   elsif actor.weapon.ammouse > 5
     6
@@ -268,6 +284,50 @@ def infer_weapon_slot(actor : Actor) : Int32
   else
     5
   end
+end
+
+# Estimate weapon damage per second from Fire state parsing.
+# Uses calculate_weapon_damage() and calculate_fire_rate() from weapon_damage_calc.cr,
+# with fallback to weapon_tier() estimates from lua_gen.cr.
+def estimate_weapon_dps(actor : Actor, actordb : Array(Actor)) : Float64
+  calc_damage = calculate_weapon_damage(actor, actordb)  # weapon_damage_calc.cr
+  damage = calc_damage > 0 ? calc_damage : weapon_tier(actor)[3]  # lua_gen.cr fallback
+
+  fire_text = actor.states["fire"]? || ""
+  calc_rate = calculate_fire_rate(fire_text)  # weapon_damage_calc.cr
+  rate = calc_rate > 0 ? calc_rate : 0.9
+
+  # Debug: log when falling back to defaults
+  if calc_damage <= 0 || calc_rate <= 0
+    state_keys = actor.states.keys.join(", ")
+    fire_preview = fire_text.empty? ? "(empty)" : fire_text.lines.first(3).join(" | ")
+    log(3, "  DPS fallback: #{actor.name_with_case} — dmg=#{calc_damage.round(1)} rate=#{calc_rate.round(2)} states=[#{state_keys}] fire=#{fire_preview}")
+  end
+
+  damage * rate
+end
+
+# Convert a DPS value to Weapon.SlotPriority (float, higher = better within slot).
+# Uses logarithmic scaling to spread values evenly across the 0.0–1.0 range.
+# Without log scaling, a single high-DPS weapon (e.g. BFG) causes all others
+# to cluster near 0.
+def dps_to_slot_priority(dps : Float64, min_dps : Float64, max_dps : Float64) : Float64
+  return 0.0 if max_dps <= 0 || dps <= 0
+  # Clamp min to at least 1.0 for log safety
+  log_min = Math.log(Math.max(min_dps, 1.0))
+  log_max = Math.log(Math.max(max_dps, 1.0))
+  log_dps = Math.log(Math.max(dps, 1.0))
+  return 0.5 if log_max == log_min  # All weapons have same DPS
+  ((log_dps - log_min) / (log_max - log_min)).clamp(0.0, 1.0)
+end
+
+# Convert a DPS value to Weapon.SelectionOrder (int, lower = better globally).
+# Uses logarithmic scaling to spread values evenly across the 100–3700 range.
+# Maps inversely: highest DPS → 100, lowest DPS → 3700.
+def dps_to_selection_order(dps : Float64, min_dps : Float64, max_dps : Float64) : Int32
+  return 3700 if max_dps <= 0 || dps <= 0
+  priority = dps_to_slot_priority(dps, min_dps, max_dps)
+  (3700 - (priority * 3600)).round.to_i
 end
 
 # Iterate over actor definition lines in a DECORATE file, skipping block

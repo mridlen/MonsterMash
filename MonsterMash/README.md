@@ -65,7 +65,11 @@ MonsterMash is designed to work as a plugin for **Obsidian** (level generator) a
    I have included two mods that are useful for using this mod:
    - target-spy - this is useful to get names of monsters for troubleshooting purposes
    - big_backpack - because some monsters will require you to use a lot of ammo
-   They should both be considered optional, although target-spy is needed if you want to file a bug report.
+
+   They should both be considered optional, although target-spy is needed if you want to file a bug report. If you want to get the weapon names, I recommend using the following
+   UZDoom setting:
+
+   HUD Options -> Display Nametags -> Weapons
 
 ## Standalone Usage
 

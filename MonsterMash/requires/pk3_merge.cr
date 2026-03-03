@@ -150,40 +150,57 @@ def inject_weapon_slot_numbers(actordb : Array(Actor), weapon_actor_set : Set(St
                    file_path.downcase.ends_with?(".zs")
 
       if is_zscript
-        # ZSCRIPT: Insert inside Default { } block
-        # Match: "Default" followed by "{" (possibly on same or next line)
-        # Find the actor's class definition first
+        # ZSCRIPT: Insert inside Default { } block of the correct class
         class_pattern = /class\s+#{Regex.escape(actor_name_lower)}\b/im
         unless content =~ class_pattern
           log(3, "  ZSCRIPT class pattern not found for #{actor_name_lower} in #{File.basename(file_path)}")
           next
         end
 
-        # Find the Default block within this class
-        # Insert before the closing brace of Default, or after the opening brace
+        # Scope search: find the target class, then its Default {} block
         lines = content.lines
+        in_target_class = false
+        class_brace_depth = 0
         in_default = false
         default_open_brace_line = -1
-        brace_depth = 0
+        default_brace_depth = 0
 
         lines.each_with_index do |line, i|
           stripped = line.strip.downcase
+
+          # Find the target class definition
+          if !in_target_class && stripped =~ /^class\s+#{Regex.escape(actor_name_lower)}\b/i
+            in_target_class = true
+            class_brace_depth = line.count('{') - line.count('}')
+            next
+          end
+          next unless in_target_class
+
+          # Track class brace depth
+          class_brace_depth += line.count('{') - line.count('}')
+
+          # Check if we've left the target class
+          if class_brace_depth <= 0
+            break
+          end
+
+          # Look for Default {} within this class
           if !in_default && stripped =~ /^default\b/
             in_default = true
             if stripped.includes?("{")
               default_open_brace_line = i
-              brace_depth = 1
+              default_brace_depth = 1
             end
             next
           end
           if in_default && default_open_brace_line == -1 && line.includes?("{")
             default_open_brace_line = i
-            brace_depth = 1
+            default_brace_depth = 1
             next
           end
           if in_default && default_open_brace_line >= 0
-            brace_depth += line.count('{') - line.count('}')
-            if brace_depth <= 0
+            default_brace_depth += line.count('{') - line.count('}')
+            if default_brace_depth <= 0
               # Found closing brace of Default — insert before it
               indent = "        "  # Match typical ZSCRIPT indentation
               lines.insert(i, "#{indent}Weapon.SlotNumber #{slot};")
@@ -241,6 +258,260 @@ def inject_weapon_slot_numbers(actordb : Array(Actor), weapon_actor_set : Set(St
   end
 
   log(2, "Weapon.SlotNumber injection complete: #{inject_count} injected, #{skip_count} already present")
+end
+
+# Inject Weapon.SlotPriority and Weapon.SelectionOrder into DECORATE/ZSCRIPT
+# actor definitions based on estimated DPS. Overwrites existing values.
+def inject_weapon_priorities(actordb : Array(Actor), weapon_actor_set : Set(String), pk3_build_dir : String)
+  log(2, "=== Injecting Weapon.SlotPriority and Weapon.SelectionOrder ===")
+
+  # ── Pass 1: Compute DPS for all weapons to find max for normalization ──
+  weapon_dps = Hash(String, Float64).new
+  actordb.each do |actor|
+    next if actor.built_in
+    next unless weapon_actor_set.includes?(actor.name.downcase)
+    next if actor.source_wad_folder == "UNDEFINED"
+    dps = estimate_weapon_dps(actor, actordb)  # helpers.cr
+    weapon_dps[actor.name.downcase] = dps
+    log(3, "  DPS estimate: #{actor.name_with_case} = #{dps.round(1)}")
+  end
+
+  max_dps = weapon_dps.values.max? || 1.0
+  max_dps = 1.0 if max_dps <= 0
+  positive_dps_values = weapon_dps.values.select { |v| v > 0 }
+  min_dps = positive_dps_values.min? || 1.0
+  min_dps = 1.0 if min_dps <= 0
+  log(2, "  Min weapon DPS: #{min_dps.round(1)}, Max weapon DPS: #{max_dps.round(1)}")
+
+  # ── Weapon DPS Report ─────────────────────────────────────────────────
+  log(2, "")
+  log(2, "  ╔══════════════════════════════════════════════════════════════════════════════════════════════════╗")
+  log(2, "  ║  WEAPON DPS REPORT                                                                             ║")
+  log(2, "  ╠══════════════════════════════════════╦══════════╦══════════╦══════════╦════════════╦═════════════╣")
+  log(2, "  ║ Weapon Name                          ║  Damage  ║   Rate   ║   DPS    ║ SlotPri    ║ SelectOrder ║")
+  log(2, "  ╠══════════════════════════════════════╬══════════╬══════════╬══════════╬════════════╬═════════════╣")
+
+  # Build report data sorted by DPS descending
+  report_data = Array(Tuple(String, Float64, Float64, Float64, Float64, Int32)).new
+  actordb.each do |actor|
+    next if actor.built_in
+    next unless weapon_actor_set.includes?(actor.name.downcase)
+    next if actor.source_wad_folder == "UNDEFINED"
+
+    dps = weapon_dps[actor.name.downcase]? || 0.0
+
+    # Recalculate damage and rate for the report
+    calc_damage = calculate_weapon_damage(actor, actordb)  # weapon_damage_calc.cr
+    damage = calc_damage > 0 ? calc_damage : weapon_tier(actor)[3]  # lua_gen.cr fallback
+    fire_text = actor.states["fire"]? || ""
+    calc_rate = calculate_fire_rate(fire_text)  # weapon_damage_calc.cr
+    rate = calc_rate > 0 ? calc_rate : 0.9
+
+    slot_priority = dps_to_slot_priority(dps, min_dps, max_dps)
+    selection_order = dps_to_selection_order(dps, min_dps, max_dps)
+
+    report_data << {actor.name_with_case, damage, rate, dps, slot_priority, selection_order}
+  end
+
+  report_data.sort_by! { |t| -t[3] }  # Sort by DPS descending
+  report_data.each do |name, damage, rate, dps, slot_pri, sel_order|
+    padded_name = name.ljust(36)[0..35]
+    log(2, "  ║ #{padded_name} ║ #{damage.round(1).to_s.rjust(8)} ║ #{rate.round(2).to_s.rjust(8)} ║ #{dps.round(1).to_s.rjust(8)} ║ #{slot_pri.round(4).to_s.rjust(10)} ║ #{sel_order.to_s.rjust(11)} ║")
+  end
+
+  log(2, "  ╚══════════════════════════════════════╩══════════╩══════════╩══════════╩════════════╩═════════════╝")
+  log(2, "  Total weapons: #{report_data.size}, Max DPS: #{max_dps.round(1)}")
+  log(2, "")
+
+  inject_count = 0
+
+  # ── Pass 2: Inject into DECORATE/ZSCRIPT files ────────────────────────
+  actordb.each do |actor|
+    next if actor.built_in
+    next unless weapon_actor_set.includes?(actor.name.downcase)
+    next if actor.source_wad_folder == "UNDEFINED"
+
+    dps = weapon_dps[actor.name.downcase]? || 0.0
+    slot_priority = dps_to_slot_priority(dps, min_dps, max_dps)    # helpers.cr
+    selection_order = dps_to_selection_order(dps, min_dps, max_dps) # helpers.cr
+
+    actor_dir = normalize_path(File.join(pk3_build_dir, "mm_actors", actor.source_wad_folder))
+    next unless Dir.exists?(actor_dir)
+
+    glob_pattern = normalize_path(File.join(actor_dir, "**", "*"))
+    script_files = Dir.glob(glob_pattern).select { |f|
+      File.file?(f) && (f.downcase.ends_with?(".raw") || f.downcase.ends_with?(".zs") ||
+                          f.downcase.ends_with?(".dec") || f.downcase.ends_with?(".txt"))
+    }
+
+    actor_name_lower = actor.name.downcase
+    injected = false
+
+    script_files.each do |file_path|
+      next if injected
+      content = File.read(file_path)
+
+      is_zscript = actor.script_type == "zscript" || actor.script_type == "both" ||
+                   file_path.downcase.ends_with?(".zs")
+
+      if is_zscript
+        # ── ZSCRIPT: find actor class, then Default {} block ──────────
+        class_pattern = /class\s+#{Regex.escape(actor_name_lower)}\b/im
+        unless content =~ class_pattern
+          next
+        end
+
+        lines = content.lines
+
+        # First pass: find the target class boundaries, then remove existing
+        # SlotPriority/SelectionOrder only within that class
+        remove_indices = Set(Int32).new
+        in_target_class = false
+        scan_class_brace_depth = 0
+        lines.each_with_index do |line, i|
+          stripped = line.strip.downcase
+          if !in_target_class && stripped =~ /^class\s+#{Regex.escape(actor_name_lower)}\b/i
+            in_target_class = true
+            scan_class_brace_depth = line.count('{') - line.count('}')
+            next
+          end
+          if in_target_class
+            scan_class_brace_depth += line.count('{') - line.count('}')
+            if !stripped.starts_with?("//") &&
+               (stripped.starts_with?("weapon.slotpriority") || stripped.starts_with?("weapon.selectionorder"))
+              remove_indices << i
+            end
+            if scan_class_brace_depth <= 0
+              in_target_class = false
+            end
+          end
+        end
+        unless remove_indices.empty?
+          lines = lines.each_with_index.reject { |pair| remove_indices.includes?(pair[1]) }.map { |pair| pair[0] }.to_a
+        end
+
+        # Second pass: find Default {} block within the target class and inject
+        in_target_class = false
+        class_brace_depth = 0
+        in_default = false
+        default_open_brace_line = -1
+        default_brace_depth = 0
+
+        lines.each_with_index do |line, i|
+          stripped = line.strip.downcase
+
+          # Find the target class definition
+          if !in_target_class && stripped =~ /^class\s+#{Regex.escape(actor_name_lower)}\b/i
+            in_target_class = true
+            class_brace_depth = line.count('{') - line.count('}')
+            next
+          end
+          next unless in_target_class
+
+          # Track class brace depth
+          class_brace_depth += line.count('{') - line.count('}')
+
+          # Check if we've left the target class
+          if class_brace_depth <= 0
+            break
+          end
+
+          # Look for Default {} within this class
+          if !in_default && stripped =~ /^default\b/
+            in_default = true
+            if stripped.includes?("{")
+              default_open_brace_line = i
+              default_brace_depth = 1
+            end
+            next
+          end
+          if in_default && default_open_brace_line == -1 && line.includes?("{")
+            default_open_brace_line = i
+            default_brace_depth = 1
+            next
+          end
+          if in_default && default_open_brace_line >= 0
+            default_brace_depth += line.count('{') - line.count('}')
+            if default_brace_depth <= 0
+              indent = "        "
+              lines.insert(i, "#{indent}Weapon.SelectionOrder #{selection_order};")
+              lines.insert(i, "#{indent}Weapon.SlotPriority #{slot_priority.round(4)};")
+              content = lines.join("\n")
+              File.write(file_path, content)
+              inject_count += 1
+              injected = true
+              log(2, "  ZSCRIPT priority: #{actor.name_with_case} (DPS=#{dps.round(1)}, pri=#{slot_priority.round(4)}, order=#{selection_order})")
+              break
+            end
+          end
+        end
+      else
+        # ── DECORATE: find actor definition, inject before States ──────
+        actor_pattern = /^\s*actor\s+#{Regex.escape(actor_name_lower)}\b/im
+        unless content =~ actor_pattern
+          next
+        end
+
+        lines = content.lines
+
+        # Remove existing SlotPriority / SelectionOrder lines within this actor
+        remove_indices = Set(Int32).new
+        in_actor = false
+        actor_brace_depth = 0
+        lines.each_with_index do |line, i|
+          stripped = line.strip.downcase
+          if !in_actor && stripped =~ /^\s*actor\s+#{Regex.escape(actor_name_lower)}\b/i
+            in_actor = true
+            actor_brace_depth += line.count('{') - line.count('}')
+            next
+          end
+          if in_actor
+            actor_brace_depth += line.count('{') - line.count('}')
+            in_actor = false if actor_brace_depth <= 0
+            if !stripped.starts_with?("//") &&
+               (stripped.starts_with?("weapon.slotpriority") || stripped.starts_with?("weapon.selectionorder"))
+              remove_indices << i
+            end
+          end
+        end
+        unless remove_indices.empty?
+          lines = lines.each_with_index.reject { |pair| remove_indices.includes?(pair[1]) }.map { |pair| pair[0] }.to_a
+        end
+
+        # Find actor again and insert before States block
+        in_actor = false
+        actor_brace_depth = 0
+        lines.each_with_index do |line, i|
+          stripped = line.strip.downcase
+          if !in_actor && stripped =~ /^\s*actor\s+#{Regex.escape(actor_name_lower)}\b/i
+            in_actor = true
+            actor_brace_depth += line.count('{') - line.count('}')
+            next
+          end
+          next unless in_actor
+          actor_brace_depth += line.count('{') - line.count('}')
+
+          if stripped =~ /^states\b/
+            indent = "  "
+            lines.insert(i, "#{indent}Weapon.SelectionOrder #{selection_order}")
+            lines.insert(i, "#{indent}Weapon.SlotPriority #{slot_priority.round(4)}")
+            content = lines.join("\n")
+            File.write(file_path, content)
+            inject_count += 1
+            injected = true
+            log(2, "  DECORATE priority: #{actor.name_with_case} (DPS=#{dps.round(1)}, pri=#{slot_priority.round(4)}, order=#{selection_order})")
+            break
+          end
+        end
+      end
+    end
+
+    unless injected
+      log(1, "  Could not inject priorities for: #{actor.name_with_case}")
+    end
+  end
+
+  log(2, "Weapon priority injection complete: #{inject_count} weapons updated")
 end
 
 def build_merged_pk3(actordb : Array(Actor), weapon_actor_set : Set(String))
@@ -553,6 +824,12 @@ def build_merged_pk3(actordb : Array(Actor), weapon_actor_set : Set(String))
   ###############################################################################
 
   inject_weapon_slot_numbers(actordb, weapon_actor_set, PK3_BUILD_DIR)
+
+  ###############################################################################
+  # INJECT WEAPON PRIORITIES (SlotPriority + SelectionOrder) BASED ON DPS
+  ###############################################################################
+
+  inject_weapon_priorities(actordb, weapon_actor_set, PK3_BUILD_DIR)
 
   ###############################################################################
   # WRITE CONCATENATED TEXT LUMPS
