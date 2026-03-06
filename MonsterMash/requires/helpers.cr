@@ -287,19 +287,22 @@ def infer_weapon_slot(actor : Actor) : Int32
 end
 
 # Estimate weapon damage per second from Fire state parsing.
-# Uses calculate_weapon_damage() and calculate_fire_rate() from weapon_damage_calc.cr,
-# with fallback to weapon_tier() estimates from lua_gen.cr.
+# Uses calculate_weapon_damage() and calculate_fire_rate_with_fallthrough()
+# from weapon_damage_calc.cr, with fallback to weapon_tier() estimates from lua_gen.cr.
+# Includes fall-through state ticks when Fire has no flow control.
 def estimate_weapon_dps(actor : Actor, actordb : Array(Actor)) : Float64
   calc_damage = calculate_weapon_damage(actor, actordb)  # weapon_damage_calc.cr
   damage = calc_damage > 0 ? calc_damage : weapon_tier(actor)[3]  # lua_gen.cr fallback
 
-  fire_text = actor.states["fire"]? || ""
-  calc_rate = calculate_fire_rate(fire_text)  # weapon_damage_calc.cr
+  # Calculate fire rate including fall-through states (Fire → next label → ...)
+  calc_rate = calculate_fire_rate_with_fallthrough(actor)  # weapon_damage_calc.cr
+
   rate = calc_rate > 0 ? calc_rate : 0.9
 
   # Debug: log when falling back to defaults
   if calc_damage <= 0 || calc_rate <= 0
     state_keys = actor.states.keys.join(", ")
+    fire_text = actor.states["fire"]? || ""
     fire_preview = fire_text.empty? ? "(empty)" : fire_text.lines.first(3).join(" | ")
     log(3, "  DPS fallback: #{actor.name_with_case} — dmg=#{calc_damage.round(1)} rate=#{calc_rate.round(2)} states=[#{state_keys}] fire=#{fire_preview}")
   end

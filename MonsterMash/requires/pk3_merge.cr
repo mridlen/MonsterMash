@@ -284,14 +284,7 @@ def inject_weapon_priorities(actordb : Array(Actor), weapon_actor_set : Set(Stri
   log(2, "  Min weapon DPS: #{min_dps.round(1)}, Max weapon DPS: #{max_dps.round(1)}")
 
   # ── Weapon DPS Report ─────────────────────────────────────────────────
-  log(2, "")
-  log(2, "  ╔══════════════════════════════════════════════════════════════════════════════════════════════════╗")
-  log(2, "  ║  WEAPON DPS REPORT                                                                             ║")
-  log(2, "  ╠══════════════════════════════════════╦══════════╦══════════╦══════════╦════════════╦═════════════╣")
-  log(2, "  ║ Weapon Name                          ║  Damage  ║   Rate   ║   DPS    ║ SlotPri    ║ SelectOrder ║")
-  log(2, "  ╠══════════════════════════════════════╬══════════╬══════════╬══════════╬════════════╬═════════════╣")
-
-  # Build report data sorted by DPS descending
+  # Build report data first (calculate_weapon_damage logs at level 3 during collection)
   report_data = Array(Tuple(String, Float64, Float64, Float64, Float64, Int32)).new
   actordb.each do |actor|
     next if actor.built_in
@@ -303,8 +296,8 @@ def inject_weapon_priorities(actordb : Array(Actor), weapon_actor_set : Set(Stri
     # Recalculate damage and rate for the report
     calc_damage = calculate_weapon_damage(actor, actordb)  # weapon_damage_calc.cr
     damage = calc_damage > 0 ? calc_damage : weapon_tier(actor)[3]  # lua_gen.cr fallback
-    fire_text = actor.states["fire"]? || ""
-    calc_rate = calculate_fire_rate(fire_text)  # weapon_damage_calc.cr
+    # Calculate rate including fall-through states — fallback to 0.9
+    calc_rate = calculate_fire_rate_with_fallthrough(actor)  # weapon_damage_calc.cr
     rate = calc_rate > 0 ? calc_rate : 0.9
 
     slot_priority = dps_to_slot_priority(dps, min_dps, max_dps)
@@ -314,6 +307,15 @@ def inject_weapon_priorities(actordb : Array(Actor), weapon_actor_set : Set(Stri
   end
 
   report_data.sort_by! { |t| -t[3] }  # Sort by DPS descending
+
+  # Print table header after data collection so debug logs don't split the table
+  log(2, "")
+  log(2, "  ╔══════════════════════════════════════════════════════════════════════════════════════════════════╗")
+  log(2, "  ║  WEAPON DPS REPORT                                                                             ║")
+  log(2, "  ╠══════════════════════════════════════╦══════════╦══════════╦══════════╦════════════╦═════════════╣")
+  log(2, "  ║ Weapon Name                          ║  Damage  ║   Rate   ║   DPS    ║ SlotPri    ║ SelectOrder ║")
+  log(2, "  ╠══════════════════════════════════════╬══════════╬══════════╬══════════╬════════════╬═════════════╣")
+
   report_data.each do |name, damage, rate, dps, slot_pri, sel_order|
     padded_name = name.ljust(36)[0..35]
     log(2, "  ║ #{padded_name} ║ #{damage.round(1).to_s.rjust(8)} ║ #{rate.round(2).to_s.rjust(8)} ║ #{dps.round(1).to_s.rjust(8)} ║ #{slot_pri.round(4).to_s.rjust(10)} ║ #{sel_order.to_s.rjust(11)} ║")

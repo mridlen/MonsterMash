@@ -107,15 +107,99 @@ def parse_damage_expression(expr : String) : Float64
   0.0
 end
 
+# ── Jump Target Extraction ───────────────────────────────────────────────────
+
+# Jump functions where the last argument is the target state name.
+# All comparisons are case-insensitive. The target arg index is 0-based.
+JUMP_FUNCTIONS = {
+  "a_jumpifinventory"   => 2,  # A_JumpIfInventory("item", count, "TargetState")
+  "a_jumpifhealthlower" => 1,  # A_JumpIfHealthLower(health, "TargetState")
+  "a_jump"              => 1,  # A_Jump(chance, "TargetState")
+}
+
+# Extract the jump target state name from a line containing a jump function.
+# Returns the target state name (lowercase) or nil if no jump is detected.
+# Only returns targets that reference a state within the same actor (no "Super::" etc).
+def extract_jump_target(line : String) : String?
+  lc = line.downcase
+
+  # Check each known jump function (case-insensitive via lowercase comparison)
+  # Use word boundary check to prevent "a_jump" matching "a_jumpifinventory"
+  JUMP_FUNCTIONS.each do |func_lc, target_arg_idx|
+    idx = lc.index(func_lc)
+    next unless idx
+    # Verify it's a standalone match (not part of a longer function name)
+    after_idx = idx + func_lc.size
+    next if after_idx < lc.size && lc[after_idx].ascii_alphanumeric?
+
+    args_str = extract_action_args(line, func_lc)
+    next unless args_str
+
+    args = split_action_args(args_str)
+    next unless args.size > target_arg_idx
+
+    target = args[target_arg_idx].strip.strip('"').strip('\'')
+    next if target.empty?
+
+    # Skip numeric offset targets (e.g. A_JumpIfInventory("Item",1,1) — skips N frames)
+    next if target =~ /^\d+$/
+
+    # Skip cross-actor references like "Super::Fire"
+    next if target.includes?("::")
+
+    return target.downcase
+  end
+
+  nil
+end
+
+# Extract the A_GunFlash target state from a line.
+# A_GunFlash runs the target on the overlay layer (doesn't transfer execution).
+# Returns the target state name (lowercase): first arg if provided, "flash" by default.
+# Returns nil if no A_GunFlash is found on the line.
+def extract_gunflash_target(line : String) : String?
+  lc = line.downcase
+  return nil unless lc.includes?("a_gunflash")
+
+  args_str = extract_action_args(line, "a_gunflash")
+  if args_str
+    args = split_action_args(args_str)
+    if args.size >= 1
+      target = args[0].strip.strip('"').strip('\'')
+      if !target.empty? && !target.includes?("::")
+        return target.downcase
+      end
+    end
+  end
+  # No args or empty first arg — defaults to "Flash" state
+  "flash"
+end
+
+# Check if a line contains a reload-check function that ends the firing cycle.
+# A_CheckForReload marks the boundary of a single shot — we stop counting ticks/damage here.
+# Note: A_ReFire is NOT a terminator — it conditionally loops back if fire button is held,
+# but execution continues past it when the button is released (used in charge weapons).
+def is_fire_cycle_terminator(line : String) : Bool
+  lc = line.downcase
+  return true if lc.includes?("a_checkforreload")
+  false
+end
+
 # ── Tick Counting ─────────────────────────────────────────────────────────────
 
 # Count total ticks in a Fire state text block.
 # Each DECORATE state line: SPRT FRAMES DURATION [action]
 # Multi-frame shorthand: SPRT ABCDE 3 = 5 frames × 3 ticks = 15 ticks
 # Stops counting at Goto, Loop, Stop, or a new label definition.
+# When actor_states is provided, follows jump targets (A_JumpIfInventory, etc.)
+# into referenced states and includes their ticks.
+# visited_states prevents infinite loops from circular jump references.
 # Returns 0 if parsing fails.
-def count_fire_state_ticks(fire_state_text : String) : Int32
+def count_fire_state_ticks(fire_state_text : String,
+                           actor_states : Hash(String, String)? = nil,
+                           visited_states : Set(String)? = nil) : Int32
   total_ticks = 0
+  last_goto_target : String? = nil  # Track last Goto target to follow after loop
 
   fire_state_text.each_line do |raw_line|
     line = raw_line.strip
@@ -124,13 +208,45 @@ def count_fire_state_ticks(fire_state_text : String) : Int32
 
     lc = line.downcase
 
-    # Stop at flow control or new labels
-    break if lc.starts_with?("goto ")
+    # Stop at flow control (loop/stop/wait end the sequence)
     break if lc.starts_with?("loop")
     break if lc.starts_with?("stop")
     break if lc.starts_with?("wait")
     # New label definition (word followed by colon at start of line)
     break if line =~ /^[a-zA-Z_]\w*\s*:/
+
+    # Goto — record the target but skip over it. Intermediate Gotos (on conditional
+    # failure paths like "goto Reload" after A_JumpIfInventory) are not the main path.
+    # Only the LAST Goto encountered is followed after the loop ends.
+    if lc.starts_with?("goto ")
+      last_goto_target = lc.sub("goto ", "").strip.downcase
+      next
+    end
+
+    # Stop at fire cycle terminators (A_CheckForReload)
+    break if is_fire_cycle_terminator(line)
+
+    # Check for jump functions — follow the target state for ticks.
+    # Conditional jumps (A_Jump, A_JumpIfInventory, etc.) may not fire,
+    # so we follow the target but continue processing this state.
+    # A_GunFlash runs on the overlay layer — no ticks added, execution continues.
+    if actor_states
+      jump_target = extract_jump_target(line)
+      if jump_target
+        # Track visited states to prevent infinite loops
+        visited = visited_states || Set(String).new
+        unless visited.includes?(jump_target)
+          visited.add(jump_target)
+          target_text = actor_states[jump_target]? || ""
+          if !target_text.empty?
+            jump_ticks = count_fire_state_ticks(target_text, actor_states, visited)
+            total_ticks += jump_ticks
+            log(3, "  [DmgCalc] Tick count: jump to \"#{jump_target}\" — added #{jump_ticks} ticks")
+          end
+        end
+      end
+    end
+    # A_GunFlash: overlay layer — no ticks to add, execution continues on main layer
 
     # Match DECORATE state line: SPRITE FRAMES DURATION [action...]
     # Sprite can be 4 chars, "####", "----", or quoted "####"
@@ -155,6 +271,22 @@ def count_fire_state_ticks(fire_state_text : String) : Int32
     end
   end
 
+  # Follow the last Goto target (the terminal one — the main execution path)
+  if last_goto_target && actor_states
+    unless last_goto_target == "ready" || last_goto_target == "select" || last_goto_target == "deselect" || last_goto_target == "lightdone"
+      visited = visited_states || Set(String).new
+      unless visited.includes?(last_goto_target)
+        visited.add(last_goto_target)
+        target_text = actor_states[last_goto_target]? || ""
+        if !target_text.empty?
+          goto_ticks = count_fire_state_ticks(target_text, actor_states, visited)
+          total_ticks += goto_ticks
+          log(3, "  [DmgCalc] Tick count: goto \"#{last_goto_target}\" — added #{goto_ticks} ticks")
+        end
+      end
+    end
+  end
+
   total_ticks
 end
 
@@ -168,10 +300,41 @@ def calculate_fire_rate(fire_state_text : String) : Float64
   DOOM_TICS_PER_SECOND / ticks.to_f64
 end
 
+# Calculate fire rate including fall-through states (Fire → next label → ...).
+# Follows the same chain logic as calculate_weapon_damage: when Fire has no
+# flow control, it falls through to the next state label in source order.
+# Returns 0.0 if ticks can't be determined.
+def calculate_fire_rate_with_fallthrough(actor : Actor) : Float64
+  fire_text = actor.states["fire"]? || ""
+  total_ticks = count_fire_state_ticks(fire_text, actor.states)
+
+  # Follow the fall-through chain for ticks too
+  if state_has_no_flow_control(fire_text)
+    state_keys = actor.states.keys
+    fire_idx = state_keys.index("fire")
+    if fire_idx
+      next_idx = fire_idx + 1
+      while next_idx < state_keys.size
+        next_key = state_keys[next_idx]
+        next_text = actor.states[next_key]? || ""
+        break if next_text.empty?
+
+        total_ticks += count_fire_state_ticks(next_text, actor.states)
+        break unless state_has_no_flow_control(next_text)
+        next_idx += 1
+      end
+    end
+  end
+
+  return 0.0 if total_ticks <= 0
+  DOOM_TICS_PER_SECOND / total_ticks.to_f64
+end
+
 # ── Projectile Damage Lookup ─────────────────────────────────────────────────
 
 # Look up a projectile actor by name in the actordb and return its damage.
-# Checks the actor's "damage" property and "explosion_damage".
+# Checks the actor's "damage" property, "explosion_damage" property,
+# A_Explode calls in the Spawn state, and A_SpawnItem sub-projectile damage.
 # Returns 0.0 if the projectile can't be found.
 def lookup_projectile_damage(projectile_name : String, actordb : Array(Actor)) : Float64
   return 0.0 if projectile_name.empty?
@@ -183,16 +346,169 @@ def lookup_projectile_damage(projectile_name : String, actordb : Array(Actor)) :
   # Search actordb for the projectile (case-insensitive)
   target_lc = clean_name.downcase
   proj_actor = actordb.find { |a| a.name.downcase == target_lc }
-  return 0.0 if proj_actor.nil?
-
-  # Parse the projectile's damage property
-  damage = parse_damage_expression(proj_actor.damage)
-
-  # Add explosion_damage if present
-  if proj_actor.explosion_damage > 0
-    damage += proj_actor.explosion_damage.to_f64
+  if proj_actor.nil?
+    log(3, "  [DmgCalc] Projectile lookup: \"#{clean_name}\" not found in actordb (#{actordb.size} actors)")
+    return 0.0
   end
 
+  # Parse the projectile's damage property, fall back to DamageFunction if Damage is 0
+  raw_damage = proj_actor.damage
+  damage = parse_damage_expression(raw_damage)
+  if damage <= 0 && proj_actor.damage_function != "UNDEFINED"
+    raw_damage = proj_actor.damage_function
+    damage = parse_damage_expression(raw_damage)
+    log(3, "  [DmgCalc] Projectile lookup: \"#{clean_name}\" found — DamageFunction=\"#{raw_damage}\", parsed=#{damage.round(1)}")
+  else
+    log(3, "  [DmgCalc] Projectile lookup: \"#{clean_name}\" found — raw damage=\"#{raw_damage}\", parsed=#{damage.round(1)}")
+  end
+
+  # Scan Spawn and Death states for A_Explode and A_SpawnItem sub-projectile damage.
+  # A_Explode with no args or -1 uses the actor's ExplosionDamage property (default 128).
+  # Spawn: ripper projectiles that explode/spawn damage actors while traveling.
+  # Death: standard projectiles that explode on impact.
+  {"spawn", "death"}.each do |state_key|
+    state_text = proj_actor.states[state_key]? || ""
+    if !state_text.empty?
+      state_extra = scan_projectile_spawn_damage(state_text, clean_name, actordb, proj_actor.explosion_damage)
+      if state_extra > 0
+        damage += state_extra
+        log(3, "  [DmgCalc] Projectile lookup: \"#{clean_name}\" +#{state_key}_state_damage=#{state_extra.round(1)}, total=#{damage.round(1)}")
+      end
+    end
+  end
+
+  damage
+end
+
+# Scan a projectile's Spawn/Death state for additional damage sources:
+#   - A_Explode(damage, radius, ...) — inline explosion damage
+#   - A_SpawnItem("SubProjectile") / A_SpawnItemEx("SubProjectile") — sub-projectile damage
+# actor_explosion_damage: the actor's ExplosionDamage property value (-1 = not set).
+#   When A_Explode has no args or first arg is -1, it uses ExplosionDamage (default 128).
+# Returns the additional damage found (0.0 if none).
+def scan_projectile_spawn_damage(spawn_text : String, proj_name : String, actordb : Array(Actor),
+                                  actor_explosion_damage : Int32 = -1) : Float64
+  extra_damage = 0.0
+
+  spawn_text.each_line do |raw_line|
+    line = raw_line.strip
+    next if line.empty?
+    next if line.starts_with?("//")
+    lc = line.downcase
+
+    # ── A_Explode(damage, radius, ...) ──────────────────────────────
+    # No args or first arg <= 0: uses actor's ExplosionDamage property (default 128)
+    if lc.includes?("a_explode")
+      explode_dmg = 0.0
+      args_str = extract_action_args(line, "A_Explode")
+      if args_str
+        args = split_action_args(args_str)
+        if args.size >= 1
+          explode_dmg = parse_damage_expression(args[0])
+        end
+      end
+      # A_Explode with no args, empty args, or damage <= 0 means use ExplosionDamage
+      if explode_dmg <= 0
+        explode_dmg = actor_explosion_damage > 0 ? actor_explosion_damage.to_f64 : 128.0
+        log(3, "  [DmgCalc] Projectile \"#{proj_name}\": A_Explode (no/default args) — using ExplosionDamage=#{explode_dmg.round(1)}")
+      else
+        log(3, "  [DmgCalc] Projectile \"#{proj_name}\": A_Explode — damage=#{explode_dmg.round(1)}")
+      end
+      extra_damage += explode_dmg
+    end
+
+    # ── A_SpawnItem("SubProjectile") — look up sub-projectile damage ──
+    if lc.includes?("a_spawnitem") && !lc.includes?("a_spawnitemex")
+      args_str = extract_action_args(line, "A_SpawnItem")
+      if args_str
+        args = split_action_args(args_str)
+        if args.size >= 1
+          sub_name = args[0].strip.strip('"').strip('\'')
+          # Avoid infinite recursion — don't look up self
+          if sub_name.downcase != proj_name.downcase
+            sub_dmg = lookup_sub_projectile_damage(sub_name, actordb)
+            if sub_dmg > 0
+              extra_damage += sub_dmg
+              log(3, "  [DmgCalc] Projectile \"#{proj_name}\" Spawn: A_SpawnItem(\"#{sub_name}\") — sub-projectile damage=#{sub_dmg.round(1)}")
+            end
+          end
+        end
+      end
+    end
+
+    # ── A_SpawnItemEx("SubProjectile", ...) ───────────────────────────
+    if lc.includes?("a_spawnitemex")
+      args_str = extract_action_args(line, "A_SpawnItemEx")
+      if args_str
+        args = split_action_args(args_str)
+        if args.size >= 1
+          sub_name = args[0].strip.strip('"').strip('\'')
+          if sub_name.downcase != proj_name.downcase
+            sub_dmg = lookup_sub_projectile_damage(sub_name, actordb)
+            if sub_dmg > 0
+              extra_damage += sub_dmg
+              log(3, "  [DmgCalc] Projectile \"#{proj_name}\" Spawn: A_SpawnItemEx(\"#{sub_name}\") — sub-projectile damage=#{sub_dmg.round(1)}")
+            end
+          end
+        end
+      end
+    end
+  end
+
+  extra_damage
+end
+
+# Look up a sub-projectile's damage.
+# Checks Damage/DamageFunction/ExplosionDamage properties AND scans Spawn/Death
+# states for A_Explode calls, but does NOT recurse into further A_SpawnItem calls
+# to prevent infinite loops from circular references.
+def lookup_sub_projectile_damage(sub_name : String, actordb : Array(Actor)) : Float64
+  return 0.0 if sub_name.empty?
+  target_lc = sub_name.downcase
+  sub_actor = actordb.find { |a| a.name.downcase == target_lc }
+  return 0.0 if sub_actor.nil?
+
+  damage = parse_damage_expression(sub_actor.damage)
+
+  # Fall back to DamageFunction if Damage is 0
+  if damage <= 0 && sub_actor.damage_function != "UNDEFINED"
+    damage = parse_damage_expression(sub_actor.damage_function)
+  end
+
+  # Scan Spawn and Death states for A_Explode (but NOT A_SpawnItem to avoid recursion).
+  # A_Explode with no args or -1 uses the actor's ExplosionDamage property (default 128).
+  {"spawn", "death"}.each do |state_key|
+    state_text = sub_actor.states[state_key]? || ""
+    next if state_text.empty?
+
+    state_text.each_line do |raw_line|
+      line = raw_line.strip
+      next if line.empty?
+      next if line.starts_with?("//")
+      lc = line.downcase
+
+      if lc.includes?("a_explode")
+        explode_dmg = 0.0
+        args_str = extract_action_args(line, "A_Explode")
+        if args_str
+          args = split_action_args(args_str)
+          if args.size >= 1
+            explode_dmg = parse_damage_expression(args[0])
+          end
+        end
+        # A_Explode with no args, empty args, or damage <= 0 means use ExplosionDamage
+        if explode_dmg <= 0
+          explode_dmg = sub_actor.explosion_damage > 0 ? sub_actor.explosion_damage.to_f64 : 128.0
+          log(3, "  [DmgCalc] Sub-projectile \"#{sub_name}\" #{state_key}: A_Explode (no/default args) — using ExplosionDamage=#{explode_dmg.round(1)}")
+        else
+          log(3, "  [DmgCalc] Sub-projectile \"#{sub_name}\" #{state_key}: A_Explode — damage=#{explode_dmg.round(1)}")
+        end
+        damage += explode_dmg
+      end
+    end
+  end
+
+  log(3, "  [DmgCalc] Sub-projectile lookup: \"#{sub_name}\" — total damage=#{damage.round(1)}")
   damage
 end
 
@@ -308,29 +624,105 @@ VANILLA_DAMAGE = {
 }
 
 # Calculate weapon damage by parsing the Fire state for action functions.
-# Checks Fire state first, then AltFire if Fire yields nothing.
+# When Fire has no flow control (goto/loop/stop/wait), it falls through to the
+# next state label — which could be Hold, or any custom label like OneRocket.
+# Follows the fall-through chain until damage is found or a flow control is hit.
+# Checks AltFire as fallback if Fire chain yields nothing.
 # Returns 0.0 if damage can't be determined (triggers tier-based fallback).
 def calculate_weapon_damage(actor : Actor, actordb : Array(Actor)) : Float64
   damage = 0.0
 
+  # Parse Fire state (pass actor.states so jumps can be followed)
   fire_text = actor.states["fire"]? || ""
-  damage = parse_fire_state_for_damage(fire_text, actordb)
+  damage = parse_fire_state_for_damage(fire_text, actordb, actor.name_with_case, "Fire", actor.states)
 
-  # If Fire state yielded no damage, try AltFire
+  # If Fire has no flow control, follow the fall-through chain into subsequent states.
+  # In DECORATE, when a state has no goto/loop/stop/wait, execution continues into
+  # the next state label (e.g. Fire: → OneRocket:, or Fire: → Hold:).
+  if state_has_no_flow_control(fire_text)
+    state_keys = actor.states.keys
+    fire_idx = state_keys.index("fire")
+    if fire_idx
+      # Walk subsequent states as long as they contribute damage and have no flow control
+      next_idx = fire_idx + 1
+      while next_idx < state_keys.size
+        next_key = state_keys[next_idx]
+        next_text = actor.states[next_key]? || ""
+        break if next_text.empty?
+
+        next_damage = parse_fire_state_for_damage(next_text, actordb, actor.name_with_case, next_key, actor.states)
+        if next_damage > 0.0
+          damage += next_damage
+          log(3, "  [DmgCalc] #{actor.name_with_case}: Fire falls through to #{next_key} — added damage #{next_damage.round(1)}, combined = #{damage.round(1)}")
+        end
+
+        # Stop following the chain if this state ends with flow control
+        break unless state_has_no_flow_control(next_text)
+        next_idx += 1
+      end
+    end
+  end
+
+  # If Fire chain yielded no damage, try AltFire
   if damage <= 0.0
     altfire_text = actor.states["altfire"]? || ""
-    damage = parse_fire_state_for_damage(altfire_text, actordb)
+    damage = parse_fire_state_for_damage(altfire_text, actordb, actor.name_with_case, "AltFire", actor.states)
+    if damage > 0.0
+      log(3, "  [DmgCalc] #{actor.name_with_case}: Fire chain had no damage, used AltFire instead")
+    end
+  end
+
+  if damage <= 0.0
+    log(3, "  [DmgCalc] #{actor.name_with_case}: No damage found in Fire chain or AltFire states — will use tier fallback")
+  else
+    log(3, "  [DmgCalc] #{actor.name_with_case}: Final calculated damage = #{damage.round(1)}")
   end
 
   damage
 end
 
+# Check if a state text block has no flow control at the end (no goto/loop/stop/wait).
+# When a state has no flow control, DECORATE execution falls through to the next
+# state label in source order. Returns true if the state falls through.
+def state_has_no_flow_control(state_text : String) : Bool
+  return false if state_text.empty?
+
+  # Find the last meaningful line in the state
+  last_line = ""
+  state_text.each_line do |raw_line|
+    line = raw_line.strip
+    next if line.empty?
+    next if line.starts_with?("//")
+    last_line = line
+  end
+
+  return false if last_line.empty?
+
+  lc = last_line.downcase
+  # If the state ends with a flow control keyword, it does NOT fall through
+  return false if lc.starts_with?("goto ")
+  return false if lc.starts_with?("loop")
+  return false if lc.starts_with?("stop")
+  return false if lc.starts_with?("wait")
+
+  # No flow control at the end — state falls through to the next label
+  true
+end
+
 # Parse a single state block (Fire or AltFire) for damage-dealing actions.
+# When actor_states is provided, follows jump targets (A_JumpIfInventory, etc.)
+# into referenced states and includes their damage.
+# visited_states prevents infinite loops from circular jump references.
 # Returns the total damage per firing cycle.
-def parse_fire_state_for_damage(state_text : String, actordb : Array(Actor)) : Float64
+def parse_fire_state_for_damage(state_text : String, actordb : Array(Actor),
+                                 actor_name : String = "", state_name : String = "Fire",
+                                 actor_states : Hash(String, String)? = nil,
+                                 visited_states : Set(String)? = nil) : Float64
   return 0.0 if state_text.empty?
 
   total_damage = 0.0
+  last_goto_target : String? = nil  # Track last Goto target to follow after loop
+  log_prefix = "  [DmgCalc] #{actor_name} (#{state_name})"
 
   state_text.each_line do |raw_line|
     line = raw_line.strip
@@ -339,12 +731,67 @@ def parse_fire_state_for_damage(state_text : String, actordb : Array(Actor)) : F
 
     lc = line.downcase
 
-    # Stop at flow control
-    break if lc.starts_with?("goto ")
+    # Stop at flow control (loop/stop/wait end the sequence)
     break if lc.starts_with?("loop")
     break if lc.starts_with?("stop")
     break if lc.starts_with?("wait")
     break if line =~ /^[a-zA-Z_]\w*\s*:/
+
+    # Goto — record the target but skip over it. Intermediate Gotos (on conditional
+    # failure paths like "goto Reload" after A_JumpIfInventory) are not the main path.
+    # Only the LAST Goto encountered is followed after the loop ends.
+    if lc.starts_with?("goto ")
+      last_goto_target = lc.sub("goto ", "").strip.downcase
+      next
+    end
+
+    # Stop at fire cycle terminators (A_CheckForReload)
+    break if is_fire_cycle_terminator(line)
+
+    # Check for transfer jumps (A_Jump, A_JumpIfInventory, etc.) — execution transfers
+    # to the target state, so we follow it for damage and stop processing this state.
+    if actor_states
+      jump_target = extract_jump_target(line)
+      if jump_target
+        visited = visited_states || Set(String).new
+        unless visited.includes?(jump_target)
+          visited.add(jump_target)
+          target_text = actor_states[jump_target]? || ""
+          if !target_text.empty?
+            jump_dmg = parse_fire_state_for_damage(target_text, actordb, actor_name, jump_target, actor_states, visited)
+            if jump_dmg > 0
+              total_damage += jump_dmg
+              log(3, "#{log_prefix}: Jump to \"#{jump_target}\" — added damage #{jump_dmg.round(1)}")
+            end
+          end
+        end
+        # Don't break — conditional jumps (A_JumpIfInventory, A_Jump, etc.) may not
+        # fire. Continue processing the current state for damage functions that follow.
+        # visited_states prevents double-counting if the same target state is referenced
+        # by multiple jumps (e.g. M60's fire1-fire5 all going to Flash).
+      end
+    end
+
+    # Check for A_GunFlash — runs Flash (or custom) state on overlay layer for damage,
+    # but execution continues on the main layer (don't break).
+    if actor_states
+      flash_target = extract_gunflash_target(line)
+      if flash_target
+        visited = visited_states || Set(String).new
+        unless visited.includes?(flash_target)
+          visited.add(flash_target)
+          target_text = actor_states[flash_target]? || ""
+          if !target_text.empty?
+            flash_dmg = parse_fire_state_for_damage(target_text, actordb, actor_name, flash_target, actor_states, visited)
+            if flash_dmg > 0
+              total_damage += flash_dmg
+              log(3, "#{log_prefix}: A_GunFlash(\"#{flash_target}\") — overlay damage #{flash_dmg.round(1)}")
+            end
+          end
+        end
+        # Don't break — main state execution continues after A_GunFlash
+      end
+    end
 
     # ── A_FireBullets ────────────────────────────────────────────────
     # A_FireBullets(hspread, vspread, numbullets, damageperbullet, ...)
@@ -359,8 +806,14 @@ def parse_fire_state_for_damage(state_text : String, actordb : Array(Actor)) : F
           num_bullets = 1.0 if num_bullets <= 0
           damage_per = parse_damage_expression(args[3])
           # Each bullet: damage * random(1,3), median = 2
-          total_damage += num_bullets * damage_per * 2.0
+          bullet_dmg = num_bullets * damage_per * 2.0
+          total_damage += bullet_dmg
+          log(3, "#{log_prefix}: A_FireBullets — #{num_bullets.round(0)} bullets × #{damage_per.round(1)} dmg × 2 (median) = #{bullet_dmg.round(1)}")
+        else
+          log(3, "#{log_prefix}: A_FireBullets — not enough args (#{args.size}), need 4+")
         end
+      else
+        log(3, "#{log_prefix}: A_FireBullets — could not extract args from: #{line.strip}")
       end
       next
     end
@@ -379,6 +832,7 @@ def parse_fire_state_for_damage(state_text : String, actordb : Array(Actor)) : F
             norandom = args[1].strip == "1" || args[1].strip.downcase == "true"
           end
           total_damage += norandom ? dmg : dmg  # CustomPunch damage is already the full value
+          log(3, "#{log_prefix}: A_CustomPunch — damage=#{dmg.round(1)} norandom=#{norandom}")
         end
       end
       next
@@ -391,10 +845,13 @@ def parse_fire_state_for_damage(state_text : String, actordb : Array(Actor)) : F
       if args_str
         args = split_action_args(args_str)
         if args.size >= 1
-          total_damage += parse_damage_expression(args[0])
+          melee_dmg = parse_damage_expression(args[0])
+          total_damage += melee_dmg
+          log(3, "#{log_prefix}: A_CustomMeleeAttack — damage=#{melee_dmg.round(1)}")
         end
       else
         total_damage += 10.0  # Default melee
+        log(3, "#{log_prefix}: A_CustomMeleeAttack — no args, using default 10.0")
       end
       next
     end
@@ -402,6 +859,7 @@ def parse_fire_state_for_damage(state_text : String, actordb : Array(Actor)) : F
     # ── A_MeleeAttack ────────────────────────────────────────────────
     if lc.includes?("a_meleeattack") && !lc.includes?("a_custommeleeattack")
       total_damage += 10.0  # Default melee damage
+      log(3, "#{log_prefix}: A_MeleeAttack — using default 10.0")
       next
     end
 
@@ -430,7 +888,14 @@ def parse_fire_state_for_damage(state_text : String, actordb : Array(Actor)) : F
             proj_name = args[0].strip.strip('"').strip('\'')
             proj_dmg = lookup_projectile_damage(proj_name, actordb)
             total_damage += proj_dmg
+            if proj_dmg > 0
+              log(3, "#{log_prefix}: #{display_name}(\"#{proj_name}\") — projectile damage=#{proj_dmg.round(1)}")
+            else
+              log(3, "#{log_prefix}: #{display_name}(\"#{proj_name}\") — projectile found but damage=0 (may use A_Explode or sub-projectiles)")
+            end
           end
+        else
+          log(3, "#{log_prefix}: #{display_name} — could not extract args from: #{line.strip}")
         end
         matched_proj = true
         break
@@ -445,10 +910,13 @@ def parse_fire_state_for_damage(state_text : String, actordb : Array(Actor)) : F
       if args_str
         args = split_action_args(args_str)
         if args.size >= 1
-          total_damage += parse_damage_expression(args[0])
+          rail_dmg = parse_damage_expression(args[0])
+          total_damage += rail_dmg
+          log(3, "#{log_prefix}: A_RailAttack — damage=#{rail_dmg.round(1)}")
         end
       else
         total_damage += 150.0
+        log(3, "#{log_prefix}: A_RailAttack — no args, using default 150.0")
       end
       next
     end
@@ -466,11 +934,34 @@ def parse_fire_state_for_damage(state_text : String, actordb : Array(Actor)) : F
           after_ok = after_idx >= lc.size || !lc[after_idx].ascii_alphanumeric?
           if before_ok && after_ok
             total_damage += dmg
+            log(3, "#{log_prefix}: #{func_lc} (vanilla hardcoded) — damage=#{dmg.round(1)}")
             break  # Only count one vanilla function per line
           end
         end
       end
     end
+  end
+
+  # Follow the last Goto target (the terminal one — the main execution path)
+  if last_goto_target && actor_states
+    unless last_goto_target == "ready" || last_goto_target == "select" || last_goto_target == "deselect" || last_goto_target == "lightdone"
+      visited = visited_states || Set(String).new
+      unless visited.includes?(last_goto_target)
+        visited.add(last_goto_target)
+        target_text = actor_states[last_goto_target]? || ""
+        if !target_text.empty?
+          goto_dmg = parse_fire_state_for_damage(target_text, actordb, actor_name, last_goto_target, actor_states, visited)
+          if goto_dmg > 0
+            total_damage += goto_dmg
+            log(3, "#{log_prefix}: Goto \"#{last_goto_target}\" — added damage #{goto_dmg.round(1)}")
+          end
+        end
+      end
+    end
+  end
+
+  if total_damage > 0
+    log(3, "#{log_prefix}: Total damage for #{state_name} state = #{total_damage.round(1)}")
   end
 
   total_damage

@@ -434,10 +434,9 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
       calc_damage = calculate_weapon_damage(actor, actordb)
       damage = calc_damage > 0 ? calc_damage : tier_damage
 
-      # Calculate rate from Fire state ticks — fallback to 0.9
+      # Calculate rate from Fire state ticks including fall-through states — fallback to 0.9
       # requires/weapon_damage_calc.cr
-      fire_text = actor.states["fire"]? || ""
-      calc_rate = calculate_fire_rate(fire_text)
+      calc_rate = calculate_fire_rate_with_fallthrough(actor)
       rate = calc_rate > 0 ? calc_rate : 0.9
 
       ammo_type = map_ammo_type(actor.weapon.ammotype)

@@ -404,7 +404,8 @@ def set_actor_property(actor : Actor, prop_name : String, line : String) : Bool
     when "damagefactor"      then actor.damage_factor = rest
     when "selfdamagefactor"  then actor.self_damage_factor = val1.not_nil!.to_f
     when "damagemultiply"    then actor.damage_multiply = val1.not_nil!.to_f
-    when "damage"            then actor.damage = val1.to_s
+    when "damage"            then actor.damage = rest  # Use full expression, e.g. "(2*Random(3, 5))"
+    when "damagefunction"    then actor.damage_function = rest  # ZScript/DECORATE expression, e.g. "(5*Random(2, 4))"
     when "poisondamage"      then actor.poison_damage = rest
     when "poisondamagetype"  then actor.poison_damage_type = rest
     when "radiusdamagefactor" then actor.radius_damage_factor = val1.not_nil!.to_f
