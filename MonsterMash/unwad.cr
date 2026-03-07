@@ -169,8 +169,9 @@ extract_iwads(jeutoolexe)       # requires/extraction.cr
 ###############################################################################
 
 # Build list of files to process — both DECORATE and ZSCRIPT
-processing_files = Dir.glob("#{PROCESSING_DIR}/*/defs/DECORATE.raw").map { |p| normalize_path(p) }
-zscript_files = Dir.glob("#{PROCESSING_DIR}/*/defs/ZSCRIPT.raw").map { |p| normalize_path(p) }
+# Also match numbered duplicates from jeutool: DECORATE.1.raw, DECORATE.2.raw, etc.
+processing_files = Dir.glob("#{PROCESSING_DIR}/*/defs/DECORATE{,.?*}.raw").map { |p| normalize_path(p) }
+zscript_files = Dir.glob("#{PROCESSING_DIR}/*/defs/ZSCRIPT{,.?*}.raw").map { |p| normalize_path(p) }
 processing_files += zscript_files
 processing_files = processing_files.uniq
 built_in_actors = Dir.glob("./Built_In_Actors/*/*.txt").map { |p| normalize_path(p) }

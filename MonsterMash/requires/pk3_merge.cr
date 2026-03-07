@@ -553,15 +553,14 @@ def build_merged_pk3(actordb : Array(Actor), weapon_actor_set : Set(String))
     log(3, "── PK3 merge: #{wad_name} ──")
 
     # Identify this WAD's DECORATE files (main + includes)
-    decorate_main = normalize_path(File.join(wad_dir, "defs", "DECORATE.raw"))
-    zscript_main = normalize_path(File.join(wad_dir, "defs", "ZSCRIPT.raw"))
+    # Also match numbered duplicates from jeutool: DECORATE.1.raw, DECORATE.2.raw, etc.
     decorate_file_set = Set(String).new
-    if File.exists?(decorate_main)
-      collect_decorate_files(decorate_main).each { |f| decorate_file_set << normalize_path(f) }
+    Dir.glob(File.join(wad_dir, "defs", "DECORATE{,.?*}.raw")).each do |dec_file|
+      collect_decorate_files(dec_file).each { |f| decorate_file_set << normalize_path(f) }
     end
     # Also collect ZSCRIPT includes
-    if File.exists?(zscript_main)
-      collect_decorate_files(zscript_main).each { |f| decorate_file_set << normalize_path(f) }
+    Dir.glob(File.join(wad_dir, "defs", "ZSCRIPT{,.?*}.raw")).each do |zsc_file|
+      collect_decorate_files(zsc_file).each { |f| decorate_file_set << normalize_path(f) }
     end
 
     Dir.each_child(wad_dir) do |entry|
@@ -587,45 +586,51 @@ def build_merged_pk3(actordb : Array(Actor), weapon_actor_set : Set(String))
 
             canonical = lump_name(def_file)
 
+            # Check if this is a DECORATE/ZSCRIPT variant (including numbered: DECORATE.1.raw, etc.)
+            is_decorate_variant = canonical == "decorate" || canonical =~ /^decorate\.\d+$/
+            is_zscript_variant = canonical == "zscript" || canonical =~ /^zscript\.\d+$/
+
             if decorate_file_set.includes?(def_path)
               # This is a DECORATE/ZSCRIPT file (main or included) — copy to mm_actors/WadName/
               dest_file = normalize_path(File.join(dec_dest, def_file))
               FileUtils.cp(def_path, dest_file)
               log(3, "  DECORATE: #{def_file} -> mm_actors/#{wad_name}/#{def_file}")
 
-              if canonical == "decorate"
+              if is_decorate_variant
                 has_main_decorate = true
                 pk3_path = "mm_actors/#{wad_name}/#{def_file}"
                 wad_decorate_main << {wad_name, pk3_path}
-              elsif canonical == "zscript"
+              elsif is_zscript_variant
                 has_main_zscript = true
                 pk3_path = "mm_actors/#{wad_name}/#{def_file}"
                 wad_zscript_main << {wad_name, pk3_path}
               end
 
-            elsif DECORATE_LUMP_NAMES.includes?(canonical)
+            elsif DECORATE_LUMP_NAMES.includes?(canonical) || is_decorate_variant || is_zscript_variant
               # DECORATE/ZSCRIPT file not caught by include scan — still copy it
               dest_file = normalize_path(File.join(dec_dest, def_file))
               FileUtils.cp(def_path, dest_file)
               log(3, "  DECORATE (extra): #{def_file} -> mm_actors/#{wad_name}/#{def_file}")
 
-              if canonical == "decorate" && !has_main_decorate
+              if is_decorate_variant
                 has_main_decorate = true
                 pk3_path = "mm_actors/#{wad_name}/#{def_file}"
                 wad_decorate_main << {wad_name, pk3_path}
-              elsif canonical == "zscript" && !has_main_zscript
+              elsif is_zscript_variant
                 has_main_zscript = true
                 pk3_path = "mm_actors/#{wad_name}/#{def_file}"
                 wad_zscript_main << {wad_name, pk3_path}
               end
 
-            elsif TEXT_LUMP_NAMES.includes?(canonical)
+            elsif TEXT_LUMP_NAMES.includes?(canonical) || TEXT_LUMP_NAMES.includes?(canonical.sub(/\.\d+$/, ""))
               # Non-DECORATE text lump found in defs/ directory
+              # Also handles numbered jeutool variants (e.g. TEXTURES.1.raw -> textures)
+              base_canonical = canonical.sub(/\.\d+$/, "")
               content = safe_read(def_path)
               unless content.empty?
-                text_lumps[canonical] ||= Array(Tuple(String, String)).new
-                text_lumps[canonical] << {wad_name, content}
-                log(3, "  Text lump (in defs/): #{canonical} from #{wad_name}")
+                text_lumps[base_canonical] ||= Array(Tuple(String, String)).new
+                text_lumps[base_canonical] << {wad_name, content}
+                log(3, "  Text lump (in defs/): #{base_canonical} from #{wad_name} (#{def_file})")
               end
 
             elsif canonical == "credits" || canonical == "credit"
@@ -721,15 +726,17 @@ def build_merged_pk3(actordb : Array(Actor), weapon_actor_set : Set(String))
             log(2, "  Root DECORATE: #{entry} -> mm_actors/#{wad_name}/")
           end
 
-        elsif TEXT_LUMP_NAMES.includes?(canonical)
+        elsif TEXT_LUMP_NAMES.includes?(canonical) || TEXT_LUMP_NAMES.includes?(canonical.sub(/\.\d+$/, ""))
+          # Also handles numbered jeutool variants (e.g. TEXTURES.1.raw -> textures)
+          base_canonical = canonical.sub(/\.\d+$/, "")
           content = safe_read(entry_path)
           unless content.empty?
-            text_lumps[canonical] ||= Array(Tuple(String, String)).new
-            text_lumps[canonical] << {wad_name, content}
-            log(3, "  Text lump: #{canonical} from #{wad_name}")
+            text_lumps[base_canonical] ||= Array(Tuple(String, String)).new
+            text_lumps[base_canonical] << {wad_name, content}
+            log(3, "  Text lump: #{base_canonical} from #{wad_name} (#{entry})")
           end
 
-        elsif SKIP_LUMP_NAMES.includes?(canonical)
+        elsif SKIP_LUMP_NAMES.includes?(canonical) || SKIP_LUMP_NAMES.includes?(canonical.sub(/\.\d+$/, ""))
           log(3, "  Skipping engine lump: #{entry}")
 
         else

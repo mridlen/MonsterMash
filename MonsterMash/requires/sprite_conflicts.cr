@@ -106,11 +106,14 @@ def resolve_sprite_conflicts(actordb : Array(Actor))
 
       # Update DECORATE and ZSCRIPT references
       # Collect all script files for this WAD (DECORATE + ZSCRIPT + their includes)
+      # Also match numbered duplicates from jeutool: DECORATE.1.raw, DECORATE.2.raw, etc.
       script_files = Array(String).new
-      dec_main = "#{PROCESSING_DIR}/#{wad_name}/defs/DECORATE.raw"
-      zsc_main = "#{PROCESSING_DIR}/#{wad_name}/defs/ZSCRIPT.raw"
-      script_files += collect_decorate_files(dec_main) if File.exists?(dec_main)
-      script_files += collect_decorate_files(zsc_main) if File.exists?(zsc_main)
+      Dir.glob("#{PROCESSING_DIR}/#{wad_name}/defs/DECORATE{,.?*}.raw").each do |dec_file|
+        script_files += collect_decorate_files(dec_file) if File.exists?(dec_file)
+      end
+      Dir.glob("#{PROCESSING_DIR}/#{wad_name}/defs/ZSCRIPT{,.?*}.raw").each do |zsc_file|
+        script_files += collect_decorate_files(zsc_file) if File.exists?(zsc_file)
+      end
       script_files.uniq!
 
       decorate_updates = 0

@@ -189,7 +189,7 @@ func EncodeLumpName(dir, lump, ext string, noconv bool, x, y int) string {
 	baseName := sb.String()
 
 	// Build the initial filename and check for duplicates.
-	// If a file already exists, append _1, _2, etc. to avoid overwriting.
+	// If a file already exists, append a numeric infix: NAME.1.ext, NAME.2.ext, etc.
 	filename := baseName
 	if ext != "" {
 		filename = baseName + "." + ext
@@ -204,11 +204,11 @@ func EncodeLumpName(dir, lump, ext string, noconv bool, x, y int) string {
 		if _, err := os.Stat(filename); os.IsNotExist(err) {
 			break
 		}
-		// File exists, try next suffix
+		// File exists, try next suffix: e.g. DECORATE.1.raw, DECORATE.2.raw
 		if ext != "" {
-			filename = filepath.Join(dir, fmt.Sprintf("%s_%d.%s", baseName, suffix, ext))
+			filename = filepath.Join(dir, fmt.Sprintf("%s.%d.%s", baseName, suffix, ext))
 		} else {
-			filename = filepath.Join(dir, fmt.Sprintf("%s_%d", baseName, suffix))
+			filename = filepath.Join(dir, fmt.Sprintf("%s.%d", baseName, suffix))
 		}
 		suffix++
 	}
