@@ -1,0 +1,17 @@
+azul3d.org/engine v0.0.0-20211024043305-793ea6c2839d h1:oLr8Nu7iEKm8OKfHNznBnBj8Z/SKBa20yl7JKqJn4W8=
+azul3d.org/engine v0.0.0-20211024043305-793ea6c2839d/go.mod h1:3y1cwzJTKvXXop+EAg+AUVfNm3bfHf3djeX+l1UBuUE=
+github.com/daviddengcn/go-colortext v1.0.0 h1:ANqDyC0ys6qCSvuEK7l3g5RaehL/Xck9EX8ATG8oKsE=
+github.com/daviddengcn/go-colortext v1.0.0/go.mod h1:zDqEI5NVUop5QPpVJUxE9UO10hRnmkD5G4Pmri9+m4c=
+github.com/golangplus/bytes v0.0.0-20160111154220-45c989fe5450/go.mod h1:Bk6SMAONeMXrxql8uvOKuAZSu8aM5RUGv+1C6IJaEho=
+github.com/golangplus/bytes v1.0.0/go.mod h1:AdRaCFwmc/00ZzELMWb01soso6W1R/++O1XL80yAn+A=
+github.com/golangplus/fmt v1.0.0/go.mod h1:zpM0OfbMCjPtd2qkTD/jX2MgiFCqklhSUFyDW44gVQE=
+github.com/golangplus/testing v1.0.0 h1:+ZeeiKZENNOMkTTELoSySazi+XaEhVO0mb+eanrSEUQ=
+github.com/golangplus/testing v1.0.0/go.mod h1:ZDreixUV3YzhoVraIDyOzHrr76p6NUh6k/pPg/Q3gYA=
+github.com/mattn/go-isatty v0.0.20 h1:xfD0iDuEKnDkl03q4limB+vH+GxLEtL/jb4xVJSWWEY=
+github.com/mattn/go-isatty v0.0.20/go.mod h1:W+V8PltTTMOvKvAeJH7IuucS94S2C6jfK/D7dTCTo3Y=
+gitlab.com/andwj/argv v0.0.0-20171228033253-fb72efa6c68c h1:7eei0WGuL7G/0466kcjIalT39o/zuTCIkq95GQEdp80=
+gitlab.com/andwj/argv v0.0.0-20171228033253-fb72efa6c68c/go.mod h1:jB/XnDt5kDHcyCFZj+3AueIRl5K/p8q5Gb1eK+6T30E=
+gitlab.com/andwj/wad v0.0.0-20180916105448-06ca822f8d4f h1:IwEu3/VP69P1IBv+FzX+s28Jp8jivRqJT7HaQyRC8pI=
+gitlab.com/andwj/wad v0.0.0-20180916105448-06ca822f8d4f/go.mod h1:2eMJLCKePXFUfnXjBKSxTPYt439mwHJr2oNjNDx+Tbs=
+golang.org/x/sys v0.6.0 h1:MVltZSvRTcU2ljQOhs94SXPftV6DCNnZViHeQps87pQ=
+golang.org/x/sys v0.6.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=

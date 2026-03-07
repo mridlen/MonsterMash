@@ -1,0 +1,76 @@
+.TH JEUTOOL 6 "October 2018"
+.SH NAME
+jeutool \- compose and decompose DOOM wad files
+.SH SYNOPSIS
+.B jeutool
+\fI\,command\/\fR \fI\,FILE\/\fR [\fI\,OPTION\/\fR]...
+.PP
+.B jeutool
+--help
+.br
+.B jeutool
+--version
+.SH DESCRIPTION
+.B JeuTool
+is a program for composing, decomposing and examining DOOM wad files.
+.PP
+Short options begin with a single dash followed by a single letter.
+Long options begin with two dashes, followed by a whole word.
+When an option needs a value, it should be placed in the next
+argument.
+.PP
+The first argument must be a command to run.  Each command is
+briefly described below.  Most commands take a wad file argument,
+and the 'build' and 'extract' commands also take a directory
+argument which is where the files are extracted to or sourced from.
+.SH COMMANDS
+.TP
+.B list
+The list command lists stuff.
+.SH OPTIONS
+.TP
+.B \-o \-\-output FILE
+This option is provided *only* for compatibility with
+existing node builders.  It causes the input file to be
+copied to the specified file, and that file is the one
+processed.  This option cannot be used with multiple
+input files, or with the \-\-backup option.
+.TP
+.B \-v \-\-verbose
+When building or extracting a wad, shows the name of each lump
+which is imported or extracted, as well as its filename.
+.TP
+.B \-h \-\-help
+Displays a brief help screen, then exits.
+.TP
+.B \-\-version
+Displays a version string, then exits.
+.SH EXIT STATUS
+.TP
+0
+if OK (some warnings may have occurred).
+.TP
+1
+if could not parse arguments, unknown command, need a palette, etc.
+.TP
+2
+if any failures occurred while building or extracting a wad.
+.SH COPYRIGHT
+JeuTool is Copyright \(co 2018 Andrew Apted, et al.
+.PP
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 3 of the License, or (at
+your option) any later version.
+.PP
+This program is is distributed in the hope that it
+will be useful, but WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+See the GNU General Public License for more details.
+.SH "SEE ALSO"
+.TP
+The project page:
+https://gitlab.com/andwj/jeutool
+.TP
+The full documentation is here:
+https://gitlab.com/andwj/jeutool/blob/master/MANUAL.md

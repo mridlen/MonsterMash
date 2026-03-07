@@ -21,6 +21,9 @@
 # --- Built_In_Actors (all files, all subfolders) ---
 !MonsterMash/Built_In_Actors/**
 
+# --- Jeutool source code (all files) ---
+!MonsterMash/jeutool-source/**
+
 # --- Documentation ---
 !MonsterMash/LICENSE
 !MonsterMash/README.md
