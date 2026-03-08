@@ -112,3 +112,9 @@ Disables the actor in question. It will still remain in the code, but it will no
 ### SliderZero
 
 The slider will be defaulted to "off" in MonsterMash. Useful for disabling weapons you don't want all the time. For example, there are tons of melee weapons that are fairly weak. Or certain weapons are extremely dangerous like the Nuclear Missile. Certain monsters are extremely annoying or extremely dangerous. These are all good candidates for SliderZero.
+
+# JeuTool
+
+I have used JeuTool to extract wads. However, it didn't handle duplicate lumps, so I had to modify the source code. Since it is GPL, I have included the full source of the modified jeutool (it isn't very big).
+
+Related note: PK3 files are just zip files under another name, so they don't require any special tools to extract.
