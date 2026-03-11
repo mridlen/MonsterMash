@@ -96,7 +96,13 @@ def rename_actor_in_folder(actor : Actor, renamed_actor : String, wad_folder : S
   Dir.children(wad_folder).each do |file|
     file_path_rename = wad_folder + file
     next if File.directory?(file_path_rename)
+
+    # Skip binary files — check for null bytes which indicate non-text content.
+    # Binary files (sprites, sounds) contain non-UTF-8 bytes that crash regex.
     file_text = File.read(file_path_rename)
+    next if file_text.includes?('\0')
+    next unless file_text.valid_encoding?
+
     escaped = Regex.escape(actor.name_with_case)
 
     # 1. Actor definition line: "actor Name" at line start (DECORATE).
@@ -135,13 +141,23 @@ def refresh_actordb(actordb : Array(Actor))
     regex = /^\s*(?:actor|class)\s+#{Regex.escape(actor.name)}/mi
     all_files = [actor.file_path]
 
-    # Check includes
+    # Check includes — resolve both DECORATE bare-name and ZScript path-style includes
     file_text = safe_read(actor.file_path)
     file_text.each_line do |line|
-      if line =~ /^#include/i
-        if md = line.match(/"([^"]+)"/)
-          include_path = actor.file_path.split("/")[0..-2].join("/") + "/" + md[1].upcase + ".raw"
-          all_files << include_path
+      if line.strip =~ /^#include/i
+        if md = line.match(/"([^"]+)"/i)
+          include_value = md[1]
+          next if include_value.downcase.ends_with?(".acs")
+          has_extension = include_value.includes?(".")
+          has_path_sep  = include_value.includes?("/") || include_value.includes?("\\")
+          if has_extension || has_path_sep
+            # ZScript-style path include (e.g. "../zscript/foo/bar.txt")
+            inc_path = normalize_path(File.join(File.dirname(actor.file_path), include_value))
+          else
+            # DECORATE bare-name include (e.g. "Baby" → BABY.raw)
+            inc_path = normalize_path(File.join(File.dirname(actor.file_path), "#{include_value.upcase}.raw"))
+          end
+          all_files << inc_path if File.exists?(inc_path)
         end
       end
     end

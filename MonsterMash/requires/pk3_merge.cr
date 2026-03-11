@@ -27,6 +27,50 @@
 #   DEFAULT_SNDINFO, DEFAULT_RANDOM_SOUNDS, DEFAULT_LUMP_TO_LOGICAL
 ###############################################################################
 
+# Locate a system zip tool for PK3 creation. Crystal's built-in ZIP writer
+# lacks ZIP64 support and overflows on large archives, so we require an
+# external tool. Checks for: 'zip' (Info-ZIP), '7z' (7-Zip).
+# Exits with a helpful error message if nothing is found.
+def find_zip_tool : String
+  # 1. Try 'zip' in PATH (Linux/Mac default, Windows via MSYS2/Git)
+  zip_result = Process.run("zip", ["--version"], output: Process::Redirect::Close, error: Process::Redirect::Close) rescue nil
+  if zip_result && zip_result.success?
+    return "zip"
+  end
+
+  # 2. Try '7z' in PATH
+  sevenz_result = Process.run("7z", output: Process::Redirect::Close, error: Process::Redirect::Close) rescue nil
+  if sevenz_result
+    return "7z"
+  end
+
+  # 3. Check common 7-Zip install locations on Windows
+  {% if flag?(:win32) %}
+  ["C:/Program Files/7-Zip/7z.exe", "C:/Program Files (x86)/7-Zip/7z.exe"].each do |path|
+    if File.exists?(path)
+      return path
+    end
+  end
+  {% end %}
+
+  # Nothing found — error out with install instructions
+  log(0, "")
+  log(0, "ERROR: No zip tool found. Monster Mash requires 'zip' or '7z' to create PK3 files.")
+  log(0, "")
+  log(0, "Install one of the following:")
+  log(0, "")
+  log(0, "  Windows:  Install 7-Zip from https://7-zip.org")
+  log(0, "            (default install path C:\\Program Files\\7-Zip\\ is auto-detected)")
+  log(0, "")
+  log(0, "  Linux:    sudo apt install zip    (Debian/Ubuntu)")
+  log(0, "            sudo pacman -S zip       (Arch)")
+  log(0, "            sudo dnf install zip     (Fedora)")
+  log(0, "")
+  log(0, "  macOS:    brew install zip         (or use built-in /usr/bin/zip)")
+  log(0, "")
+  exit(1)
+end
+
 # Recursively process all script files in a directory: strip version directives
 # and rewrite #include paths for PK3 structure.
 def process_script_dir(dir : String, wad_name : String, pk3_build_dir : String)
@@ -38,7 +82,13 @@ def process_script_dir(dir : String, wad_name : String, pk3_build_dir : String)
       next
     end
 
+    # Skip binary files — they contain no script content and will crash
+    # regex operations on invalid UTF-8 bytes (e.g. sprites, sounds in
+    # unknown subdirectories redirected into mm_actors/).
+    # The files are already copied by copy_resource_files; this only skips
+    # the text-processing step (replaces stripping, include rewriting).
     content = File.read(file_path)
+    next if content.includes?('\0') || !content.valid_encoding?
     original_content = content
 
     # Strip 'version "x.y.z"' from ZSCRIPT files — only the master ZSCRIPT
@@ -585,10 +635,12 @@ def build_merged_pk3(actordb : Array(Actor), weapon_actor_set : Set(String))
             next if File.directory?(def_path) # skip subdirs in defs/ for now
 
             canonical = lump_name(def_file)
+            base = lump_base_name(canonical)  # pk3_extract.cr
 
-            # Check if this is a DECORATE/ZSCRIPT variant (including numbered: DECORATE.1.raw, etc.)
-            is_decorate_variant = canonical == "decorate" || canonical =~ /^decorate\.\d+$/
-            is_zscript_variant = canonical == "zscript" || canonical =~ /^zscript\.\d+$/
+            # Check if this is a DECORATE/ZSCRIPT variant (including numbered and dot-suffixed)
+            # e.g. DECORATE.1.raw, ZSCRIPT.MAGNUM.raw, ZSCRIPT.CASINGS.raw
+            is_decorate_variant = base == "decorate"
+            is_zscript_variant = base == "zscript"
 
             if decorate_file_set.includes?(def_path)
               # This is a DECORATE/ZSCRIPT file (main or included) — copy to mm_actors/WadName/
@@ -606,7 +658,7 @@ def build_merged_pk3(actordb : Array(Actor), weapon_actor_set : Set(String))
                 wad_zscript_main << {wad_name, pk3_path}
               end
 
-            elsif DECORATE_LUMP_NAMES.includes?(canonical) || is_decorate_variant || is_zscript_variant
+            elsif DECORATE_LUMP_NAMES.includes?(canonical) || DECORATE_LUMP_NAMES.includes?(base) || is_decorate_variant || is_zscript_variant
               # DECORATE/ZSCRIPT file not caught by include scan — still copy it
               dest_file = normalize_path(File.join(dec_dest, def_file))
               FileUtils.cp(def_path, dest_file)
@@ -622,10 +674,11 @@ def build_merged_pk3(actordb : Array(Actor), weapon_actor_set : Set(String))
                 wad_zscript_main << {wad_name, pk3_path}
               end
 
-            elsif TEXT_LUMP_NAMES.includes?(canonical) || TEXT_LUMP_NAMES.includes?(canonical.sub(/\.\d+$/, ""))
+            elsif TEXT_LUMP_NAMES.includes?(canonical) || TEXT_LUMP_NAMES.includes?(base)
               # Non-DECORATE text lump found in defs/ directory
-              # Also handles numbered jeutool variants (e.g. TEXTURES.1.raw -> textures)
-              base_canonical = canonical.sub(/\.\d+$/, "")
+              # Also handles numbered jeutool variants and dot-suffixed GZDoom lumps
+              # (e.g. TEXTURES.1.raw -> textures, SNDINFO.MAGNUM.raw -> sndinfo)
+              base_canonical = base
               content = safe_read(def_path)
               unless content.empty?
                 text_lumps[base_canonical] ||= Array(Tuple(String, String)).new
@@ -685,14 +738,17 @@ def build_merged_pk3(actordb : Array(Actor), weapon_actor_set : Set(String))
             stats_total_conflicts += conflicts
             log(2, "  ZSCRIPT/DECORATE subdir: #{entry}/ in #{wad_name} — redirected to mm_actors/#{wad_name}/#{entry}/ (#{copied} files)")
           else
-            # Unknown directory — copy preserving original case (PK3 is case-sensitive)
+            # Unknown directory — redirect into mm_actors/WadName/ so that:
+            #   1. process_script_dir strips replaces/version directives from any script files
+            #   2. Include paths get rewritten correctly for the PK3 structure
+            #   3. Different WADs with same-named subdirs (e.g. FSerpent/) don't collide
             unknown_dirs[entry] ||= Array(String).new
             unknown_dirs[entry] << wad_name
-            dest_dir = normalize_path(File.join(PK3_BUILD_DIR, entry))
+            dest_dir = normalize_path(File.join(PK3_BUILD_DIR, "mm_actors", wad_name, entry))
             copied, conflicts = copy_resource_files(entry_path, dest_dir, wad_name, conflict_log)
             stats_total_files += copied
             stats_total_conflicts += conflicts
-            log(1, "  UNKNOWN DIRECTORY: #{entry}/ in #{wad_name} — copied #{copied} files to #{entry}/")
+            log(1, "  UNKNOWN DIRECTORY: #{entry}/ in #{wad_name} — redirected to mm_actors/#{wad_name}/#{entry}/ (#{copied} files)")
           end
         end
 
@@ -701,20 +757,25 @@ def build_merged_pk3(actordb : Array(Actor), weapon_actor_set : Set(String))
         # FILE ENTRIES (root-level files in the WAD extraction)
         #-----------------------------------------------------------------
         canonical = lump_name(entry)
+        base = lump_base_name(canonical)  # pk3_extract.cr
 
         if canonical == "credits" || canonical == "credit"
           content = safe_read(entry_path)
           credits_parts << {wad_name, content} unless content.empty?
           log(3, "  Credits: #{wad_name}")
 
-        elsif DECORATE_LUMP_NAMES.includes?(canonical)
-          # Root-level DECORATE/ZSCRIPT file (outside defs/) — unusual but possible
+        elsif DECORATE_LUMP_NAMES.includes?(canonical) || DECORATE_LUMP_NAMES.includes?(base) ||
+              entry_lower.ends_with?(".dec") || entry_lower.ends_with?(".zs") || entry_lower.ends_with?(".zsc")
+          # Root-level DECORATE/ZSCRIPT file (outside defs/) — handles both
+          # plain (DECORATE, ZSCRIPT), dot-suffixed (ZScript.Magnum), and
+          # extension-based (.dec, .zs, .zsc) variants
           dec_dest = normalize_path(File.join(PK3_BUILD_DIR, "mm_actors", wad_name))
           Dir.mkdir_p(dec_dest)
           dest_file = normalize_path(File.join(dec_dest, entry))
           FileUtils.cp(entry_path, dest_file)
           pk3_path = "mm_actors/#{wad_name}/#{entry}"
-          if canonical == "zscript"
+          is_zs = base == "zscript" || entry_lower.ends_with?(".zs") || entry_lower.ends_with?(".zsc")
+          if is_zs
             unless wad_zscript_main.any? { |t| t[0] == wad_name }
               wad_zscript_main << {wad_name, pk3_path}
             end
@@ -726,9 +787,9 @@ def build_merged_pk3(actordb : Array(Actor), weapon_actor_set : Set(String))
             log(2, "  Root DECORATE: #{entry} -> mm_actors/#{wad_name}/")
           end
 
-        elsif TEXT_LUMP_NAMES.includes?(canonical) || TEXT_LUMP_NAMES.includes?(canonical.sub(/\.\d+$/, ""))
-          # Also handles numbered jeutool variants (e.g. TEXTURES.1.raw -> textures)
-          base_canonical = canonical.sub(/\.\d+$/, "")
+        elsif TEXT_LUMP_NAMES.includes?(canonical) || TEXT_LUMP_NAMES.includes?(base)
+          # Also handles numbered jeutool variants and dot-suffixed GZDoom lumps
+          base_canonical = base
           content = safe_read(entry_path)
           unless content.empty?
             text_lumps[base_canonical] ||= Array(Tuple(String, String)).new
@@ -736,8 +797,22 @@ def build_merged_pk3(actordb : Array(Actor), weapon_actor_set : Set(String))
             log(3, "  Text lump: #{base_canonical} from #{wad_name} (#{entry})")
           end
 
-        elsif SKIP_LUMP_NAMES.includes?(canonical) || SKIP_LUMP_NAMES.includes?(canonical.sub(/\.\d+$/, ""))
+        elsif SKIP_LUMP_NAMES.includes?(canonical) || SKIP_LUMP_NAMES.includes?(base)
           log(3, "  Skipping engine lump: #{entry}")
+
+        elsif entry_lower.ends_with?(".wad")
+          # Skip nested WAD files — these were already extracted during the
+          # extraction phase. The raw .wad files should not be in the final PK3.
+          log(3, "  Skipping nested WAD file: #{entry}")
+
+        elsif File.size(entry_path) == 0
+          # Skip zero-byte marker files (SLADE markers like "--------",
+          # "==Doomreplacements==", etc.) — no purpose in a PK3.
+          log(3, "  Skipping 0-byte marker: #{entry} in #{wad_name}")
+
+        elsif BANNED_GRAPHICS.includes?(lump_name(entry))
+          # Skip menu/title graphics that would override the game's UI
+          log(3, "  Skipping banned graphic: #{entry} in #{wad_name}")
 
         else
           # Unknown root file — copy to PK3 root, log for review
@@ -946,30 +1021,86 @@ def build_merged_pk3(actordb : Array(Actor), weapon_actor_set : Set(String))
       next
     end
 
-    # Post-process MAPINFO: strip existing DoomEdNums blocks so they can be
-    # reassigned cleanly via our generated block (appended after text lump writing).
+    # Post-process MAPINFO: strip blocks that conflict with Obsidian's level gen.
+    #  - DoomEdNums: will be reassigned via our generated block
+    #  - ClearSkills + Skill blocks: override Obsidian/engine skill definitions
+    #  - Map blocks: override Obsidian-generated map definitions
     if canonical_name == "mapinfo" || canonical_name == "zmapinfo"
       stripped_lines = [] of String
-      in_doomednums = false
+      in_block = false
       brace_depth = 0
+      strip_count = Hash(String, Int32).new(0)
+
       merged.each_line do |line|
-        if !in_doomednums && (line.strip =~ /^DoomEdNums\s*$/i || line.strip =~ /^DoomEdNums\s*\{/i)
-          in_doomednums = true
-          brace_depth = line.count('{') - line.count('}')
+        trimmed = line.strip
+
+        # Skip ClearSkills standalone directive
+        if !in_block && trimmed =~ /^ClearSkills\s*$/i
+          strip_count["ClearSkills"] += 1
           next
         end
-        if in_doomednums
+
+        # Detect start of blocks we want to strip:
+        #  - DoomEdNums { ... }
+        #  - Skill Name { ... }
+        #  - map MAPXXX "title" { ... }
+        if !in_block
+          block_type = nil
+          if trimmed =~ /^DoomEdNums(\s*$|\s*\{)/i
+            block_type = "DoomEdNums"
+          elsif trimmed =~ /^Skill\s+\w+/i
+            block_type = "Skill"
+          elsif trimmed =~ /^map\s+\w+/i
+            block_type = "Map"
+          end
+
+          if block_type
+            # Check if this line contains an opening brace
+            if trimmed.includes?("{")
+              in_block = true
+              brace_depth = line.count('{') - line.count('}')
+              # Block may open and close on the same line
+              in_block = false if brace_depth <= 0
+            else
+              # No brace on this line — check if next lines have one (braced block)
+              # or if it's a braceless single-line directive (like "map MAP999 ...")
+              in_block = true
+              brace_depth = 0  # Will look for opening brace on subsequent lines
+            end
+            strip_count[block_type] += 1
+            next
+          end
+        end
+
+        # Inside a block being stripped
+        if in_block
+          if brace_depth == 0 && !trimmed.includes?("{")
+            # Haven't found the opening brace yet — this is either a continuation
+            # of a braceless directive (e.g. "music D_OPENIN" after "map MAP999")
+            # or a blank/comment line before the brace.
+            # If we hit a line that looks like a new top-level directive, stop stripping.
+            if trimmed =~ /^(map|skill|doomednum|clearskills|spawnnum|gameinfo|damagetype)\s/i || trimmed =~ /^\/\/ ──/
+              in_block = false
+              stripped_lines << line
+            end
+            next
+          end
+
           brace_depth += line.count('{') - line.count('}')
           if brace_depth <= 0
-            in_doomednums = false
+            in_block = false
           end
           next
         end
+
         stripped_lines << line
       end
+
       new_merged = stripped_lines.join("\n")
       if new_merged != merged
-        log(2, "  MAPINFO: stripped existing DoomEdNums block(s) (will be reassigned)")
+        strip_count.each do |block_type, count|
+          log(2, "  MAPINFO: stripped #{count} #{block_type} block(s)")
+        end
         merged = new_merged
       end
     end
@@ -1586,13 +1717,31 @@ def build_merged_pk3(actordb : Array(Actor), weapon_actor_set : Set(String))
 
   log(2, "Creating PK3 file: #{PK3_OUTPUT}")
 
-  begin
-    File.open(PK3_OUTPUT, "w") do |file|
-      Compress::Zip::Writer.open(file) do |zip|
-        add_dir_to_zip(zip, PK3_BUILD_DIR, "")
-      end
-    end
-    pk3_size = File.size(PK3_OUTPUT)
+  # Crystal's Compress::Zip::Writer lacks ZIP64 support, causing arithmetic
+  # overflow on large archives. Use a system zip tool instead.
+  # Detect available zip tool: 'zip' (Linux/Mac/MSYS2), '7z' (Windows), or error.
+  abs_output = File.expand_path(PK3_OUTPUT)
+  File.delete(abs_output) if File.exists?(abs_output)
+
+  zip_exe = find_zip_tool() # pk3_merge.cr
+  log(2, "Using '#{zip_exe}' to create PK3...")
+
+  if zip_exe.ends_with?("7z") || zip_exe.ends_with?("7z.exe")
+    # 7-Zip: create a zip archive from the build directory
+    result = Process.run(zip_exe, ["a", "-tzip", "-r", abs_output, ".\\*"], chdir: PK3_BUILD_DIR,
+                         output: Process::Redirect::Close, error: Process::Redirect::Pipe)
+  else
+    # Info-ZIP: create a zip archive from the build directory
+    result = Process.run(zip_exe, ["-r", abs_output, "."], chdir: PK3_BUILD_DIR,
+                         output: Process::Redirect::Close, error: Process::Redirect::Pipe)
+  end
+
+  unless result.success?
+    log(0, "PK3 creation failed (exit code #{result.exit_code})")
+    log(0, "The staged PK3 content is still available in #{PK3_BUILD_DIR}/")
+    log(0, "Try manually: cd #{PK3_BUILD_DIR} && #{zip_exe} -r monster_mash.pk3 .")
+  else
+    pk3_size = File.size(abs_output)
     size_mb = (pk3_size / (1024.0 * 1024.0)).round(2)
     log(2, "PK3 created successfully: #{PK3_OUTPUT} (#{size_mb} MB)")
 
@@ -1605,7 +1754,7 @@ def build_merged_pk3(actordb : Array(Actor), weapon_actor_set : Set(String))
 
       # Copy monster_mash.pk3 to Obsidian root
       dest_pk3 = normalize_path(File.join(obsidian_dir, "monster_mash.pk3"))
-      FileUtils.cp(PK3_OUTPUT, dest_pk3)
+      FileUtils.cp(abs_output, dest_pk3)
       log(1, "Copied PK3 to Obsidian folder: #{dest_pk3}")
 
       # Copy companion files (target-spy, big_backpack) if not already present
@@ -1624,11 +1773,5 @@ def build_merged_pk3(actordb : Array(Actor), weapon_actor_set : Set(String))
     else
       log(2, "Standalone mode — PK3 not copied (obsidian.exe not found)")
     end
-  rescue ex
-    log(0, "Failed to create PK3: #{ex.message}")
-    log(0, "The staged PK3 content is still available in #{PK3_BUILD_DIR}/ for manual zipping.")
-    log(0, "You can manually create the PK3 with:")
-    log(0, "  PowerShell: Compress-Archive -Path '#{PK3_BUILD_DIR}\\*' -DestinationPath '#{PK3_OUTPUT}'")
-    log(0, "  Linux/Mac:  cd '#{PK3_BUILD_DIR}' && zip -r monster_mash.pk3 .")
   end
 end

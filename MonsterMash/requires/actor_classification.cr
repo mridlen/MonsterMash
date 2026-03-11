@@ -358,7 +358,12 @@ def detect_zscript_classes(actordb : Array(Actor), actors_by_name : Hash(String,
   {"doomimspecies", "doomimp"}.each { |n| monster_base_classes.add(n) }
 
   # Collect all ZScript files in Processing/ (including numbered duplicates: ZSCRIPT.1.raw, etc.)
+  # Also include root-level ZScript.* files from PK3-extracted mods (e.g. ZScript.Magnum)
   zscript_raw_files = Dir.glob("#{PROCESSING_DIR}/*/defs/ZSCRIPT{,.?*}.raw").map { |p| normalize_path(p) }
+  root_zs_files = Dir.glob("#{PROCESSING_DIR}/*/ZSCRIPT.*").map { |p| normalize_path(p) }
+    .select { |p| File.file?(p) }  # exclude directories named "zscript"
+  zscript_raw_files += root_zs_files
+  zscript_raw_files = zscript_raw_files.uniq
 
   # Data structure: class_name_lc => {name_with_case, parent_lc, file_path, has_monster_flag, has_fire_state}
   zscript_class_info = Hash(String, NamedTuple(

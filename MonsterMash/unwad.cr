@@ -49,6 +49,7 @@ require "./requires/doomednum_assign.cr"    # Reserved doomednum data & assignme
 require "./requires/sprite_conflicts.cr"    # Sprite prefix conflict resolution
 require "./requires/sound_conflicts.cr"     # Sound lump conflict resolution
 require "./requires/pk3_merge.cr"           # Final PK3 merge pipeline
+require "./requires/source_report.cr"      # Per-WAD/PK3 contents report
 
 ###############################################################################
 # CLI HELP
@@ -173,7 +174,24 @@ extract_iwads(jeutoolexe)       # requires/extraction.cr
 processing_files = Dir.glob("#{PROCESSING_DIR}/*/defs/DECORATE{,.?*}.raw").map { |p| normalize_path(p) }
 zscript_files = Dir.glob("#{PROCESSING_DIR}/*/defs/ZSCRIPT{,.?*}.raw").map { |p| normalize_path(p) }
 processing_files += zscript_files
-processing_files = processing_files.uniq
+
+# PK3-extracted mods may have root-level ZScript.* or DECORATE.* files
+# (e.g. ZScript.Magnum, ZScript.Casings) that are not in the defs/ folder
+root_zscript_files = Dir.glob("#{PROCESSING_DIR}/*/ZSCRIPT.*").map { |p| normalize_path(p) }
+  .select { |p| File.file?(p) }  # exclude directories named "zscript"
+root_decorate_files = Dir.glob("#{PROCESSING_DIR}/*/DECORATE.*").map { |p| normalize_path(p) }
+  .select { |p| File.file?(p) }
+processing_files += root_zscript_files
+processing_files += root_decorate_files
+
+# Sort so standalone mods are parsed before promoted nested WADs (Parent__Child).
+# This ensures the standalone "Arachnobaron" is seen first and keeps its name,
+# while the duplicate "Monster__Arachnobaron" gets the _MM rename suffix.
+# Standalone mods (no "__") sort before nested WADs (contain "__"), then alphabetical.
+processing_files = processing_files.uniq.sort_by { |p|
+  folder = p.split("/")[2]? || ""
+  {folder.includes?("__") ? 1 : 0, folder.downcase}
+}
 built_in_actors = Dir.glob("./Built_In_Actors/*/*.txt").map { |p| normalize_path(p) }
 
 no_touchy = Hash(String, Bool).new
@@ -222,6 +240,12 @@ resolve_sound_conflicts(actordb) # requires/sound_conflicts.cr
 build_merged_pk3(actordb, weapon_actor_set) # requires/pk3_merge.cr
 
 generate_lua_module(actordb, weapon_actor_set, ammo_actor_set, pickup_actor_set) # requires/lua_gen.cr
+
+###############################################################################
+# SOURCE MOD CONTENTS REPORT
+###############################################################################
+
+generate_source_report(actordb, weapon_actor_set, ammo_actor_set, pickup_actor_set) # requires/helpers.cr
 
 ###############################################################################
 # POST-RUN CLEANUP

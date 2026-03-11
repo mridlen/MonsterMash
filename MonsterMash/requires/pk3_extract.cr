@@ -12,10 +12,13 @@ PK3_ROOT_TEXT_EXTENSIONS = Set{".dec", ".txt", ".zs", ".zsc", ".acs", ""}
 
 # Detect whether a root-level file in a PK3 is a definition/text lump
 # that belongs in the defs/ directory.
+# GZDoom supports dot-suffixed lump names (e.g. ZScript.Magnum, SNDINFO.Weapons)
+# where the base name before the dot is the real lump type.
 def pk3_is_root_text_lump?(filename : String) : Bool
   canonical = lump_name(filename)
-  return true if DECORATE_LUMP_NAMES.includes?(canonical)
-  return true if TEXT_LUMP_NAMES.includes?(canonical)
+  base = lump_base_name(canonical)  # pk3_extract.cr
+  return true if DECORATE_LUMP_NAMES.includes?(canonical) || DECORATE_LUMP_NAMES.includes?(base)
+  return true if TEXT_LUMP_NAMES.includes?(canonical) || TEXT_LUMP_NAMES.includes?(base)
   return true if canonical == "credits" || canonical == "credit"
   false
 end
@@ -174,7 +177,7 @@ RESOURCE_DIRS = Set{
 TEXT_LUMP_NAMES = Set{
   "sndinfo", "gldefs", "lockdefs", "animdefs", "decaldef",
   "sbarinfo", "menudef", "cvarinfo", "terrain", "voxeldef",
-  "modeldef", "keyconf", "textures", "gameinfo", "zmapinfo",
+  "modeldef", "keyconf", "textures", "zmapinfo",
   "mapinfo", "fontdefs", "reverbs", "althudcf", "x11r6rgb",
   "textcolo", "textcolors", "dehacked", "loadacs", "s_skin",
   "skininfo", "dialogue", "doomdefs", "hticdefs", "hexndefs",
@@ -187,7 +190,7 @@ TEXT_LUMP_NAMES = Set{
 
 # Binary/metadata lumps to skip — these come from the IWAD, engine, or jeutool.
 SKIP_LUMP_NAMES = Set{
-  "playpal", "colormap", "endoom", "dmxgus", "dmxgusc",
+  "playpal", "colormap", "endoom", "dmxgus", "dmxgusc", "gameinfo",
   "pnames", "texture1", "texture2",
   # jeutool extraction metadata — present in every extracted WAD
   "base-pal", "config", "info", "updates",
@@ -196,10 +199,40 @@ SKIP_LUMP_NAMES = Set{
   "oldmapin", "oldzscri",
 }
 
+# Menu/title graphics that must not be included in the merged PK3.
+# These override the game's default menu appearance and title screens.
+BANNED_GRAPHICS = Set{
+  # Title/intermission/end screens
+  "titlepic", "interpic", "credit", "endpic", "help1", "help2",
+  "conback", "victory2", "bossback",
+  # Menu graphics
+  "m_doom", "m_option", "m_loadg", "m_saveg", "m_rdthis", "m_quitg",
+  "m_skull1", "m_skull2", "m_newg", "m_episod",
+  "m_ep1", "m_ep2", "m_ep3", "m_ep4",
+  "m_skill", "m_jkill", "m_rough", "m_hurt", "m_ultra", "m_nmare",
+  # Status bar
+  "stbar", "starms",
+}
+
+# Default Doom sounds that must not be included in the merged PK3.
+# These override built-in engine sounds when placed in sounds/ directory.
+BANNED_SOUNDS = Set{
+  "dsswtchn", "dsswtchx",  # switch on/off sounds
+}
+
 # Lump names that are DECORATE-like (handled separately via master #include)
 DECORATE_LUMP_NAMES = Set{
   "decorate", "zscript",
 }
+
+# Extract the base lump type from a canonical lump name, stripping GZDoom
+# dot-suffixes (e.g. "zscript.magnum" → "zscript", "sndinfo.weapons" → "sndinfo").
+# Also strips numeric jeutool suffixes (e.g. "decorate.1" → "decorate").
+# Returns the canonical name unchanged if there's no dot.
+def lump_base_name(canonical : String) : String
+  return canonical unless canonical.includes?(".")
+  canonical.split(".").first
+end
 
 # Strip common lump file extensions to get the canonical lump name
 def lump_name(filename : String) : String
@@ -247,15 +280,25 @@ def copy_resource_files(src_dir : String, dest_dir : String, wad_name : String,
       next
     end
 
+    # Skip zero-byte files — these are SLADE marker lumps (e.g. S_START/S_END)
+    # that serve no purpose in a PK3 and should not be included.
+    file_size = File.size(src_path)
+    if file_size == 0
+      log(3, "  Skipping 0-byte marker file: #{filename} in #{wad_name}")
+      next
+    end
+
+    # Skip banned menu/title graphics and default sounds that would override
+    # the game's built-in UI or engine sounds.
+    lump_base = File.basename(dest_filename, File.extname(dest_filename)).downcase
+    if BANNED_GRAPHICS.includes?(lump_base) || BANNED_SOUNDS.includes?(lump_base)
+      log(3, "  Skipping banned lump: #{filename} in #{wad_name}")
+      next
+    end
+
     # Filter invalid sprites — jeutool sometimes creates 0-byte placeholder files
     if is_sprites_dir
-      file_size = File.size(src_path)
       basename = File.basename(dest_filename, File.extname(dest_filename))
-      # Skip zero-byte files (jeutool placeholders, not real image data)
-      if file_size == 0
-        log(3, "  Skipping 0-byte sprite placeholder: #{filename} in #{wad_name}")
-        next
-      end
       # Skip names that are too short to be valid sprites (need 4-char prefix + frame)
       # but only if they're also small — legitimate short-named lumps exist
       if basename.size < 5 && file_size < 64
@@ -296,7 +339,7 @@ def add_dir_to_zip(zip : Compress::Zip::Writer, base_path : String, zip_prefix :
       add_dir_to_zip(zip, full_path, zip_path)
     else
       zip.add(zip_path) do |entry_io|
-        File.open(full_path, "r") do |src|
+        File.open(full_path, "rb") do |src|
           IO.copy(src, entry_io)
         end
       end

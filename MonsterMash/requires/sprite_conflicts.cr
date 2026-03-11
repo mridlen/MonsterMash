@@ -9,7 +9,30 @@
 
 # Generate the next available 4-char sprite prefix by incrementing the last
 # character. Skips prefixes already in use.
+# If the original prefix starts with a digit (e.g. "3WRT"), .succ would
+# produce candidates that also start with digits, which are invalid for
+# Doom sprite names. In that case, replace the leading digit with 'A'-'Z'
+# and increment from there.
 def increment_prefix(original : String, existing : Hash(String, Array(Tuple(String, String)))) : String
+  # If prefix starts with a digit, replace leading char with letters A-Z
+  if original =~ /^[0-9]/
+    ('A'..'Z').each do |ch|
+      candidate = "#{ch}#{original[1..]}"
+      next if existing.has_key?(candidate)
+      return candidate
+    end
+    # All single-letter replacements taken — try incrementing from "A" + rest
+    candidate = "A#{original[1..]}"
+    while existing.has_key?(candidate)
+      candidate = candidate.succ
+      if candidate =~ /^[0-9]/ || candidate.size > 4
+        log(0, "Fatal: prefix '#{candidate}' invalid — exhausted all 4-char prefixes")
+        exit(1)
+      end
+    end
+    return candidate
+  end
+
   candidate = original.succ
   while existing.has_key?(candidate)
     candidate = candidate.succ

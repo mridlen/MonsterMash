@@ -78,7 +78,7 @@ def wipe_and_reassign_doomednums(
       delete_idx = -1
       replace_with_comment = nil.as(String?)
       words.each_with_index do |word, word_index|
-        break if word == "{" || word =~ /^\//
+        break if word.starts_with?("{") || word =~ /^\//
         # [BUGFIX] Handle tokens like "31378//add your own..." where a number
         # is glued to a // comment with no space (phantasm, phantasm2 bug).
         if word.includes?("//")
@@ -129,7 +129,7 @@ def wipe_and_reassign_doomednums(
         # Find where to insert: BEFORE the '{' or any comment
         insert_idx = words.size  # default: append at end
         words.each_with_index do |word, word_index|
-          if word == "{" || word =~ /^\//
+          if word.starts_with?("{") || word =~ /^\//
             insert_idx = word_index
             break
           end
@@ -207,7 +207,7 @@ def wipe_and_reassign_doomednums(
       # Find where to insert: BEFORE the '{' or any comment
       insert_idx = words.size
       words.each_with_index do |word, word_index|
-        if word == "{" || word =~ /^\//
+        if word.starts_with?("{") || word =~ /^\//
           insert_idx = word_index
           break
         end
@@ -271,7 +271,7 @@ def wipe_and_reassign_doomednums(
       # Find where to insert: BEFORE the '{' or any comment
       insert_idx = words.size
       words.each_with_index do |word, word_index|
-        if word == "{" || word =~ /^\//
+        if word.starts_with?("{") || word =~ /^\//
           insert_idx = word_index
           break
         end
@@ -335,7 +335,7 @@ def wipe_and_reassign_doomednums(
       # Find where to insert: BEFORE the '{' or any comment
       insert_idx = words.size
       words.each_with_index do |word, word_index|
-        if word == "{" || word =~ /^\//
+        if word.starts_with?("{") || word =~ /^\//
           insert_idx = word_index
           break
         end

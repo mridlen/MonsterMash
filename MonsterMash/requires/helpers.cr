@@ -250,14 +250,27 @@ end
 
 # Return the standard list of SNDINFO file path candidates for a WAD.
 # Used during sound conflict resolution to find existing SNDINFO files.
+# Includes dot-suffixed GZDoom variants (e.g. SNDINFO.MAGNUM.raw from SNDInfo.Magnum).
 def sndinfo_candidates(wad_name : String) : Array(String)
-  [
+  candidates = [
     "#{PROCESSING_DIR}/#{wad_name}/defs/SNDINFO.raw",
     "#{PROCESSING_DIR}/#{wad_name}/defs/sndinfo.raw",
     "#{PROCESSING_DIR}/#{wad_name}/defs/SNDINFO.txt",
     "#{PROCESSING_DIR}/#{wad_name}/defs/sndinfo.txt",
     "#{PROCESSING_DIR}/#{wad_name}/defs/SNDINFO.lmp",
-  ].map { |p| normalize_path(p) }
+  ]
+  # Also find dot-suffixed SNDINFO variants (e.g. SNDINFO.MAGNUM.raw)
+  defs_dir = "#{PROCESSING_DIR}/#{wad_name}/defs"
+  if Dir.exists?(defs_dir)
+    Dir.children(defs_dir).each do |f|
+      canonical = lump_name(f)  # pk3_extract.cr
+      base = lump_base_name(canonical)  # pk3_extract.cr
+      if base == "sndinfo" && canonical != "sndinfo"
+        candidates << "#{defs_dir}/#{f}"
+      end
+    end
+  end
+  candidates.map { |p| normalize_path(p) }
 end
 
 # Infer a weapon slot number from actor properties when no explicit slot is set.

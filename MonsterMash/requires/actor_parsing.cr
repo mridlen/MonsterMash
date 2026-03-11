@@ -659,17 +659,43 @@ def parse_all_actors(full_dir_list : Array(String), no_touchy : Hash(String, Boo
     log(3, "Processing: #{wad_folder_name} (#{file_path})")
 
     unless is_built_in
-      # [BUGFIX] V1 had include file handling that used Ruby's $1 syntax.
-      # Now we properly resolve includes and add them to the processing queue.
+      # Resolve #include directives and add included files to the processing queue.
+      # Two include patterns exist:
+      #   1. DECORATE bare-name includes: #include "Baby"
+      #      → jeutool extracts these as UPPERCASED .raw files in defs/
+      #   2. ZScript path includes: #include "../zscript/foo/bar.txt"
+      #      → files exist at their original paths relative to the mod root
+      # ACS includes (*.acs) are skipped — they contain no actor definitions.
       input_file = safe_read(file_path)
       input_file.each_line do |line|
         if line.strip =~ /^#include/i
           if md = line.match(/"([^"]+)"/i)
-            include_name = md[1].upcase
-            new_path = File.join(File.dirname(file_path), "#{include_name}.raw")
-            unless full_dir_list.includes?(new_path)
-              full_dir_list << new_path
-              no_touchy[new_path] = false
+            include_value = md[1]
+
+            # Skip ACS includes — not actor definitions
+            next if include_value.downcase.ends_with?(".acs")
+
+            has_extension = include_value.includes?(".")
+            has_path_sep  = include_value.includes?("/") || include_value.includes?("\\")
+
+            if has_extension || has_path_sep
+              # ZScript-style include with path/extension (e.g. "../zscript/foo/bar.txt")
+              # Resolve relative to the directory containing the current file
+              new_path = normalize_path(File.join(File.dirname(file_path), include_value))
+            else
+              # DECORATE bare-name include (e.g. "Baby")
+              # jeutool extracts these as UPPERCASED .raw files in defs/
+              new_path = normalize_path(File.join(File.dirname(file_path), "#{include_value.upcase}.raw"))
+            end
+
+            if File.exists?(new_path)
+              unless full_dir_list.includes?(new_path)
+                full_dir_list << new_path
+                no_touchy[new_path] = false
+                log(3, "  #include resolved: #{include_value} → #{new_path}")
+              end
+            else
+              log(1, "  #include not found: #{include_value} → #{new_path} (from #{file_path})")
             end
           end
         end
@@ -692,6 +718,10 @@ def parse_all_actors(full_dir_list : Array(String), no_touchy : Hash(String, Boo
 
     # Remove /* ... */ block comments (non-greedy)
     input_text = input_text.gsub(/\/\*[\s\S]*?\*\//m, "")
+
+    # Remove ZScript version directives (e.g. version "4.11.1")
+    # These are not actor definitions and would create bogus actor entries
+    input_text = input_text.gsub(/^version\s+"[^"]*"\s*;?\s*$/im, "")
 
     # Put braces on their own lines
     input_text = input_text.gsub('{', "\n{\n")
