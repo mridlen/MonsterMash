@@ -94,39 +94,56 @@ end
 # WADs (files in defs/ with .raw extension) and PK3-extracted content
 # (files at WAD root with various extensions like .dec, .txt, or no extension).
 def collect_decorate_files(base_path : String) : Array(String)
-  file_list = [base_path]
-  return file_list unless File.exists?(base_path)
+  file_list = Array(String).new
+  visited = Set(String).new
+  collect_decorate_files_recursive(base_path, file_list, visited)
+  file_list.uniq
+end
 
-  base_dir = normalize_path(File.dirname(base_path))
+# Recursively collect all DECORATE/ZSCRIPT files following #include directives.
+# Tracks visited files to avoid infinite loops from circular includes.
+def collect_decorate_files_recursive(base_path : String, file_list : Array(String), visited : Set(String))
+  normalized = normalize_path(base_path)
+  return if visited.includes?(normalized)
+  visited << normalized
+
+  file_list << normalized
+  return unless File.exists?(normalized)
+
+  base_dir = normalize_path(File.dirname(normalized))
   # For files in defs/, the WAD root is one level up
   wad_root = normalize_path(File.dirname(base_dir))
 
-  File.each_line(base_path) do |line|
+  File.each_line(normalized) do |line|
     if line.strip =~ /^#include\s+/i
       if md = line.match(/"([^"]+)"/)
         include_ref = md[1]
 
         # Try multiple resolution strategies (first match wins):
+        # Include base_dir of the current file for nested includes
+        current_dir = normalize_path(File.dirname(normalized))
         candidates = [
-          File.join(base_dir, "#{include_ref.upcase}.raw"),   # defs/NAME.RAW (jeutool)
-          File.join(base_dir, include_ref),                    # defs/path/as-is
-          File.join(base_dir, include_ref.upcase),             # defs/NAME (no ext)
-          File.join(wad_root, include_ref),                    # wad_root/path/as-is (PK3)
-          File.join(wad_root, "#{include_ref.upcase}.raw"),    # wad_root/NAME.RAW
-          File.join(wad_root, include_ref.upcase),             # wad_root/NAME
+          File.join(current_dir, include_ref),                  # relative to current file
+          File.join(current_dir, "#{include_ref.upcase}.raw"),  # relative + .RAW
+          File.join(current_dir, include_ref.upcase),           # relative + uppercase
+          File.join(base_dir, "#{include_ref.upcase}.raw"),     # defs/NAME.RAW (jeutool)
+          File.join(base_dir, include_ref),                     # defs/path/as-is
+          File.join(base_dir, include_ref.upcase),              # defs/NAME (no ext)
+          File.join(wad_root, include_ref),                     # wad_root/path/as-is (PK3)
+          File.join(wad_root, "#{include_ref.upcase}.raw"),     # wad_root/NAME.RAW
+          File.join(wad_root, include_ref.upcase),              # wad_root/NAME
         ]
 
         found = candidates.find { |c| File.exists?(normalize_path(c)) }
         if found
-          file_list << normalize_path(found)
+          collect_decorate_files_recursive(normalize_path(found), file_list, visited)
         else
-          log(1, "Include not resolved: \"#{include_ref}\" (from #{base_path})")
+          log(1, "Include not resolved: \"#{include_ref}\" (from #{normalized})")
           log(3, "  Searched: #{candidates.map { |c| normalize_path(c) }.join(", ")}")
         end
       end
     end
   end
-  file_list.uniq
 end
 
 # Match balanced braces starting from a given position in text.

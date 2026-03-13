@@ -183,33 +183,33 @@ def weapon_tier(actor : Actor) : {Float64, Int32, Int32, Float64}
   # level values staggered within slots to spread new_weapons across levels.
   case slot
   when 1  # Melee (fist/chainsaw)
-    {1.0, 5, 15, 10.0}
+    {0.7, 5, 15, 10.0}
   when 2  # Pistol class
-    {1.2, 7, 20, 15.0}
+    {0.9, 7, 20, 15.0}
   when 3  # Shotgun class
-    {1.8, 20, 35, 70.0}
+    {1.3, 20, 35, 70.0}
   when 4  # Chaingun class
-    {3.0, 20, 35, 50.0}
+    {2.5, 20, 35, 50.0}
   when 5  # Rocket launcher class
-    {4.5, 15, 40, 170.0}
+    {3.5, 15, 40, 170.0}
   when 6  # Plasma rifle class
-    {5.5, 12, 35, 80.0}
+    {4.5, 12, 35, 80.0}
   when 7  # BFG class
-    {8.0, 6, 20, 300.0}
+    {7.0, 6, 20, 300.0}
   when 8, 9, 0  # Exotic / overflow slots
-    {8.0, 6, 20, 300.0}
+    {7.0, 6, 20, 300.0}
   else
     # No slot info — estimate from weapon flags and ammo use
     if actor.weapon.bfg
-      {8.0, 6, 20, 300.0}
+      {7.0, 6, 20, 300.0}
     elsif actor.weapon.meleeweapon
-      {1.0, 5, 15, 10.0}
+      {0.7, 5, 15, 10.0}
     elsif actor.weapon.ammouse > 5
-      {6.5, 10, 30, 150.0}   # High ammo use = powerful
+      {5.5, 10, 30, 150.0}   # High ammo use = powerful
     elsif actor.weapon.ammouse > 1
-      {3.5, 17, 35, 80.0}    # Moderate ammo use
+      {2.8, 17, 35, 80.0}    # Moderate ammo use
     else
-      {2.5, 17, 35, 50.0}    # Default — mid-tier
+      {2.0, 17, 35, 50.0}    # Default — mid-tier
     end
   end
 end
@@ -273,7 +273,7 @@ end
 # Generate the complete Lua module file for Obsidian integration.
 # Writes MONSTER_MASH.MONSTERS, MONSTER_MASH.WEAPONS, MONSTER_MASH.PICKUPS,
 # and OB_MODULES registration.
-def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), ammo_actor_set : Set(String), pickup_actor_set : Set(String))
+def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), ammo_actor_set : Set(String), pickup_actor_set : Set(String), weapon_default : Float64 = 0.0)
   log(2, "=== Generating Lua Module ===")
 
   lua_monster_count = 0
@@ -833,7 +833,7 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
 
       lua_key = actor.name.gsub(/[^a-zA-Z0-9_]/, "_")
       lua_key = "_#{lua_key}" if lua_key[0]?.try(&.ascii_number?)
-      slider_default = 0  # All weapons default to 0 — user selects their own loadout
+      slider_default = weapon_default  # Default from --weapon-default flag (0 if not specified)
       # Note: SliderZero behavior preserved via actor.slider_zero for future revert
       io << "    {\n"
       io << "      name = \"float_#{lua_key}\",\n"
