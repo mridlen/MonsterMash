@@ -71,6 +71,16 @@ if ARGV.includes?("-h") || ARGV.includes?("--help")
   puts "                      troubleshooting; use --clean-only to clean up later)"
   puts "  --weapon-default=N  Set default weapon slider value (0–20, step 0.02)"
   puts "                      e.g. --weapon-default=0.3  (default: 0)"
+  puts "  --monster-default=N Set default monster slider value (0–20, step 0.02)"
+  puts "                      e.g. --monster-default=1.0  (default: 1)"
+  puts "  --ally-default=N    Set default ally slider value (0–20, step 0.02)"
+  puts "                      e.g. --ally-default=1.0  (default: 1)"
+  puts "  --ammo-default=N    Set default ammo slider value (0–20, step 0.02)"
+  puts "                      e.g. --ammo-default=10  (default: 10)"
+  puts "  --nice-item-default=N Set default nice item slider value (0–20, step 0.02)"
+  puts "                      e.g. --nice-item-default=0.3  (default: 0.3)"
+  puts "  --pickup-default=N  Set default pickup slider value (0–20, step 0.02)"
+  puts "                      e.g. --pickup-default=0.3  (default: 0.3)"
   puts "  -v                  Verbosity: warnings"
   puts "  -vv                 Verbosity: info"
   puts "  -vvv                Verbosity: debug"
@@ -136,41 +146,53 @@ end
 flag_no_cleanup = ARGV.includes?("--no-cleanup")
 flag_clean_only = ARGV.includes?("--clean-only")
 
-# --weapon-default=N : default weapon slider value (0–20, step 0.02)
-# Accepts both --weapon-default=0.3 and --weapon-default 0.3
-weapon_default = 0.0
-ARGV.each_with_index do |arg, i|
-  value_str = nil.as(String?)
-  if arg.starts_with?("--weapon-default=")
-    value_str = arg.split("=", 2)[1]
-  elsif arg == "--weapon-default" && i + 1 < ARGV.size
-    value_str = ARGV[i + 1]
+# Parse a --<name>-default=N slider default from the command line.
+# Accepts both --<name>-default=0.3 and --<name>-default 0.3
+# Returns the parsed value, or fallback if the flag is not present.
+def parse_slider_default_flag(flag_name : String, fallback : Float64) : Float64
+  result = fallback
+  ARGV.each_with_index do |arg, i|
+    value_str = nil.as(String?)
+    if arg.starts_with?("--#{flag_name}=")
+      value_str = arg.split("=", 2)[1]
+    elsif arg == "--#{flag_name}" && i + 1 < ARGV.size
+      value_str = ARGV[i + 1]
+    end
+    if value_str
+      # Validate format: must be a simple decimal with at most 2 decimal places
+      unless value_str =~ /^\d+(\.\d{1,2})?$/
+        log(0, "ERROR: --#{flag_name} value '#{value_str}' is not valid (use up to 2 decimal places, e.g. 0.3 or 0.14).")
+        exit(1)
+      end
+      val = value_str.to_f64?
+      if val.nil?
+        log(0, "ERROR: --#{flag_name} value '#{value_str}' is not a valid number.")
+        exit(1)
+      end
+      if val < 0.0 || val > 20.0
+        log(0, "ERROR: --#{flag_name} value #{val} is out of range (must be 0–20).")
+        exit(1)
+      end
+      # Check divisibility by 0.02 (using integer math to avoid float precision issues)
+      int_val = (val * 100).round.to_i
+      if int_val % 2 != 0
+        log(0, "ERROR: --#{flag_name} value #{val} is not a valid slider increment (must be divisible by 0.02).")
+        exit(1)
+      end
+      result = val
+      log(2, "#{flag_name} set to: #{result}")
+    end
   end
-  if value_str
-    # Validate format: must be a simple decimal with at most 2 decimal places
-    unless value_str =~ /^\d+(\.\d{1,2})?$/
-      log(0, "ERROR: --weapon-default value '#{value_str}' is not valid (use up to 2 decimal places, e.g. 0.3 or 0.14).")
-      exit(1)
-    end
-    val = value_str.to_f64?
-    if val.nil?
-      log(0, "ERROR: --weapon-default value '#{value_str}' is not a valid number.")
-      exit(1)
-    end
-    if val < 0.0 || val > 20.0
-      log(0, "ERROR: --weapon-default value #{val} is out of range (must be 0–20).")
-      exit(1)
-    end
-    # Check divisibility by 0.02 (using integer math to avoid float precision issues)
-    int_val = (val * 100).round.to_i
-    if int_val % 2 != 0
-      log(0, "ERROR: --weapon-default value #{val} is not a valid slider increment (must be divisible by 0.02).")
-      exit(1)
-    end
-    weapon_default = val
-    log(2, "Weapon slider default set to: #{weapon_default}")
-  end
+  result
 end
+
+# --*-default=N : default slider values (0–20, step 0.02)
+weapon_default    = parse_slider_default_flag("weapon-default",    0.0)
+monster_default   = parse_slider_default_flag("monster-default",   1.0)
+ally_default      = parse_slider_default_flag("ally-default",      1.0)
+ammo_default      = parse_slider_default_flag("ammo-default",      10.0)
+nice_item_default = parse_slider_default_flag("nice-item-default", 0.3)
+pickup_default    = parse_slider_default_flag("pickup-default",    0.3)
 
 # --clean-only: clear temporary dirs (not Completed) and exit immediately
 if flag_clean_only
@@ -277,7 +299,7 @@ resolve_sound_conflicts(actordb) # requires/sound_conflicts.cr
 
 build_merged_pk3(actordb, weapon_actor_set) # requires/pk3_merge.cr
 
-generate_lua_module(actordb, weapon_actor_set, ammo_actor_set, pickup_actor_set, weapon_default) # requires/lua_gen.cr
+generate_lua_module(actordb, weapon_actor_set, ammo_actor_set, pickup_actor_set, weapon_default, monster_default, ally_default, ammo_default, nice_item_default, pickup_default) # requires/lua_gen.cr
 
 ###############################################################################
 # SOURCE MOD CONTENTS REPORT

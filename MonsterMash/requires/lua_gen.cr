@@ -273,7 +273,7 @@ end
 # Generate the complete Lua module file for Obsidian integration.
 # Writes MONSTER_MASH.MONSTERS, MONSTER_MASH.WEAPONS, MONSTER_MASH.PICKUPS,
 # and OB_MODULES registration.
-def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), ammo_actor_set : Set(String), pickup_actor_set : Set(String), weapon_default : Float64 = 0.0)
+def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), ammo_actor_set : Set(String), pickup_actor_set : Set(String), weapon_default : Float64 = 0.0, monster_default : Float64 = 1.0, ally_default : Float64 = 1.0, ammo_default : Float64 = 10.0, nice_item_default : Float64 = 0.3, pickup_default : Float64 = 0.3)
   log(2, "=== Generating Lua Module ===")
 
   lua_monster_count = 0
@@ -640,7 +640,7 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
 
       lua_key = actor.name.gsub(/[^a-zA-Z0-9_]/, "_")
       lua_key = "_#{lua_key}" if lua_key[0]?.try(&.ascii_number?)
-      slider_default = actor.slider_zero ? 0 : 1
+      slider_default = actor.slider_zero ? 0 : monster_default
       io << "    {\n"
       io << "      name = \"float_#{lua_key}\",\n"
       io << "      label = _(\"#{actor.name_with_case}\"),\n"
@@ -685,7 +685,7 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
 
       lua_key = actor.name.gsub(/[^a-zA-Z0-9_]/, "_")
       lua_key = "_#{lua_key}" if lua_key[0]?.try(&.ascii_number?)
-      slider_default = actor.slider_zero ? 0 : 1
+      slider_default = actor.slider_zero ? 0 : ally_default
       io << "    {\n"
       io << "      name = \"float_#{lua_key}\",\n"
       io << "      label = _(\"#{actor.name_with_case}\"),\n"
@@ -719,7 +719,7 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
     sorted_ammo.each do |actor|
       lua_key = actor.name.gsub(/[^a-zA-Z0-9_]/, "_")
       lua_key = "_#{lua_key}" if lua_key[0]?.try(&.ascii_number?)
-      slider_default = actor.slider_zero ? 0 : 10
+      slider_default = actor.slider_zero ? 0 : ammo_default
       io << "    {\n"
       io << "      name = \"float_#{lua_key}\",\n"
       io << "      label = _(\"#{actor.name_with_case}\"),\n"
@@ -754,7 +754,7 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
     sorted_pickups.each do |actor|
       lua_key = actor.name.gsub(/[^a-zA-Z0-9_]/, "_")
       lua_key = "_#{lua_key}" if lua_key[0]?.try(&.ascii_number?)
-      slider_default = actor.slider_zero ? 0 : 0.3
+      slider_default = actor.slider_zero ? 0 : pickup_default
       io << "    {\n"
       io << "      name = \"float_#{lua_key}\",\n"
       io << "      label = _(\"#{actor.name_with_case}\"),\n"
@@ -788,7 +788,7 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
     sorted_nice_items.each do |actor|
       lua_key = actor.name.gsub(/[^a-zA-Z0-9_]/, "_")
       lua_key = "_#{lua_key}" if lua_key[0]?.try(&.ascii_number?)
-      slider_default = actor.slider_zero ? 0 : 0.3
+      slider_default = actor.slider_zero ? 0 : nice_item_default
       io << "    {\n"
       io << "      name = \"float_#{lua_key}\",\n"
       io << "      label = _(\"#{actor.name_with_case}\"),\n"
