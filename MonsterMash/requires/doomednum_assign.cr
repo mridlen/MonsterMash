@@ -102,7 +102,7 @@ def wipe_and_reassign_doomednums(
       end
     end
 
-    File.write(actor.file_path, lines.join("\n"))
+    File.write(actor.file_path, lines.join("\n") + "\n")
   end
 
   # Step 2: Assign fresh doomednums to all monsters
@@ -153,7 +153,7 @@ def wipe_and_reassign_doomednums(
         end
       end
 
-      File.write(actor.file_path, lines.join("\n"))
+      File.write(actor.file_path, lines.join("\n") + "\n")
     elsif !actor.built_in && weapon_actor_set.includes?(actor.name.downcase)
       # Weapons get doomednums in the next pass
     elsif !actor.built_in && ammo_actor_set.includes?(actor.name.downcase)
@@ -231,7 +231,7 @@ def wipe_and_reassign_doomednums(
       end
     end
 
-    File.write(actor.file_path, lines.join("\n"))
+    File.write(actor.file_path, lines.join("\n") + "\n")
   end
 
   # Step 3.5: Assign fresh doomednums to all ammo actors
@@ -295,7 +295,7 @@ def wipe_and_reassign_doomednums(
       end
     end
 
-    File.write(actor.file_path, lines.join("\n"))
+    File.write(actor.file_path, lines.join("\n") + "\n")
   end
 
   # Step 3.75: Assign fresh doomednums to all pickup actors
@@ -359,7 +359,7 @@ def wipe_and_reassign_doomednums(
       end
     end
 
-    File.write(actor.file_path, lines.join("\n"))
+    File.write(actor.file_path, lines.join("\n") + "\n")
   end
 
   # Step 4: Assign doomednums to ZScript monsters, weapons, ammo, and pickups (in actordb only).
@@ -462,7 +462,7 @@ def wipe_and_reassign_doomednums(
       i += 1
     end
 
-    File.write(file_path, lines.join("\n"))
+    File.write(file_path, lines.join("\n") + "\n")
   end
 
   log(2, "//$Category ZScript injection complete.")

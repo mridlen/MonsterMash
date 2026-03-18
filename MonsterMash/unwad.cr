@@ -305,7 +305,7 @@ generate_lua_module(actordb, weapon_actor_set, ammo_actor_set, pickup_actor_set,
 # SOURCE MOD CONTENTS REPORT
 ###############################################################################
 
-generate_source_report(actordb, weapon_actor_set, ammo_actor_set, pickup_actor_set) # requires/helpers.cr
+generate_source_report(actordb, weapon_actor_set, ammo_actor_set, pickup_actor_set) # requires/source_report.cr
 
 ###############################################################################
 # POST-RUN CLEANUP

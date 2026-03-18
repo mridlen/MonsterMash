@@ -473,7 +473,7 @@ def set_actor_property(actor : Actor, prop_name : String, line : String) : Bool
     when "decal"             then actor.decal = val1.to_s
     when "stencilcolor"      then actor.stencil_color = val1.to_s
     when "floatbobphase"     then actor.float_bob_phase = val1.not_nil!.to_i
-    when "floatbobstrength"  then actor.float_bob_strength = val1.not_nil!.to_i
+    when "floatbobstrength"  then actor.float_bob_strength = val1.not_nil!.to_f
     when "distancecheck"     then actor.distance_check = val1.to_s
     when "spriteangle"       then actor.sprite_angle = val1.not_nil!.to_i
     when "spriterotation"    then actor.sprite_rotation = val1.not_nil!.to_i
@@ -707,7 +707,7 @@ def parse_all_actors(full_dir_list : Array(String), no_touchy : Hash(String, Boo
     next if input_text.empty?
 
     # Strip leading whitespace per line
-    input_text = input_text.gsub(/^\s*/, "")
+    input_text = input_text.gsub(/^\s*/m, "")
 
     # Preserve //#MonsterMash directives before stripping comments
     # Convert to a non-comment token so they survive comment removal
@@ -892,6 +892,9 @@ def parse_actor_body_lines(actor : Actor, lines : Array(String),
       when "disable"
         actor.mm_disabled = true
         log(2, "  MonsterMash directive: Disable for #{actor.name_with_case}")
+      when "liquidspawn"
+        actor.liquid_only = true
+        log(2, "  MonsterMash directive: LiquidSpawn for #{actor.name_with_case}")
       else
         log(1, "  Unknown MonsterMash directive: #{directive} for #{actor.name_with_case}")
       end

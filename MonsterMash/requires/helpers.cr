@@ -27,7 +27,7 @@ module Config
 end
 
 LOG_FILE = File.open("unwad.log", "w")
-LOG_FILE.puts "=== Unwad V4 Log Started: #{Time.local} ==="
+LOG_FILE.puts "=== Unwad Log Started: #{Time.local} ==="
 LOG_FILE.flush
 
 def log(level : Int32, msg : String)

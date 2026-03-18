@@ -68,6 +68,42 @@ def boss_type_for_health(health : Int32, name : String = "") : String?
   end
 end
 
+# Determine boss_limit from health tier.
+# Limits how many of a boss-tier monster can appear in one level.
+# Returns nil for non-boss monsters.
+def boss_limit_for_health(health : Int32) : Int32?
+  case health
+  when  501..1000 then nil       # Minor bosses — no limit
+  when 1001..2000 then 3         # Tough bosses
+  when 2001..4000 then 2         # Super-bosses
+  when 4001..     then 1         # Ultra-bosses
+  else                 nil
+  end
+end
+
+# Determine outdoor_factor for a monster.
+# Flying monsters prefer outdoor areas. Ceiling-hangers are indoor-only.
+def outdoor_factor_for_actor(actor : Actor) : Float64?
+  return nil if actor.spawnceiling || actor.ceilinghugger  # indoor_only handles these
+  if actor.float || actor.nogravity
+    2.0  # Flying monsters strongly prefer outdoors
+  else
+    nil  # No preference
+  end
+end
+
+# Determine room_size preference from radius and health.
+# Big monsters need big rooms. Small fodder fits anywhere.
+def room_size_for_actor(actor : Actor) : String?
+  if actor.radius >= 48 || actor.health > 2000
+    "large"
+  elsif actor.radius >= 32 || actor.health > 500
+    "medium"  # Medium+ rooms
+  else
+    "any"
+  end
+end
+
 # Determine weapon preferences based on health tier.
 # Returns a Lua table string like "{ shotty=1.5, chain=1.3 }".
 # Modelled after vanilla Doom monster entries in games/doom/monsters.lua.
@@ -373,6 +409,47 @@ def generate_lua_module(actordb : Array(Actor), weapon_actor_set : Set(String), 
         io << "    boss_type = \"#{boss_type}\",\n"
         io << "    boss_prob = 50,\n"
       end
+
+      # ── New Obsidian monster fields ──────────────────────────────────
+
+      # 1. float — flying monsters
+      if actor.float || actor.nogravity
+        io << "    float = true,\n"
+      end
+
+      # 2. indoor_only — ceiling-hanging monsters
+      if actor.spawnceiling || actor.ceilinghugger
+        io << "    indoor_only = true,\n"
+      end
+
+      # 2b. liquid_only — monsters tagged with //#MonsterMash LiquidSpawn
+      if actor.liquid_only
+        io << "    liquid_only = true,\n"
+      end
+
+      # 3. outdoor_factor — flying monsters prefer open areas
+      outdoor = outdoor_factor_for_actor(actor)  # lua_gen.cr
+      if outdoor
+        io << "    outdoor_factor = #{outdoor},\n"
+      end
+
+      # 4. room_size — large monsters need large rooms
+      room = room_size_for_actor(actor)  # lua_gen.cr
+      if room && room != "any"
+        io << "    room_size = \"#{room}\",\n"
+      end
+
+      # 5. nasty — ultra-boss tier monsters
+      if actor.health > 2000
+        io << "    nasty = true,\n"
+      end
+
+      # 6. boss_limit — cap on simultaneous boss-tier monsters
+      blimit = boss_limit_for_health(actor.health)  # lua_gen.cr
+      if blimit
+        io << "    boss_limit = #{blimit},\n"
+      end
+
       io << "  },\n"
       lua_monster_count += 1
     end

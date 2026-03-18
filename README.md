@@ -1,6 +1,6 @@
 # MonsterMash
 
-A powerful tool for **Doom (1993)** designed to merge multiple Monster and Weapon WAD files into a single PK3 file while automatically resolving conflicts.
+A powerful tool for **Doom (1993)** designed to merge multiple Monster/Pickup/Weapon WAD files into a single PK3 file while automatically resolving conflicts.
 
 ## Overview
 
@@ -9,8 +9,9 @@ MonsterMash is designed to work as a plugin for **Obsidian** (level generator) a
 ### Key Features
 
 - **Automatic Conflict Resolution**: Resolves DoomeNum conflicts (editor numbers), actor names, and sprite names
-- **Monster Classification**: Automatically identifies monster actors and assigns unique DoomeNums
-- **Weapon Classification**: Identifies weapon actors, assigns DoomeNums, and slot numbers
+- **Monster Classification**: Automatically identifies monster actors and assigns unique DoomedNums
+- **Weapon Classification**: Identifies weapon actors, assigns DoomedNums, and slot numbers
+- **Pickup Classification**: Identifies pickup and nice item actors (a nice item is a powerful health or armor pickup), assigns DoomedNums, and slot numbers
 - **Obsidian Integration**: Generates a Lua file for seamless integration with Obsidian's level generation
 - **Non-Destructive**: Source WAD files remain unmodified during processing
 - **Organized Output**: Bundles everything into a clean PK3 file in the Completed folder
@@ -21,7 +22,7 @@ MonsterMash is designed to work as a plugin for **Obsidian** (level generator) a
 
 **Short answer**: Not typically.
 
-**Long answer**: MonsterMash is designed for a different use case than most Doom mods. While most mods function as randomizers or replacers, MonsterMash takes a unique approach—it allows you to fully customize your monster and weapon loadout for procedural level generation. If you want to experiment with other mods, you're welcome to try, but compatibility is not guaranteed.
+**Long answer**: MonsterMash is designed for a different use case than most Doom mods. While most mods function as randomizers or replacers, MonsterMash takes a unique approach. It allows you to fully customize your monster and weapon loadout for procedural level generation. If you want to experiment with other mods, you're welcome to try, but compatibility is not guaranteed.
 
 ## Known Issues
 
@@ -54,9 +55,9 @@ MonsterMash is designed to work as a plugin for **Obsidian** (level generator) a
 
 2. **Making Changes**: If you modify WAD files:
    - Re-run the unwad.exe and wait for it to complete
-   - Disable the addon in Obsidian
+   - Disable the Monster Mash addon in Obsidian
    - Restart Obsidian
-   - Re-enable the addon
+   - Re-enable the Monster Mash addon
    - Restart Obsidian again
 
    The restart ensures all changes are properly loaded.
@@ -76,13 +77,14 @@ MonsterMash is designed to work as a plugin for **Obsidian** (level generator) a
 
 You can use MonsterMash as a wad/pk3 file merger only. I've set it up to tag the necessary properties to show up in Ultimate Doom Builder (UDB). Keep in mind this is targeted at ZDoom DECORATE/ZSCRIPT monsters/weapons/pickups only. Monsters/weapons/pickups from games other than Doom II are not currently supported.
 
-## Problem Actors
+## MonsterMash Directives
 
-There are directives you can provide in a DECORATE or ZSCRIPT file
+You can add special comment directives inside DECORATE or ZSCRIPT actor definitions to control how MonsterMash handles specific actors.
 
 ```
 //#MonsterMash Disable
 //#MonsterMash SliderZero
+//#MonsterMash LiquidSpawn
 
 //For example:
 //DECORATE
@@ -113,7 +115,11 @@ Disables the actor in question. It will still remain in the code, but it will no
 
 The slider will be defaulted to "off" in MonsterMash. Useful for disabling weapons you don't want all the time. For example, there are tons of melee weapons that are fairly weak. Or certain weapons are extremely dangerous like the Nuclear Missile. Certain monsters are extremely annoying or extremely dangerous. These are all good candidates for SliderZero.
 
-# JeuTool
+### LiquidSpawn
+
+Marks a monster as liquid-only, meaning Obsidian will only place it in sectors containing liquid (water, lava, nukage, etc.). This is useful for aquatic or swimming monsters that don't make sense on dry land. There is no way to detect this programmatically from the actor definition, so it must be tagged manually.
+
+## JeuTool
 
 I have used JeuTool to extract wads. However, it didn't handle duplicate lumps, so I had to modify the source code. Since it is GPL, I have included the full source of the modified jeutool (it isn't very big).
 

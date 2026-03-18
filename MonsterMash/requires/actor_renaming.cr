@@ -93,8 +93,9 @@ end
 # Patterns cover: actor definitions, class definitions, inheritance refs,
 # replaces keyword, quoted class name refs, and ZScript 'is' type checks.
 def rename_actor_in_folder(actor : Actor, renamed_actor : String, wad_folder : String)
-  Dir.children(wad_folder).each do |file|
-    file_path_rename = wad_folder + file
+  # Recursively collect all files (PK3-extracted mods may have nested dirs like actors/monsters/)
+  all_files = Dir.glob("#{wad_folder}**/*").select { |f| File.file?(f) }.map { |f| normalize_path(f) }
+  all_files.each do |file_path_rename|
     next if File.directory?(file_path_rename)
 
     # Skip binary files — check for null bytes which indicate non-text content.
