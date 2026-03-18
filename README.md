@@ -73,6 +73,49 @@ MonsterMash is designed to work as a plugin for **Obsidian** (level generator) a
 
    HUD Options -> Display Nametags -> Weapons
 
+## Command Line Options
+
+```
+unwad.exe [OPTIONS]
+```
+
+### General
+
+| Flag | Description |
+|------|-------------|
+| `-h`, `--help` | Show help message and exit |
+| `--tutorial` | Run the first-run tutorial walkthrough |
+
+### Cleanup
+
+| Flag | Description |
+|------|-------------|
+| `--clean-only` | Clean up temporary directories (Processing, IWADs_Extracted, PK3_Build) and exit. Leaves Completed/ intact. |
+| `--no-cleanup` | Skip post-run cleanup, keeping temporary directories for troubleshooting. Use `--clean-only` to clean up later. |
+
+### Slider Defaults
+
+These flags set the default slider values in the generated Obsidian Lua module. Values must be between 0 and 20, in increments of 0.02. Both `--flag=N` and `--flag N` syntax are supported.
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--weapon-default=N` | 0 | Default weapon slider value |
+| `--monster-default=N` | 1 | Default monster slider value |
+| `--ally-default=N` | 1 | Default ally slider value |
+| `--ammo-default=N` | 10 | Default ammo slider value |
+| `--nice-item-default=N` | 0.3 | Default nice item slider value |
+| `--pickup-default=N` | 0.3 | Default pickup slider value |
+
+### Verbosity
+
+| Flag | Description |
+|------|-------------|
+| `-v` | Warnings |
+| `-vv` | Warnings + info |
+| `-vvv` | Warnings + info + debug |
+
+All log output is also written to `unwad.log` in the MonsterMash directory.
+
 ## Standalone Usage
 
 You can use MonsterMash as a wad/pk3 file merger only. I've set it up to tag the necessary properties to show up in Ultimate Doom Builder (UDB). Keep in mind this is targeted at ZDoom DECORATE/ZSCRIPT monsters/weapons/pickups only. Monsters/weapons/pickups from games other than Doom II are not currently supported.
