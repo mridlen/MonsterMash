@@ -115,7 +115,8 @@ def resolve_sprite_conflicts(actordb : Array(Actor))
     wads_with_prefix.each do |wad_name, new_prefix|
       next if new_prefix == key # Skip the WAD that keeps the original prefix
 
-      list_of_sprites = Dir.glob("#{PROCESSING_DIR}/#{wad_name}/sprites/#{key}*").map { |p| normalize_path(p) }
+      # Use **/ to match sprites in subdirectories (e.g., sprites/Magnum/REVI*)
+      list_of_sprites = Dir.glob("#{PROCESSING_DIR}/#{wad_name}/sprites/**/#{key}*").map { |p| normalize_path(p) }
       renamed_sprite_count = 0
       list_of_sprites.each do |sprite|
         dir = File.dirname(sprite)
