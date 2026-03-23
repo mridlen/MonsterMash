@@ -1,0 +1,12 @@
+name: unwad
+version: 2.0.0
+crystal: ">= 1.10.0"
+
+dependencies:
+  gobject:
+    github: nicbet/crystal-gobject
+    branch: master
+
+targets:
+  unwad:
+    main: unwad.cr
