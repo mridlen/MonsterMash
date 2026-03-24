@@ -2,7 +2,7 @@
 # gui.cr — GTK4 GUI for Unwad / Monster Mash
 #
 # Launches a GTK4 window with slider controls, options, and output display.
-# Processing wiring is handled in Task 6; buttons here are placeholders.
+# Button handlers wire into run_pipeline() for processing and clean-only modes.
 ###############################################################################
 
 require "gtk4"
@@ -64,6 +64,39 @@ end
 
 def format_slider_value(val : Float64) : String
   sprintf("%.2f", val)
+end
+
+###############################################################################
+# HELPER — gui_append_output: thread-safe text buffer append with scrollback
+###############################################################################
+
+GUI_MAX_SCROLLBACK = 100_000
+
+# Appends a line of text to the GTK text buffer and auto-scrolls to bottom.
+# Uses GLib.idle_add to ensure UI updates happen on the main thread.
+# Prunes from the top if the buffer exceeds GUI_MAX_SCROLLBACK characters.
+def gui_append_output(text_buffer : Gtk::TextBuffer, text_view : Gtk::TextView, line : String)
+  GLib.idle_add do
+    # Append the line to the buffer
+    end_iter = text_buffer.end_iter
+    text_buffer.insert(end_iter, line + "\n", -1)
+
+    # Prune from the top if over scrollback limit
+    if text_buffer.char_count > GUI_MAX_SCROLLBACK
+      start_iter = text_buffer.start_iter
+      # Calculate how many chars to remove (trim to 80% of max)
+      excess = text_buffer.char_count - (GUI_MAX_SCROLLBACK * 4 // 5)
+      trim_iter = text_buffer.iter_at_offset(excess)
+      text_buffer.delete(start_iter, trim_iter)
+    end
+
+    # Auto-scroll to the bottom
+    end_mark = text_buffer.create_mark("scroll_end", text_buffer.end_iter, false)
+    text_view.scroll_mark_onscreen(end_mark)
+    text_buffer.delete_mark(end_mark)
+
+    false # one-shot: remove from idle queue
+  end
 end
 
 ###############################################################################
@@ -182,15 +215,102 @@ def launch_gui
     root_box.append(scrolled)
 
     # =========================================================================
-    # PLACEHOLDER BUTTON HANDLERS
+    # BUTTON HANDLERS — run_pipeline wiring
     # =========================================================================
 
     btn_run.clicked_signal.connect do
-      text_buffer.text = "Run Unwad clicked — processing not yet wired.\n"
+      # Disable both buttons during processing
+      btn_run.sensitive = false
+      btn_clean.sensitive = false
+      text_buffer.text = ""
+
+      # Read slider values from scale adjustments
+      weapon_val    = scale_weapon.adjustment.value
+      monster_val   = scale_monster.adjustment.value
+      ally_val      = scale_ally.adjustment.value
+      ammo_val      = scale_ammo.adjustment.value
+      nice_item_val = scale_nice.adjustment.value
+      pickup_val    = scale_pickup.adjustment.value
+      no_cleanup    = chk_skip_cleanup.active?
+
+      # Set verbosity from dropdown (index 0=0, 1=1, 2=2, 3=3)
+      Config.log_level = dd_verbosity.selected.to_i32
+
+      # Set GUI output callback so log() routes to the text buffer
+      Config.gui_output_callback = ->(line : String) {
+        gui_append_output(text_buffer, text_view, line)  # gui.cr
+        nil
+      }
+
+      # Run pipeline in a background thread so GTK main loop stays responsive
+      Thread.new do
+        begin
+          run_pipeline(  # unwad.cr
+            weapon_default:  weapon_val,
+            monster_default: monster_val,
+            ally_default:    ally_val,
+            ammo_default:    ammo_val,
+            nice_item_default: nice_item_val,
+            pickup_default:  pickup_val,
+            flag_no_cleanup: no_cleanup,
+            flag_clean_only: false,
+          )
+          gui_append_output(text_buffer, text_view, "\n=== Processing complete! ===")
+        rescue ex
+          gui_append_output(text_buffer, text_view, "\n[ERROR] #{ex.message}")
+        ensure
+          # Re-enable buttons and clear callback on the main thread
+          GLib.idle_add do
+            btn_run.sensitive = true
+            btn_clean.sensitive = true
+            Config.gui_output_callback = nil
+            false
+          end
+        end
+      end
     end
 
     btn_clean.clicked_signal.connect do
-      text_buffer.text = "Clean Only clicked — processing not yet wired.\n"
+      # Disable both buttons during processing
+      btn_run.sensitive = false
+      btn_clean.sensitive = false
+      text_buffer.text = ""
+
+      # Set verbosity from dropdown
+      Config.log_level = dd_verbosity.selected.to_i32
+
+      # Set GUI output callback
+      Config.gui_output_callback = ->(line : String) {
+        gui_append_output(text_buffer, text_view, line)  # gui.cr
+        nil
+      }
+
+      # Run clean-only pipeline in a background thread with default slider values
+      Thread.new do
+        begin
+          run_pipeline(  # unwad.cr
+            weapon_default:    0.0,
+            monster_default:   1.0,
+            ally_default:      1.0,
+            ammo_default:      10.0,
+            nice_item_default: 0.3,
+            pickup_default:    0.3,
+            flag_no_cleanup:   false,
+            flag_clean_only:   true,
+          )
+          gui_append_output(text_buffer, text_view, "\n=== Cleanup complete! ===")
+        rescue ex
+          gui_append_output(text_buffer, text_view, "\n[ERROR] #{ex.message}")
+        ensure
+          # Re-enable buttons and clear callback on the main thread
+          GLib.idle_add do
+            btn_run.sensitive = true
+            btn_clean.sensitive = true
+            Config.gui_output_callback = nil
+            false
+          end
+        end
+      end
     end
 
     # =========================================================================
