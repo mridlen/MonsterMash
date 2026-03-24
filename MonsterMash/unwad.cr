@@ -50,6 +50,17 @@ require "./requires/sprite_conflicts.cr"    # Sprite prefix conflict resolution
 require "./requires/sound_conflicts.cr"     # Sound lump conflict resolution
 require "./requires/pk3_merge.cr"           # Final PK3 merge pipeline
 require "./requires/source_report.cr"      # Per-WAD/PK3 contents report
+require "./requires/gui"                   # GUI module (GTK4)
+require "./requires/gui_tutorial"          # GUI tutorial wizard
+
+###############################################################################
+# MODE DETECTION — GUI if no args, CLI if any flags present
+###############################################################################
+
+if ARGV.empty?
+  launch_gui   # requires/gui.cr
+  exit 0
+end
 
 ###############################################################################
 # CLI HELP
