@@ -3,9 +3,8 @@ version: 2.0.0
 crystal: ">= 1.10.0"
 
 dependencies:
-  gobject:
-    github: nicbet/crystal-gobject
-    branch: master
+  gtk4:
+    github: hugopl/gtk4.cr
 
 targets:
   unwad:
