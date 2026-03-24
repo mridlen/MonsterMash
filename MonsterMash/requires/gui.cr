@@ -314,6 +314,14 @@ def launch_gui
     end
 
     # =========================================================================
+    # FIRST-RUN TUTORIAL CHECK
+    # =========================================================================
+    # Check for first-run tutorial
+    if gui_should_show_tutorial?  # requires/gui_tutorial.cr
+      gui_run_tutorial(app)       # requires/gui_tutorial.cr
+    end
+
+    # =========================================================================
     # PRESENT WINDOW
     # =========================================================================
     window.child = root_box
