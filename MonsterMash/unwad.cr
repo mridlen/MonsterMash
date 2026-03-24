@@ -96,56 +96,6 @@ if ARGV.includes?("-h") || ARGV.includes?("--help")
   exit 0
 end
 
-###############################################################################
-# PLATFORM-SPECIFIC TOOL SELECTION
-###############################################################################
-
-jeutoolexe = ""
-{% if flag?(:linux) %}
-  jeutoolexe = "jeutool-linux"
-{% elsif flag?(:darwin) %}
-  jeutoolexe = "jeutool-macos"
-{% elsif flag?(:win32) %}
-  jeutoolexe = "jeutool.exe"
-{% end %}
-log(2, "Jeutool assigned: #{jeutoolexe}")
-
-###############################################################################
-# DATA STRUCTURES
-###############################################################################
-
-doomednum_info = build_reserved_doomednums() # requires/doomednum_assign.cr
-
-###############################################################################
-# CREATE DIRECTORIES
-###############################################################################
-
-[PROCESSING_DIR, SOURCE_DIR, COMPLETED_DIR, IWADS_DIR, IWADS_EXTRACTED_DIR, PK3_BUILD_DIR].each do |dir|
-  Dir.mkdir_p(dir)
-  log(3, "Ensured directory: #{dir}")
-end
-
-###############################################################################
-# TUTORIAL / FIRST-RUN CHECK
-# Run the walkthrough if --tutorial was passed, or if Source/ or IWADs/ is
-# empty (indicating the user hasn't set things up yet).
-###############################################################################
-
-source_empty = Dir.children(SOURCE_DIR).empty?
-iwads_empty  = Dir.children(IWADS_DIR).reject { |f| f == ".gitkeep" }.empty?
-
-if ARGV.includes?("--tutorial") || source_empty || iwads_empty
-  run_tutorial # requires/tutorial.cr
-  exit 0
-end
-
-###############################################################################
-# CLI FLAGS — Cleanup behavior
-###############################################################################
-
-flag_no_cleanup = ARGV.includes?("--no-cleanup")
-flag_clean_only = ARGV.includes?("--clean-only")
-
 # Parse a --<name>-default=N slider default from the command line.
 # Accepts both --<name>-default=0.3 and --<name>-default 0.3
 # Returns the parsed value, or fallback if the flag is not present.
@@ -186,7 +136,209 @@ def parse_slider_default_flag(flag_name : String, fallback : Float64) : Float64
   result
 end
 
-# --*-default=N : default slider values (0–20, step 0.02)
+###############################################################################
+# run_pipeline — main processing pipeline, callable from CLI and GUI
+###############################################################################
+
+def run_pipeline(
+  weapon_default : Float64,
+  monster_default : Float64,
+  ally_default : Float64,
+  ammo_default : Float64,
+  nice_item_default : Float64,
+  pickup_default : Float64,
+  flag_no_cleanup : Bool,
+  flag_clean_only : Bool
+)
+
+  #############################################################################
+  # PLATFORM-SPECIFIC TOOL SELECTION
+  #############################################################################
+
+  jeutoolexe = ""
+  {% if flag?(:linux) %}
+    jeutoolexe = "jeutool-linux"
+  {% elsif flag?(:darwin) %}
+    jeutoolexe = "jeutool-macos"
+  {% elsif flag?(:win32) %}
+    jeutoolexe = "jeutool.exe"
+  {% end %}
+  log(2, "Jeutool assigned: #{jeutoolexe}")
+
+  #############################################################################
+  # DATA STRUCTURES
+  #############################################################################
+
+  doomednum_info = build_reserved_doomednums() # requires/doomednum_assign.cr
+
+  #############################################################################
+  # CREATE DIRECTORIES
+  #############################################################################
+
+  [PROCESSING_DIR, SOURCE_DIR, COMPLETED_DIR, IWADS_DIR, IWADS_EXTRACTED_DIR, PK3_BUILD_DIR].each do |dir|
+    Dir.mkdir_p(dir)
+    log(3, "Ensured directory: #{dir}")
+  end
+
+  #############################################################################
+  # TUTORIAL / FIRST-RUN CHECK
+  #############################################################################
+
+  # CLI --tutorial flag
+  if ARGV.includes?("--tutorial")
+    run_tutorial # requires/tutorial.cr
+    return
+  end
+
+  # Empty-dir tutorial only in CLI mode (GUI handles its own wizard)
+  unless ARGV.empty?
+    source_empty = Dir.children(SOURCE_DIR).empty?
+    iwads_empty  = Dir.children(IWADS_DIR).reject { |f| f == ".gitkeep" }.empty?
+    if source_empty || iwads_empty
+      run_tutorial # requires/tutorial.cr
+      return
+    end
+  end
+
+  #############################################################################
+  # --clean-only: clear temporary dirs (not Completed) and exit immediately
+  #############################################################################
+
+  if flag_clean_only
+    log(2, "Clean-only: clearing Processing, IWADs_Extracted, and PK3_Build...")
+    puts "Removing files from Processing directory..."
+    clear_directory(PROCESSING_DIR)      # requires/helpers.cr
+    puts "Removing files from IWADs_Extracted directory..."
+    clear_directory(IWADS_EXTRACTED_DIR)  # requires/helpers.cr
+    puts "Removing files from PK3_Build directory..."
+    clear_directory(PK3_BUILD_DIR)        # requires/helpers.cr
+    puts "Cleanup complete (--clean-only). Exiting."
+    return
+  end
+
+  #############################################################################
+  # PRE-RUN CLEANUP
+  #############################################################################
+
+  log(2, "Cleaning up Processing, Completed, IWADs_Extracted, and PK3_Build...")
+  clear_directory(PROCESSING_DIR)      # requires/helpers.cr
+  clear_directory(COMPLETED_DIR)       # requires/helpers.cr
+  clear_directory(IWADS_EXTRACTED_DIR)  # requires/helpers.cr
+  clear_directory(PK3_BUILD_DIR)        # requires/helpers.cr
+  log(2, "Cleanup completed.")
+
+  #############################################################################
+  # WAD / PK3 EXTRACTION
+  #############################################################################
+
+  extract_source_mods(jeutoolexe) # requires/extraction.cr
+  extract_iwads(jeutoolexe)       # requires/extraction.cr
+
+  #############################################################################
+  # PARSE DECORATE/ZSCRIPT ACTORS
+  #############################################################################
+
+  # Build list of files to process — both DECORATE and ZSCRIPT
+  # Also match numbered duplicates from jeutool: DECORATE.1.raw, DECORATE.2.raw, etc.
+  processing_files = Dir.glob("#{PROCESSING_DIR}/*/defs/DECORATE{,.?*}.raw").map { |p| normalize_path(p) }
+  zscript_files = Dir.glob("#{PROCESSING_DIR}/*/defs/ZSCRIPT{,.?*}.raw").map { |p| normalize_path(p) }
+  processing_files += zscript_files
+
+  # PK3-extracted mods may have root-level ZScript.* or DECORATE.* files
+  # (e.g. ZScript.Magnum, ZScript.Casings) that are not in the defs/ folder
+  root_zscript_files = Dir.glob("#{PROCESSING_DIR}/*/ZSCRIPT.*").map { |p| normalize_path(p) }
+    .select { |p| File.file?(p) }  # exclude directories named "zscript"
+  root_decorate_files = Dir.glob("#{PROCESSING_DIR}/*/DECORATE.*").map { |p| normalize_path(p) }
+    .select { |p| File.file?(p) }
+  processing_files += root_zscript_files
+  processing_files += root_decorate_files
+
+  # Sort so standalone mods are parsed before promoted nested WADs (Parent__Child).
+  # This ensures the standalone "Arachnobaron" is seen first and keeps its name,
+  # while the duplicate "Monster__Arachnobaron" gets the _MM rename suffix.
+  # Standalone mods (no "__") sort before nested WADs (contain "__"), then alphabetical.
+  processing_files = processing_files.uniq.sort_by { |p|
+    folder = p.split("/")[2]? || ""
+    {folder.includes?("__") ? 1 : 0, folder.downcase}
+  }
+  built_in_actors = Dir.glob("./Built_In_Actors/*/*.txt").map { |p| normalize_path(p) }
+
+  no_touchy = Hash(String, Bool).new
+  processing_files.each { |fp| no_touchy[fp] = false }
+  built_in_actors.each { |fp| no_touchy[fp] = true }
+
+  full_dir_list = built_in_actors + processing_files
+
+  parse_result = parse_all_actors(full_dir_list, no_touchy) # requires/actor_parsing.cr
+  actordb = parse_result.actordb
+
+  #############################################################################
+  # ACTOR RENAMING & DEDUPLICATION
+  #############################################################################
+
+  log(2, "=== Removing Identical Actors === (DISABLED)")
+  actor_counter = 0
+
+  actor_counter = rename_builtin_conflicts(actordb, actor_counter) # requires/actor_renaming.cr
+  actor_counter = rename_duplicate_actors(actordb, actor_counter)   # requires/actor_renaming.cr
+  refresh_actordb(actordb)                                          # requires/actor_renaming.cr
+
+  # Rebuild name index after renames
+  actors_by_name = actordb.group_by(&.name)
+
+  #############################################################################
+  # ACTOR CLASSIFICATION — Monster/Weapon/Ammo/Pickup evaluation
+  #############################################################################
+
+  evaluate_monster_status(actordb, actors_by_name)                                        # requires/actor_classification.cr
+  weapon_actor_set = evaluate_weapon_status(actordb, actors_by_name)                      # requires/actor_classification.cr
+  ammo_actor_set = evaluate_ammo_status(actordb, actors_by_name)                          # requires/actor_classification.cr
+  pickup_actor_set = evaluate_pickup_status(actordb, actors_by_name, weapon_actor_set, ammo_actor_set) # requires/actor_classification.cr
+  detect_zscript_classes(actordb, actors_by_name, weapon_actor_set, ammo_actor_set, pickup_actor_set)  # requires/actor_classification.cr
+
+  #############################################################################
+  # POST-PROCESSING PIPELINE
+  #############################################################################
+
+  doomednum_counter = wipe_and_reassign_doomednums(actordb, weapon_actor_set, ammo_actor_set, pickup_actor_set, doomednum_info) # requires/doomednum_assign.cr
+
+  resolve_sprite_conflicts(actordb) # requires/sprite_conflicts.cr
+
+  resolve_sound_conflicts(actordb) # requires/sound_conflicts.cr
+
+  build_merged_pk3(actordb, weapon_actor_set) # requires/pk3_merge.cr
+
+  generate_lua_module(actordb, weapon_actor_set, ammo_actor_set, pickup_actor_set, weapon_default, monster_default, ally_default, ammo_default, nice_item_default, pickup_default) # requires/lua_gen.cr
+
+  #############################################################################
+  # SOURCE MOD CONTENTS REPORT
+  #############################################################################
+
+  generate_source_report(actordb, weapon_actor_set, ammo_actor_set, pickup_actor_set) # requires/source_report.cr
+
+  #############################################################################
+  # POST-RUN CLEANUP
+  #############################################################################
+
+  unless flag_no_cleanup
+    log(2, "Post-run cleanup: clearing Processing, IWADs_Extracted, and PK3_Build...")
+    clear_directory(PROCESSING_DIR)      # requires/helpers.cr
+    clear_directory(IWADS_EXTRACTED_DIR)  # requires/helpers.cr
+    clear_directory(PK3_BUILD_DIR)        # requires/helpers.cr
+    log(2, "Post-run cleanup completed.")
+  else
+    log(2, "Post-run cleanup skipped (--no-cleanup).")
+  end
+
+end # run_pipeline
+
+###############################################################################
+# CLI MODE — parse flags and run pipeline
+###############################################################################
+
+flag_no_cleanup = ARGV.includes?("--no-cleanup")
+flag_clean_only = ARGV.includes?("--clean-only")
+
 weapon_default    = parse_slider_default_flag("weapon-default",    0.0)
 monster_default   = parse_slider_default_flag("monster-default",   1.0)
 ally_default      = parse_slider_default_flag("ally-default",      1.0)
@@ -194,129 +346,13 @@ ammo_default      = parse_slider_default_flag("ammo-default",      10.0)
 nice_item_default = parse_slider_default_flag("nice-item-default", 0.3)
 pickup_default    = parse_slider_default_flag("pickup-default",    0.3)
 
-# --clean-only: clear temporary dirs (not Completed) and exit immediately
-if flag_clean_only
-  log(2, "Clean-only: clearing Processing, IWADs_Extracted, and PK3_Build...")
-  puts "Removing files from Processing directory..."
-  clear_directory(PROCESSING_DIR)      # requires/helpers.cr
-  puts "Removing files from IWADs_Extracted directory..."
-  clear_directory(IWADS_EXTRACTED_DIR)  # requires/helpers.cr
-  puts "Removing files from PK3_Build directory..."
-  clear_directory(PK3_BUILD_DIR)        # requires/helpers.cr
-  puts "Cleanup complete (--clean-only). Exiting."
-  exit 0
-end
-
-###############################################################################
-# PRE-RUN CLEANUP
-###############################################################################
-
-log(2, "Cleaning up Processing, Completed, IWADs_Extracted, and PK3_Build...")
-clear_directory(PROCESSING_DIR)      # requires/helpers.cr
-clear_directory(COMPLETED_DIR)       # requires/helpers.cr
-clear_directory(IWADS_EXTRACTED_DIR)  # requires/helpers.cr
-clear_directory(PK3_BUILD_DIR)        # requires/helpers.cr
-log(2, "Cleanup completed.")
-
-###############################################################################
-# WAD / PK3 EXTRACTION
-###############################################################################
-
-extract_source_mods(jeutoolexe) # requires/extraction.cr
-extract_iwads(jeutoolexe)       # requires/extraction.cr
-
-###############################################################################
-# PARSE DECORATE/ZSCRIPT ACTORS
-###############################################################################
-
-# Build list of files to process — both DECORATE and ZSCRIPT
-# Also match numbered duplicates from jeutool: DECORATE.1.raw, DECORATE.2.raw, etc.
-processing_files = Dir.glob("#{PROCESSING_DIR}/*/defs/DECORATE{,.?*}.raw").map { |p| normalize_path(p) }
-zscript_files = Dir.glob("#{PROCESSING_DIR}/*/defs/ZSCRIPT{,.?*}.raw").map { |p| normalize_path(p) }
-processing_files += zscript_files
-
-# PK3-extracted mods may have root-level ZScript.* or DECORATE.* files
-# (e.g. ZScript.Magnum, ZScript.Casings) that are not in the defs/ folder
-root_zscript_files = Dir.glob("#{PROCESSING_DIR}/*/ZSCRIPT.*").map { |p| normalize_path(p) }
-  .select { |p| File.file?(p) }  # exclude directories named "zscript"
-root_decorate_files = Dir.glob("#{PROCESSING_DIR}/*/DECORATE.*").map { |p| normalize_path(p) }
-  .select { |p| File.file?(p) }
-processing_files += root_zscript_files
-processing_files += root_decorate_files
-
-# Sort so standalone mods are parsed before promoted nested WADs (Parent__Child).
-# This ensures the standalone "Arachnobaron" is seen first and keeps its name,
-# while the duplicate "Monster__Arachnobaron" gets the _MM rename suffix.
-# Standalone mods (no "__") sort before nested WADs (contain "__"), then alphabetical.
-processing_files = processing_files.uniq.sort_by { |p|
-  folder = p.split("/")[2]? || ""
-  {folder.includes?("__") ? 1 : 0, folder.downcase}
-}
-built_in_actors = Dir.glob("./Built_In_Actors/*/*.txt").map { |p| normalize_path(p) }
-
-no_touchy = Hash(String, Bool).new
-processing_files.each { |fp| no_touchy[fp] = false }
-built_in_actors.each { |fp| no_touchy[fp] = true }
-
-full_dir_list = built_in_actors + processing_files
-
-parse_result = parse_all_actors(full_dir_list, no_touchy) # requires/actor_parsing.cr
-actordb = parse_result.actordb
-
-###############################################################################
-# ACTOR RENAMING & DEDUPLICATION
-###############################################################################
-
-log(2, "=== Removing Identical Actors === (DISABLED)")
-actor_counter = 0
-
-actor_counter = rename_builtin_conflicts(actordb, actor_counter) # requires/actor_renaming.cr
-actor_counter = rename_duplicate_actors(actordb, actor_counter)   # requires/actor_renaming.cr
-refresh_actordb(actordb)                                          # requires/actor_renaming.cr
-
-# Rebuild name index after renames
-actors_by_name = actordb.group_by(&.name)
-
-###############################################################################
-# ACTOR CLASSIFICATION — Monster/Weapon/Ammo/Pickup evaluation
-###############################################################################
-
-evaluate_monster_status(actordb, actors_by_name)                                        # requires/actor_classification.cr
-weapon_actor_set = evaluate_weapon_status(actordb, actors_by_name)                      # requires/actor_classification.cr
-ammo_actor_set = evaluate_ammo_status(actordb, actors_by_name)                          # requires/actor_classification.cr
-pickup_actor_set = evaluate_pickup_status(actordb, actors_by_name, weapon_actor_set, ammo_actor_set) # requires/actor_classification.cr
-detect_zscript_classes(actordb, actors_by_name, weapon_actor_set, ammo_actor_set, pickup_actor_set)  # requires/actor_classification.cr
-
-###############################################################################
-# POST-PROCESSING PIPELINE
-###############################################################################
-
-doomednum_counter = wipe_and_reassign_doomednums(actordb, weapon_actor_set, ammo_actor_set, pickup_actor_set, doomednum_info) # requires/doomednum_assign.cr
-
-resolve_sprite_conflicts(actordb) # requires/sprite_conflicts.cr
-
-resolve_sound_conflicts(actordb) # requires/sound_conflicts.cr
-
-build_merged_pk3(actordb, weapon_actor_set) # requires/pk3_merge.cr
-
-generate_lua_module(actordb, weapon_actor_set, ammo_actor_set, pickup_actor_set, weapon_default, monster_default, ally_default, ammo_default, nice_item_default, pickup_default) # requires/lua_gen.cr
-
-###############################################################################
-# SOURCE MOD CONTENTS REPORT
-###############################################################################
-
-generate_source_report(actordb, weapon_actor_set, ammo_actor_set, pickup_actor_set) # requires/source_report.cr
-
-###############################################################################
-# POST-RUN CLEANUP
-###############################################################################
-
-unless flag_no_cleanup
-  log(2, "Post-run cleanup: clearing Processing, IWADs_Extracted, and PK3_Build...")
-  clear_directory(PROCESSING_DIR)      # requires/helpers.cr
-  clear_directory(IWADS_EXTRACTED_DIR)  # requires/helpers.cr
-  clear_directory(PK3_BUILD_DIR)        # requires/helpers.cr
-  log(2, "Post-run cleanup completed.")
-else
-  log(2, "Post-run cleanup skipped (--no-cleanup).")
-end
+run_pipeline(
+  weapon_default: weapon_default,
+  monster_default: monster_default,
+  ally_default: ally_default,
+  ammo_default: ammo_default,
+  nice_item_default: nice_item_default,
+  pickup_default: pickup_default,
+  flag_no_cleanup: flag_no_cleanup,
+  flag_clean_only: flag_clean_only,
+)
