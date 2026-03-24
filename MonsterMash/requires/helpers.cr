@@ -24,6 +24,20 @@ module Config
   def self.log_level
     @@log_level
   end
+
+  def self.log_level=(level : Int32)
+    @@log_level = level
+  end
+
+  @@gui_output_callback : Proc(String, Nil)? = nil
+
+  def self.gui_output_callback=(cb : Proc(String, Nil)?)
+    @@gui_output_callback = cb
+  end
+
+  def self.gui_output_callback
+    @@gui_output_callback
+  end
 end
 
 LOG_FILE = File.open("unwad.log", "w")
@@ -40,6 +54,9 @@ def log(level : Int32, msg : String)
            end
   line = "#{prefix} #{msg}"
   puts line
+  if cb = Config.gui_output_callback
+    cb.call(line)
+  end
   LOG_FILE.puts line
   LOG_FILE.flush
 end
