@@ -32,6 +32,9 @@
 !MonsterMash/LICENSE
 !README.md
 
+# --- Build script ---
+!MonsterMash/build-release.sh
+
 # --- Empty placeholder folders ---
 !MonsterMash/Source/.gitkeep
 !MonsterMash/IWADs/.gitkeep
