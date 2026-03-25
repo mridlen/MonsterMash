@@ -8,6 +8,10 @@
 !MonsterMash/unwad.cr
 !MonsterMash/requires/*.cr
 
+# --- Shards package manager ---
+!MonsterMash/shard.yml
+!MonsterMash/shard.lock
+
 # --- Executables ---
 !MonsterMash/unwad.exe
 !MonsterMash/jeutool.exe

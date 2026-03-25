@@ -35,16 +35,31 @@ MonsterMash is designed to work as a plugin for **Obsidian** (level generator) a
    Obsidian/addons/MonsterMash/MonsterMash/
    ```
 
-2. **Initial Setup**: Navigate to the MonsterMash directory and run:
-   ```bash
-   cd MonsterMash
-   unwad.exe
-   ```
-   This creates the base folder structure on the first run.
+2. **Initial Setup**: Double-click `unwad.exe` in the MonsterMash directory. On the first run, a setup wizard will guide you through the initial configuration.
 
-3. **Add Your Content**: Copy your WAD and PK3 files into the `Source/` folder.
+3. **Add Your Content**: Copy your WAD and PK3 files into the `Source/` folder. You can use the "Open Source Folder" button in the GUI to quickly navigate there.
 
-4. **Process**: Run `unwad.exe` again to merge and resolve conflicts. Output files will be generated in the `Completed/` folder.
+4. **Process**: Click "Run Unwad" in the GUI to merge and resolve conflicts. Output files will be generated in the `Completed/` folder.
+
+## GUI Mode
+
+Double-clicking `unwad.exe` (or running it with no arguments) launches the graphical interface. The GUI provides:
+
+- **Slider controls** for all default values (weapon, monster, ally, ammo, nice item, pickup)
+- **Verbosity dropdown** to control output detail level (Errors only, Warnings, Info, Debug)
+- **Skip cleanup checkbox** to keep temporary directories for troubleshooting
+- **Run Unwad / Clean Only buttons** to start processing or clean up temporary files
+- **Open Source Folder / Open IWADs Folder** buttons for quick access to input directories
+- **Real-time output** displayed in a scrollable text area (100,000 line buffer)
+
+The GUI exposes all the same functionality as the command line flags — just in a visual interface.
+
+### First-Run Wizard
+
+When the GUI detects that `Source/` or `IWADs/` is empty, a setup wizard appears automatically:
+
+1. **Step 1** checks whether MonsterMash is installed inside an Obsidian directory
+2. **Step 2** shows you where to place your WAD/PK3 files and IWADs, with buttons to open those folders
 
 ## Usage in Obsidian
 
@@ -74,6 +89,8 @@ MonsterMash is designed to work as a plugin for **Obsidian** (level generator) a
    HUD Options -> Display Nametags -> Weapons
 
 ## Command Line Options
+
+Running `unwad.exe` with any flags bypasses the GUI and runs in CLI mode, exactly as before.
 
 ```
 unwad.exe [OPTIONS]
@@ -167,3 +184,66 @@ Marks a monster as liquid-only, meaning Obsidian will only place it in sectors c
 I have used JeuTool to extract wads. However, it didn't handle duplicate lumps, so I had to modify the source code. Since it is GPL, I have included the full source of the modified jeutool (it isn't very big).
 
 Related note: PK3 files are just zip files under another name, so they don't require any special tools to extract.
+
+## Building from Source
+
+MonsterMash is written in [Crystal](https://crystal-lang.org/) and uses GTK4 for the GUI.
+
+### Prerequisites
+
+**Windows:**
+
+1. Install [MSYS2](https://www.msys2.org/)
+2. Open the MSYS2 MinGW64 terminal and install dependencies:
+   ```bash
+   pacman -S mingw-w64-x86_64-crystal mingw-w64-x86_64-shards mingw-w64-x86_64-gtk4 mingw-w64-x86_64-gobject-introspection mingw-w64-x86_64-pkg-config
+   ```
+3. Enable Windows Developer Mode (Settings > Privacy & Security > For Developers) for symlink support
+
+**Linux:**
+
+```bash
+# Debian/Ubuntu
+apt install crystal libgtk-4-dev gobject-introspection libgirepository1.0-dev
+
+# Arch
+pacman -S crystal shards gtk4 gobject-introspection
+```
+
+**macOS:**
+
+```bash
+brew install crystal gtk4 gobject-introspection
+```
+
+### Build Steps
+
+From the `MonsterMash/MonsterMash/` directory:
+
+```bash
+# Install Crystal shard dependencies (GTK4 bindings)
+shards install
+
+# Build the executable
+crystal build unwad.cr -o unwad.exe
+```
+
+On Windows, run these commands from the MSYS2 MinGW64 terminal (not the regular Command Prompt or PowerShell).
+
+### Bundling DLLs (Windows only)
+
+The compiled executable requires GTK4 DLLs at runtime. To make the exe portable (double-click to run without MSYS2 in PATH), copy the required DLLs into the same directory as `unwad.exe`:
+
+```bash
+ldd unwad.exe | grep mingw64 | awk '{print $3}' | xargs -I{} cp {} .
+cp /mingw64/bin/libgcc_s_seh-1.dll /mingw64/bin/libstdc++-6.dll /mingw64/bin/libwinpthread-1.dll .
+```
+
+You also need the GLib schemas:
+
+```bash
+mkdir -p share/glib-2.0/schemas
+cp /mingw64/share/glib-2.0/schemas/gschemas.compiled share/glib-2.0/schemas/
+```
+
+On Linux and macOS, GTK4 is loaded from system libraries and no bundling is needed.
