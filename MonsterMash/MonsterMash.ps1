@@ -346,10 +346,12 @@ function Start-Unwad {
         -MessageData $handlerData `
         -Action {
             if ($null -ne $EventArgs.Data) {
-                $Event.MessageData.Window.Dispatcher.Invoke([Action]{
-                    $Event.MessageData.TxtOutput.AppendText($EventArgs.Data + "`r`n")
-                    $Event.MessageData.TxtOutput.ScrollToEnd()
-                })
+                $d = $Event.MessageData
+                $line = $EventArgs.Data
+                $d.Window.Dispatcher.Invoke([Action]{
+                    $d.TxtOutput.AppendText($line + "`r`n")
+                    $d.TxtOutput.ScrollToEnd()
+                }.GetNewClosure())
             }
         }
 
@@ -361,10 +363,12 @@ function Start-Unwad {
         -MessageData $handlerData `
         -Action {
             if ($null -ne $EventArgs.Data) {
-                $Event.MessageData.Window.Dispatcher.Invoke([Action]{
-                    $Event.MessageData.TxtOutput.AppendText($EventArgs.Data + "`r`n")
-                    $Event.MessageData.TxtOutput.ScrollToEnd()
-                })
+                $d = $Event.MessageData
+                $line = $EventArgs.Data
+                $d.Window.Dispatcher.Invoke([Action]{
+                    $d.TxtOutput.AppendText($line + "`r`n")
+                    $d.TxtOutput.ScrollToEnd()
+                }.GetNewClosure())
             }
         }
 
@@ -377,16 +381,17 @@ function Start-Unwad {
         -Action {
             $sender.WaitForExit()
             $exitCode = $sender.ExitCode
+            $d = $Event.MessageData
 
-            $Event.MessageData.Window.Dispatcher.Invoke([Action]{
+            $d.Window.Dispatcher.Invoke([Action]{
                 if ($exitCode -ne 0) {
-                    $Event.MessageData.TxtOutput.AppendText("ERROR: Process exited with code $exitCode`r`n")
+                    $d.TxtOutput.AppendText("ERROR: Process exited with code $exitCode`r`n")
                 }
-                $Event.MessageData.TxtOutput.AppendText("=== Process finished ===`r`n")
-                $Event.MessageData.TxtOutput.ScrollToEnd()
-                $Event.MessageData.BtnRun.IsEnabled  = $true
-                $Event.MessageData.BtnClean.IsEnabled = $true
-            })
+                $d.TxtOutput.AppendText("`r`n=== Process finished ===`r`n")
+                $d.TxtOutput.ScrollToEnd()
+                $d.BtnRun.IsEnabled  = $true
+                $d.BtnClean.IsEnabled = $true
+            }.GetNewClosure())
         }
 
     # ---------------------------------------------------------------
