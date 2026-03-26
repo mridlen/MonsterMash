@@ -6,6 +6,7 @@
 
 # --- PowerShell GUI ---
 !MonsterMash/MonsterMash.ps1
+!MonsterMash/MonsterMash.bat
 
 # --- Crystal source files ---
 !MonsterMash/unwad.cr
