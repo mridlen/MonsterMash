@@ -4,6 +4,9 @@
 # Allow directory traversal
 !*/
 
+# --- PowerShell GUI ---
+!MonsterMash/MonsterMash.ps1
+
 # --- Crystal source files ---
 !MonsterMash/unwad.cr
 !MonsterMash/requires/*.cr
