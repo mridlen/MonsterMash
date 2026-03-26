@@ -30,21 +30,18 @@ MonsterMash is designed to work as a plugin for **Obsidian** (level generator) a
 
 ## Installation
 
-1. **Download** the MonsterMash code and place the folder in your Obsidian addons directory:
+1. **Download** the latest release zip from [GitHub Releases](https://github.com/mridlen/MonsterMash/releases) and extract it into your Obsidian addons directory:
    ```
    Obsidian/addons/MonsterMash/MonsterMash/
    ```
 
-2. **Initial Setup**: Navigate to the MonsterMash directory and run:
-   ```bash
-   cd MonsterMash
-   unwad.exe
-   ```
-   This creates the base folder structure on the first run.
+2. **Launch the GUI**: Double-click `MonsterMash.bat` in the `MonsterMash/MonsterMash/` folder. On first run, a setup dialog will guide you through placing your files.
 
-3. **Add Your Content**: Copy your WAD and PK3 files into the `Source/` folder.
+3. **Add Your Content**: Use the "Open Source Folder" and "Open IWADs Folder" buttons to place your WAD/PK3 mod files and IWAD files in the correct locations.
 
-4. **Process**: Run `unwad.exe` again to merge and resolve conflicts. Output files will be generated in the `Completed/` folder.
+4. **Process**: Click "Run Unwad" to merge and resolve conflicts. Output will stream in real-time in the output window, and results will be generated in the `Completed/` folder.
+
+You can also run `unwad.exe` directly from the command line if you prefer (see Command Line Options below).
 
 ## Usage in Obsidian
 
@@ -54,7 +51,7 @@ MonsterMash is designed to work as a plugin for **Obsidian** (level generator) a
    ```
 
 2. **Making Changes**: If you modify WAD files:
-   - Re-run the unwad.exe and wait for it to complete
+   - Run MonsterMash again (via the GUI or command line) and wait for it to complete
    - Disable the Monster Mash addon in Obsidian
    - Restart Obsidian
    - Re-enable the Monster Mash addon
