@@ -30,6 +30,64 @@ if (-not (Test-Path $script:unwadExe)) {
 }
 
 ###############################################################################
+### FIRST-RUN TUTORIAL CHECK
+###############################################################################
+
+# Ensure working directories exist before checking their contents
+if (-not (Test-Path $script:sourceDir)) { New-Item -ItemType Directory -Path $script:sourceDir -Force | Out-Null }
+if (-not (Test-Path $script:iwadsDir))  { New-Item -ItemType Directory -Path $script:iwadsDir  -Force | Out-Null }
+
+# Check for missing files in each directory
+$sourceEmpty = @(Get-ChildItem -Path $script:sourceDir -File -ErrorAction SilentlyContinue).Count -eq 0
+$iwadsEmpty  = @(Get-ChildItem -Path $script:iwadsDir  -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne '.gitkeep' }).Count -eq 0
+
+if ($sourceEmpty -or $iwadsEmpty) {
+
+    # ---------------------------------------------------------------
+    # Step 1 - Obsidian install check (obsidian.exe is 3 levels up)
+    # ---------------------------------------------------------------
+    $obsidianExe     = Join-Path $script:scriptRoot '..\..\..\obsidian.exe'
+    $obsidianResolved = [System.IO.Path]::GetFullPath($obsidianExe)
+
+    if (Test-Path $obsidianResolved) {
+        $step1Message = "MonsterMash is correctly installed inside your Obsidian folder."
+    } else {
+        $step1Message = "Obsidian not detected in the expected location.`n" +
+                        "For MonsterMash to work with Obsidian, the addon must be placed at:`n" +
+                        "  obsidian-<version>\addons\MonsterMash\MonsterMash\`n`n" +
+                        "You may also run MonsterMash as a standalone tool — just make sure" +
+                        " unwad.exe is in the same folder as MonsterMash.ps1."
+    }
+
+    # ---------------------------------------------------------------
+    # Step 2 - File placement instructions
+    # ---------------------------------------------------------------
+    $step2Message = "To get started, place your files in the following folders:`n`n" +
+                    "  Source folder:`n    $script:sourceDir`n" +
+                    "  Supported formats: .wad  .pk3  .pk7  .zip  .ipk3  .ipk7`n`n" +
+                    "  IWADs folder:`n    $script:iwadsDir`n" +
+                    "  Supported IWADs: DOOM.WAD, DOOM2.WAD, TNT.WAD, PLUTONIA.WAD,`n" +
+                    "                   HERETIC.WAD, HEXEN.WAD, CHEX.WAD"
+
+    # ---------------------------------------------------------------
+    # Compose and show the tutorial MessageBox
+    # ---------------------------------------------------------------
+    $tutorialMessage = "Welcome to MonsterMash - First-Time Setup`n`n" +
+                       "--- Step 1: Installation ---`n" +
+                       $step1Message + "`n`n" +
+                       "--- Step 2: Add Your Files ---`n" +
+                       $step2Message + "`n`n" +
+                       "Click OK, then use the folder buttons in the main window to add your files."
+
+    [System.Windows.MessageBox]::Show(
+        $tutorialMessage,
+        "MonsterMash - First-Time Setup",
+        [System.Windows.MessageBoxButton]::OK,
+        [System.Windows.MessageBoxImage]::Information
+    ) | Out-Null
+}
+
+###############################################################################
 ### XAML LAYOUT
 ###############################################################################
 
