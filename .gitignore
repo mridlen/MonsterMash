@@ -30,7 +30,6 @@
 # --- Documentation ---
 !MonsterMash/LICENSE
 !README.md
-!docs/**
 
 # --- Empty placeholder folders ---
 !MonsterMash/Source/.gitkeep
