@@ -344,6 +344,53 @@ $script:btnIWADs.Add_Click({
 ### SUBPROCESS EXECUTION
 ###############################################################################
 
+# Synchronized hashtable shared between the UI thread and background runspace.
+# The background runspace writes output lines here; a DispatcherTimer on the
+# UI thread polls for new lines and appends them to the TextBox.
+$script:syncHash = [hashtable]::Synchronized(@{
+    Lines    = [System.Collections.ArrayList]::new()
+    Done     = $false
+    ExitCode = 0
+})
+
+# DispatcherTimer polls the synchronized hashtable every 100ms for new output
+$script:outputTimer = New-Object System.Windows.Threading.DispatcherTimer
+$script:outputTimer.Interval = [TimeSpan]::FromMilliseconds(100)
+$script:outputTimer.Add_Tick({
+    # Grab and clear pending lines
+    $pending = @()
+    [System.Threading.Monitor]::Enter($script:syncHash.Lines)
+    try {
+        if ($script:syncHash.Lines.Count -gt 0) {
+            $pending = @($script:syncHash.Lines)
+            $script:syncHash.Lines.Clear()
+        }
+    } finally {
+        [System.Threading.Monitor]::Exit($script:syncHash.Lines)
+    }
+
+    # Append any new output lines to the TextBox
+    foreach ($ln in $pending) {
+        $script:txtOutput.AppendText($ln + "`r`n")
+    }
+    if ($pending.Count -gt 0) {
+        $script:txtOutput.ScrollToEnd()
+    }
+
+    # Check if the process has finished
+    if ($script:syncHash.Done) {
+        $script:outputTimer.Stop()
+        $code = $script:syncHash.ExitCode
+        if ($code -ne 0) {
+            $script:txtOutput.AppendText("ERROR: Process exited with code $code`r`n")
+        }
+        $script:txtOutput.AppendText("`r`n=== Process finished ===`r`n")
+        $script:txtOutput.ScrollToEnd()
+        $script:btnRun.IsEnabled  = $true
+        $script:btnClean.IsEnabled = $true
+    }
+})
+
 function Start-Unwad {
     param(
         [string[]]$Arguments
@@ -353,80 +400,78 @@ function Start-Unwad {
     $script:btnRun.IsEnabled  = $false
     $script:btnClean.IsEnabled = $false
 
-    # Clear previous output
+    # Clear previous output and reset shared state
     $script:txtOutput.Clear()
+    $script:syncHash.Lines.Clear()
+    $script:syncHash.Done     = $false
+    $script:syncHash.ExitCode = 0
+
+    # Capture values for the background runspace
+    $exePath   = $script:unwadExe
+    $workDir   = $script:scriptRoot
+    $argString = $Arguments -join ' '
+    $sync      = $script:syncHash
 
     # ---------------------------------------------------------------
-    # Configure the process
+    # Run unwad.exe in a background runspace — reads stdout/stderr
+    # line by line and pushes lines into the synchronized hashtable.
+    # The DispatcherTimer on the UI thread picks them up.
     # ---------------------------------------------------------------
-    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
-    $startInfo.FileName               = $script:unwadExe
-    $startInfo.Arguments              = $Arguments -join ' '
-    $startInfo.WorkingDirectory       = $script:scriptRoot
-    $startInfo.UseShellExecute        = $false
-    $startInfo.CreateNoWindow         = $true
-    $startInfo.RedirectStandardOutput = $true
-    $startInfo.RedirectStandardError  = $true
-    $startInfo.StandardOutputEncoding = [System.Text.Encoding]::UTF8
-    $startInfo.StandardErrorEncoding  = [System.Text.Encoding]::UTF8
+    $runspace = [runspacefactory]::CreateRunspace()
+    $runspace.ApartmentState = "STA"
+    $runspace.Open()
 
-    $process = New-Object System.Diagnostics.Process
-    $process.StartInfo            = $startInfo
-    $process.EnableRaisingEvents  = $true
+    $ps = [powershell]::Create()
+    $ps.Runspace = $runspace
+    [void]$ps.AddScript({
+        param($ExePath, $WorkDir, $ArgString, $Sync)
 
-    # ---------------------------------------------------------------
-    # Attach .NET event handlers directly (avoids Register-ObjectEvent
-    # runspace scoping issues — these handlers run on the process's
-    # thread pool and can invoke the WPF dispatcher directly)
-    # ---------------------------------------------------------------
-    $txtRef = $script:txtOutput
-    $winRef = $script:window
-    $runRef = $script:btnRun
-    $clnRef = $script:btnClean
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName               = $ExePath
+        $psi.Arguments              = $ArgString
+        $psi.WorkingDirectory       = $WorkDir
+        $psi.UseShellExecute        = $false
+        $psi.CreateNoWindow         = $true
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError  = $true
 
-    $process.add_OutputDataReceived({
-        param($sendr, $evtArgs)
-        if ($null -ne $evtArgs.Data) {
-            $text = $evtArgs.Data
-            $winRef.Dispatcher.Invoke([Action]{
-                $txtRef.AppendText($text + "`r`n")
-                $txtRef.ScrollToEnd()
-            })
-        }
-    })
+        $proc = New-Object System.Diagnostics.Process
+        $proc.StartInfo = $psi
+        $proc.Start() | Out-Null
 
-    $process.add_ErrorDataReceived({
-        param($sendr, $evtArgs)
-        if ($null -ne $evtArgs.Data) {
-            $text = $evtArgs.Data
-            $winRef.Dispatcher.Invoke([Action]{
-                $txtRef.AppendText($text + "`r`n")
-                $txtRef.ScrollToEnd()
-            })
-        }
-    })
-
-    $process.add_Exited({
-        param($sendr, $evtArgs)
-        $sendr.WaitForExit()
-        $code = $sendr.ExitCode
-        $winRef.Dispatcher.Invoke([Action]{
-            if ($code -ne 0) {
-                $txtRef.AppendText("ERROR: Process exited with code $code`r`n")
+        # Read stdout and stderr in parallel using a background thread for stderr
+        $stderrReader = $proc.StandardError
+        $stderrThread = [System.Threading.Thread]::new([System.Threading.ThreadStart]{
+            while ($null -ne ($line = $stderrReader.ReadLine())) {
+                [System.Threading.Monitor]::Enter($Sync.Lines)
+                try { [void]$Sync.Lines.Add($line) }
+                finally { [System.Threading.Monitor]::Exit($Sync.Lines) }
             }
-            $txtRef.AppendText("`r`n=== Process finished ===`r`n")
-            $txtRef.ScrollToEnd()
-            $runRef.IsEnabled  = $true
-            $clnRef.IsEnabled = $true
         })
-    })
+        $stderrThread.IsBackground = $true
+        $stderrThread.Start()
 
-    # ---------------------------------------------------------------
-    # Start process and begin async reads
-    # ---------------------------------------------------------------
-    $process.Start() | Out-Null
-    $process.BeginOutputReadLine()
-    $process.BeginErrorReadLine()
+        # Read stdout on this thread
+        while ($null -ne ($line = $proc.StandardOutput.ReadLine())) {
+            [System.Threading.Monitor]::Enter($Sync.Lines)
+            try { [void]$Sync.Lines.Add($line) }
+            finally { [System.Threading.Monitor]::Exit($Sync.Lines) }
+        }
+
+        $proc.WaitForExit()
+        $stderrThread.Join()
+
+        $Sync.ExitCode = $proc.ExitCode
+        $Sync.Done     = $true
+    })
+    [void]$ps.AddArgument($exePath)
+    [void]$ps.AddArgument($workDir)
+    [void]$ps.AddArgument($argString)
+    [void]$ps.AddArgument($sync)
+
+    # Start the background runspace and the UI polling timer
+    $ps.BeginInvoke() | Out-Null
+    $script:outputTimer.Start()
 }
 
 ###############################################################################
