@@ -12,6 +12,8 @@ Add-Type -AssemblyName WindowsBase
 
 $script:scriptRoot = $PSScriptRoot
 $script:unwadExe   = Join-Path $script:scriptRoot "unwad.exe"
+$script:sourceDir  = Join-Path $script:scriptRoot "Source"
+$script:iwadsDir   = Join-Path $script:scriptRoot "IWADs"
 
 ###############################################################################
 ### VERIFY UNWAD.EXE EXISTS
@@ -251,6 +253,199 @@ $script:lblPickup   = $script:window.FindName("lblPickup")
 $script:chkSkipCleanup = $script:window.FindName("chkSkipCleanup")
 $script:cmbVerbosity   = $script:window.FindName("cmbVerbosity")
 $script:txtOutput      = $script:window.FindName("txtOutput")
+
+###############################################################################
+### SLIDER VALUE READOUT HANDLERS
+###############################################################################
+
+$sliderNames = @("Weapon", "Monster", "Ally", "Ammo", "NiceItem", "Pickup")
+foreach ($name in $sliderNames) {
+    $slider = $script:window.FindName("slider$name")
+    $slider.Add_ValueChanged({
+        param($sliderSender, $e)
+        $lbl = $script:window.FindName("lbl" + $sliderSender.Name.Replace("slider", ""))
+        if ($lbl) { $lbl.Text = $sliderSender.Value.ToString("F2") }
+    }.GetNewClosure())
+}
+
+###############################################################################
+### FOLDER BUTTON HANDLERS
+###############################################################################
+
+$script:btnSource.Add_Click({
+    if (-not (Test-Path $script:sourceDir)) { New-Item -ItemType Directory -Path $script:sourceDir -Force | Out-Null }
+    Start-Process explorer.exe -ArgumentList $script:sourceDir
+})
+
+$script:btnIWADs.Add_Click({
+    if (-not (Test-Path $script:iwadsDir)) { New-Item -ItemType Directory -Path $script:iwadsDir -Force | Out-Null }
+    Start-Process explorer.exe -ArgumentList $script:iwadsDir
+})
+
+###############################################################################
+### SUBPROCESS EXECUTION
+###############################################################################
+
+# Track event subscriptions for cleanup between runs
+$script:eventJobs = @()
+
+function Start-Unwad {
+    param(
+        [string[]]$Arguments
+    )
+
+    # Disable both action buttons while process is running
+    $script:btnRun.IsEnabled  = $false
+    $script:btnClean.IsEnabled = $false
+
+    # Clear previous output
+    $script:txtOutput.Clear()
+
+    # ---------------------------------------------------------------
+    # Clean up previous event subscriptions to prevent duplicate output
+    # ---------------------------------------------------------------
+    foreach ($job in $script:eventJobs) {
+        Unregister-Event -SourceIdentifier $job.Name -ErrorAction SilentlyContinue
+        Remove-Job -Id $job.Id -Force -ErrorAction SilentlyContinue
+    }
+    $script:eventJobs = @()
+
+    # ---------------------------------------------------------------
+    # Configure the process
+    # ---------------------------------------------------------------
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName               = $script:unwadExe
+    $startInfo.Arguments              = $Arguments -join ' '
+    $startInfo.WorkingDirectory       = $script:scriptRoot
+    $startInfo.UseShellExecute        = $false
+    $startInfo.CreateNoWindow         = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError  = $true
+    $startInfo.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+    $startInfo.StandardErrorEncoding  = [System.Text.Encoding]::UTF8
+
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo            = $startInfo
+    $process.EnableRaisingEvents  = $true
+
+    # ---------------------------------------------------------------
+    # Bundle UI references for event handler runspaces
+    # ---------------------------------------------------------------
+    $handlerData = @{
+        Window    = $script:window
+        TxtOutput = $script:txtOutput
+        BtnRun    = $script:btnRun
+        BtnClean  = $script:btnClean
+    }
+
+    # ---------------------------------------------------------------
+    # Register async event: StandardOutput
+    # ---------------------------------------------------------------
+    $jobStdOut = Register-ObjectEvent -InputObject $process `
+        -EventName OutputDataReceived `
+        -MessageData $handlerData `
+        -Action {
+            if ($null -ne $EventArgs.Data) {
+                $Event.MessageData.Window.Dispatcher.Invoke([Action]{
+                    $Event.MessageData.TxtOutput.AppendText($EventArgs.Data + "`r`n")
+                    $Event.MessageData.TxtOutput.ScrollToEnd()
+                })
+            }
+        }
+
+    # ---------------------------------------------------------------
+    # Register async event: StandardError
+    # ---------------------------------------------------------------
+    $jobStdErr = Register-ObjectEvent -InputObject $process `
+        -EventName ErrorDataReceived `
+        -MessageData $handlerData `
+        -Action {
+            if ($null -ne $EventArgs.Data) {
+                $Event.MessageData.Window.Dispatcher.Invoke([Action]{
+                    $Event.MessageData.TxtOutput.AppendText($EventArgs.Data + "`r`n")
+                    $Event.MessageData.TxtOutput.ScrollToEnd()
+                })
+            }
+        }
+
+    # ---------------------------------------------------------------
+    # Register async event: Exited
+    # ---------------------------------------------------------------
+    $jobExited = Register-ObjectEvent -InputObject $process `
+        -EventName Exited `
+        -MessageData $handlerData `
+        -Action {
+            $sender.WaitForExit()
+            $exitCode = $sender.ExitCode
+
+            $Event.MessageData.Window.Dispatcher.Invoke([Action]{
+                if ($exitCode -ne 0) {
+                    $Event.MessageData.TxtOutput.AppendText("ERROR: Process exited with code $exitCode`r`n")
+                }
+                $Event.MessageData.TxtOutput.AppendText("=== Process finished ===`r`n")
+                $Event.MessageData.TxtOutput.ScrollToEnd()
+                $Event.MessageData.BtnRun.IsEnabled  = $true
+                $Event.MessageData.BtnClean.IsEnabled = $true
+            })
+        }
+
+    # ---------------------------------------------------------------
+    # Store event jobs for cleanup on next run
+    # ---------------------------------------------------------------
+    $script:eventJobs = @($jobStdOut, $jobStdErr, $jobExited)
+
+    # ---------------------------------------------------------------
+    # Start process and begin async reads
+    # ---------------------------------------------------------------
+    $process.Start() | Out-Null
+    $process.BeginOutputReadLine()
+    $process.BeginErrorReadLine()
+}
+
+###############################################################################
+### ACTION BUTTON HANDLERS
+###############################################################################
+
+# -- Run Unwad button --
+$script:btnRun.Add_Click({
+    # Build command arguments from slider values
+    $cmdArgs = @(
+        "--weapon-default="   + $script:sliderWeapon.Value.ToString("F2"),
+        "--monster-default="  + $script:sliderMonster.Value.ToString("F2"),
+        "--ally-default="     + $script:sliderAlly.Value.ToString("F2"),
+        "--ammo-default="     + $script:sliderAmmo.Value.ToString("F2"),
+        "--nice-item-default=" + $script:sliderNiceItem.Value.ToString("F2"),
+        "--pickup-default="   + $script:sliderPickup.Value.ToString("F2")
+    )
+
+    # Skip cleanup flag
+    if ($script:chkSkipCleanup.IsChecked -eq $true) {
+        $cmdArgs += "--no-cleanup"
+    }
+
+    # Verbosity level: 0=nothing, 1=-v, 2=-vv, 3=-vvv
+    switch ($script:cmbVerbosity.SelectedIndex) {
+        1 { $cmdArgs += "-v"   }
+        2 { $cmdArgs += "-vv"  }
+        3 { $cmdArgs += "-vvv" }
+    }
+
+    Start-Unwad -Arguments $cmdArgs
+})
+
+# -- Clean Only button --
+$script:btnClean.Add_Click({
+    $cmdArgs = @("--clean-only")
+
+    # Verbosity level: 0=nothing, 1=-v, 2=-vv, 3=-vvv
+    switch ($script:cmbVerbosity.SelectedIndex) {
+        1 { $cmdArgs += "-v"   }
+        2 { $cmdArgs += "-vv"  }
+        3 { $cmdArgs += "-vvv" }
+    }
+
+    Start-Unwad -Arguments $cmdArgs
+})
 
 ###############################################################################
 ### SHOW WINDOW
