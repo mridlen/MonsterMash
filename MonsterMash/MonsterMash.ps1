@@ -353,43 +353,60 @@ $script:syncHash = [hashtable]::Synchronized(@{
     ExitCode = 0
 })
 
-# DispatcherTimer polls the synchronized hashtable every 100ms for new output
+# DispatcherTimer polls the synchronized hashtable every 100ms for new output.
+# IMPORTANT: All references are captured into local variables BEFORE the closure
+# because $script: scope is unreliable inside DispatcherTimer event handlers
+# in PowerShell 5.1.
 $script:outputTimer = New-Object System.Windows.Threading.DispatcherTimer
 $script:outputTimer.Interval = [TimeSpan]::FromMilliseconds(100)
+
+$timerSyncHash  = $script:syncHash
+$timerTxtOutput = $script:txtOutput
+$timerBtnRun    = $script:btnRun
+$timerBtnClean  = $script:btnClean
+$timerRef       = $script:outputTimer
+$timerLogPath   = Join-Path $script:scriptRoot "gui-error.log"
+
 $script:outputTimer.Add_Tick({
-    # Grab and clear pending lines
-    $pending = @()
-    [System.Threading.Monitor]::Enter($script:syncHash.Lines)
     try {
-        if ($script:syncHash.Lines.Count -gt 0) {
-            $pending = @($script:syncHash.Lines)
-            $script:syncHash.Lines.Clear()
+        # Grab and clear pending lines under lock
+        $pending = $null
+        [System.Threading.Monitor]::Enter($timerSyncHash.Lines)
+        try {
+            if ($timerSyncHash.Lines.Count -gt 0) {
+                $pending = $timerSyncHash.Lines.ToArray()
+                $timerSyncHash.Lines.Clear()
+            }
+        } finally {
+            [System.Threading.Monitor]::Exit($timerSyncHash.Lines)
         }
-    } finally {
-        [System.Threading.Monitor]::Exit($script:syncHash.Lines)
-    }
 
-    # Append any new output lines to the TextBox
-    foreach ($ln in $pending) {
-        $script:txtOutput.AppendText($ln + "`r`n")
-    }
-    if ($pending.Count -gt 0) {
-        $script:txtOutput.ScrollToEnd()
-    }
-
-    # Check if the process has finished
-    if ($script:syncHash.Done) {
-        $script:outputTimer.Stop()
-        $code = $script:syncHash.ExitCode
-        if ($code -ne 0) {
-            $script:txtOutput.AppendText("ERROR: Process exited with code $code`r`n")
+        # Batch-append all pending lines in a single TextBox update to avoid
+        # overwhelming WPF with per-line layout recalculations (Debug mode
+        # can produce hundreds of lines per tick interval).
+        if ($pending -and $pending.Count -gt 0) {
+            $chunk = [String]::Join("`r`n", $pending) + "`r`n"
+            $timerTxtOutput.AppendText($chunk)
+            $timerTxtOutput.ScrollToEnd()
         }
-        $script:txtOutput.AppendText("`r`n=== Process finished ===`r`n")
-        $script:txtOutput.ScrollToEnd()
-        $script:btnRun.IsEnabled  = $true
-        $script:btnClean.IsEnabled = $true
+
+        # Check if the process has finished
+        if ($timerSyncHash.Done) {
+            $timerRef.Stop()
+            $code = $timerSyncHash.ExitCode
+            if ($code -ne 0) {
+                $timerTxtOutput.AppendText("ERROR: Process exited with code $code`r`n")
+            }
+            $timerTxtOutput.AppendText("`r`n=== Process finished ===`r`n")
+            $timerTxtOutput.ScrollToEnd()
+            $timerBtnRun.IsEnabled  = $true
+            $timerBtnClean.IsEnabled = $true
+        }
+    } catch {
+        # Log errors to file for debugging
+        $_ | Out-File $timerLogPath -Append
     }
-})
+}.GetNewClosure())
 
 function Start-Unwad {
     param(
@@ -413,7 +430,7 @@ function Start-Unwad {
     $sync      = $script:syncHash
 
     # ---------------------------------------------------------------
-    # Run unwad.exe in a background runspace — reads stdout/stderr
+    # Run unwad.exe in a background runspace -- reads stdout/stderr
     # line by line and pushes lines into the synchronized hashtable.
     # The DispatcherTimer on the UI thread picks them up.
     # ---------------------------------------------------------------
@@ -426,43 +443,59 @@ function Start-Unwad {
     [void]$ps.AddScript({
         param($ExePath, $WorkDir, $ArgString, $Sync)
 
-        $psi = New-Object System.Diagnostics.ProcessStartInfo
-        $psi.FileName               = $ExePath
-        $psi.Arguments              = $ArgString
-        $psi.WorkingDirectory       = $WorkDir
-        $psi.UseShellExecute        = $false
-        $psi.CreateNoWindow         = $true
-        $psi.RedirectStandardOutput = $true
-        $psi.RedirectStandardError  = $true
+        try {
+            $psi = New-Object System.Diagnostics.ProcessStartInfo
+            $psi.FileName               = $ExePath
+            $psi.Arguments              = $ArgString
+            $psi.WorkingDirectory       = $WorkDir
+            $psi.UseShellExecute        = $false
+            $psi.CreateNoWindow         = $true
+            $psi.RedirectStandardOutput = $true
+            $psi.RedirectStandardError  = $true
+            $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+            $psi.StandardErrorEncoding  = [System.Text.Encoding]::UTF8
 
-        $proc = New-Object System.Diagnostics.Process
-        $proc.StartInfo = $psi
-        $proc.Start() | Out-Null
+            $proc = New-Object System.Diagnostics.Process
+            $proc.StartInfo = $psi
+            $proc.Start() | Out-Null
 
-        # Read stdout and stderr in parallel using a background thread for stderr
-        $stderrReader = $proc.StandardError
-        $stderrThread = [System.Threading.Thread]::new([System.Threading.ThreadStart]{
-            while ($null -ne ($line = $stderrReader.ReadLine())) {
+            # Kick off async stderr read -- collects all stderr in background
+            $stderrTask = $proc.StandardError.ReadToEndAsync()
+
+            # Read stdout line by line on this thread (streams to UI in real-time)
+            while ($null -ne ($line = $proc.StandardOutput.ReadLine())) {
                 [System.Threading.Monitor]::Enter($Sync.Lines)
                 try { [void]$Sync.Lines.Add($line) }
                 finally { [System.Threading.Monitor]::Exit($Sync.Lines) }
             }
-        })
-        $stderrThread.IsBackground = $true
-        $stderrThread.Start()
 
-        # Read stdout on this thread
-        while ($null -ne ($line = $proc.StandardOutput.ReadLine())) {
+            $proc.WaitForExit()
+
+            # Flush any stderr output that was collected
+            $stderrText = $stderrTask.Result
+            if ($stderrText -and $stderrText.Trim().Length -gt 0) {
+                $stderrLines = $stderrText -split "`r?`n"
+                [System.Threading.Monitor]::Enter($Sync.Lines)
+                try {
+                    foreach ($errLine in $stderrLines) {
+                        if ($errLine.Length -gt 0) {
+                            [void]$Sync.Lines.Add($errLine)
+                        }
+                    }
+                }
+                finally { [System.Threading.Monitor]::Exit($Sync.Lines) }
+            }
+
+            $Sync.ExitCode = $proc.ExitCode
+        } catch {
+            # Surface runspace errors to the UI output
             [System.Threading.Monitor]::Enter($Sync.Lines)
-            try { [void]$Sync.Lines.Add($line) }
+            try { [void]$Sync.Lines.Add("RUNSPACE ERROR: $_") }
             finally { [System.Threading.Monitor]::Exit($Sync.Lines) }
+            $Sync.ExitCode = -1
+        } finally {
+            $Sync.Done = $true
         }
-
-        $proc.WaitForExit()
-        $stderrThread.Join()
-
-        $Sync.ExitCode = $proc.ExitCode
-        $Sync.Done     = $true
     })
     [void]$ps.AddArgument($exePath)
     [void]$ps.AddArgument($workDir)
