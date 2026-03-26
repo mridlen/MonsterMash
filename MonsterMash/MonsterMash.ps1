@@ -55,7 +55,7 @@ if ($sourceEmpty -or $iwadsEmpty) {
         $step1Message = "Obsidian not detected in the expected location.`n" +
                         "For MonsterMash to work with Obsidian, the addon must be placed at:`n" +
                         "  obsidian-<version>\addons\MonsterMash\MonsterMash\`n`n" +
-                        "You may also run MonsterMash as a standalone tool — just make sure" +
+                        "You may also run MonsterMash as a standalone tool -- just make sure" +
                         " unwad.exe is in the same folder as MonsterMash.ps1."
     }
 
