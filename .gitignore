@@ -31,6 +31,9 @@
 !MonsterMash/LICENSE
 !README.md
 
+# --- GitHub Actions ---
+!.github/**
+
 # --- Empty placeholder folders ---
 !MonsterMash/Source/.gitkeep
 !MonsterMash/IWADs/.gitkeep

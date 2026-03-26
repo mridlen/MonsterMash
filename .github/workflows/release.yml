@@ -1,0 +1,35 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - '*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build release zip
+        run: |
+          # Create MonsterMash/MonsterMash/ structure for Obsidian addon layout
+          mkdir -p staging/MonsterMash
+          cp -r MonsterMash staging/MonsterMash/
+          cp README.md staging/MonsterMash/
+
+          # Remove placeholder .gitkeep files from the zip
+          find staging -name '.gitkeep' -delete
+
+          cd staging
+          zip -r ../MonsterMash-${{ github.ref_name }}.zip MonsterMash/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: MonsterMash-${{ github.ref_name }}.zip
+          generate_release_notes: true
