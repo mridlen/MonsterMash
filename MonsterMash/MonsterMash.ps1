@@ -344,9 +344,6 @@ $script:btnIWADs.Add_Click({
 ### SUBPROCESS EXECUTION
 ###############################################################################
 
-# Track event subscriptions for cleanup between runs
-$script:eventJobs = @()
-
 function Start-Unwad {
     param(
         [string[]]$Arguments
@@ -358,15 +355,6 @@ function Start-Unwad {
 
     # Clear previous output
     $script:txtOutput.Clear()
-
-    # ---------------------------------------------------------------
-    # Clean up previous event subscriptions to prevent duplicate output
-    # ---------------------------------------------------------------
-    foreach ($job in $script:eventJobs) {
-        Unregister-Event -SourceIdentifier $job.Name -ErrorAction SilentlyContinue
-        Remove-Job -Id $job.Id -Force -ErrorAction SilentlyContinue
-    }
-    $script:eventJobs = @()
 
     # ---------------------------------------------------------------
     # Configure the process
@@ -387,75 +375,51 @@ function Start-Unwad {
     $process.EnableRaisingEvents  = $true
 
     # ---------------------------------------------------------------
-    # Bundle UI references for event handler runspaces
+    # Attach .NET event handlers directly (avoids Register-ObjectEvent
+    # runspace scoping issues — these handlers run on the process's
+    # thread pool and can invoke the WPF dispatcher directly)
     # ---------------------------------------------------------------
-    $handlerData = @{
-        Window    = $script:window
-        TxtOutput = $script:txtOutput
-        BtnRun    = $script:btnRun
-        BtnClean  = $script:btnClean
-    }
+    $txtRef = $script:txtOutput
+    $winRef = $script:window
+    $runRef = $script:btnRun
+    $clnRef = $script:btnClean
 
-    # ---------------------------------------------------------------
-    # Register async event: StandardOutput
-    # ---------------------------------------------------------------
-    $jobStdOut = Register-ObjectEvent -InputObject $process `
-        -EventName OutputDataReceived `
-        -MessageData $handlerData `
-        -Action {
-            if ($null -ne $EventArgs.Data) {
-                $d = $Event.MessageData
-                $line = $EventArgs.Data
-                $d.Window.Dispatcher.Invoke([Action]{
-                    $d.TxtOutput.AppendText($line + "`r`n")
-                    $d.TxtOutput.ScrollToEnd()
-                }.GetNewClosure())
+    $process.add_OutputDataReceived({
+        param($sendr, $evtArgs)
+        if ($null -ne $evtArgs.Data) {
+            $text = $evtArgs.Data
+            $winRef.Dispatcher.Invoke([Action]{
+                $txtRef.AppendText($text + "`r`n")
+                $txtRef.ScrollToEnd()
+            })
+        }
+    })
+
+    $process.add_ErrorDataReceived({
+        param($sendr, $evtArgs)
+        if ($null -ne $evtArgs.Data) {
+            $text = $evtArgs.Data
+            $winRef.Dispatcher.Invoke([Action]{
+                $txtRef.AppendText($text + "`r`n")
+                $txtRef.ScrollToEnd()
+            })
+        }
+    })
+
+    $process.add_Exited({
+        param($sendr, $evtArgs)
+        $sendr.WaitForExit()
+        $code = $sendr.ExitCode
+        $winRef.Dispatcher.Invoke([Action]{
+            if ($code -ne 0) {
+                $txtRef.AppendText("ERROR: Process exited with code $code`r`n")
             }
-        }
-
-    # ---------------------------------------------------------------
-    # Register async event: StandardError
-    # ---------------------------------------------------------------
-    $jobStdErr = Register-ObjectEvent -InputObject $process `
-        -EventName ErrorDataReceived `
-        -MessageData $handlerData `
-        -Action {
-            if ($null -ne $EventArgs.Data) {
-                $d = $Event.MessageData
-                $line = $EventArgs.Data
-                $d.Window.Dispatcher.Invoke([Action]{
-                    $d.TxtOutput.AppendText($line + "`r`n")
-                    $d.TxtOutput.ScrollToEnd()
-                }.GetNewClosure())
-            }
-        }
-
-    # ---------------------------------------------------------------
-    # Register async event: Exited
-    # ---------------------------------------------------------------
-    $jobExited = Register-ObjectEvent -InputObject $process `
-        -EventName Exited `
-        -MessageData $handlerData `
-        -Action {
-            $sender.WaitForExit()
-            $exitCode = $sender.ExitCode
-            $d = $Event.MessageData
-
-            $d.Window.Dispatcher.Invoke([Action]{
-                if ($exitCode -ne 0) {
-                    $d.TxtOutput.AppendText("ERROR: Process exited with code $exitCode`r`n")
-                }
-                $d.TxtOutput.AppendText("`r`n=== Process finished ===`r`n")
-                $d.TxtOutput.ScrollToEnd()
-                $d.BtnRun.IsEnabled  = $true
-                $d.BtnClean.IsEnabled = $true
-            }.GetNewClosure())
-        }
-
-    # ---------------------------------------------------------------
-    # Store event jobs for cleanup on next run
-    # ---------------------------------------------------------------
-    $script:eventJobs = @($jobStdOut, $jobStdErr, $jobExited)
+            $txtRef.AppendText("`r`n=== Process finished ===`r`n")
+            $txtRef.ScrollToEnd()
+            $runRef.IsEnabled  = $true
+            $clnRef.IsEnabled = $true
+        })
+    })
 
     # ---------------------------------------------------------------
     # Start process and begin async reads
