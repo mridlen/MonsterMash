@@ -4,7 +4,9 @@ A powerful tool for **Doom (1993)** designed to merge multiple Monster/Pickup/We
 
 ## Overview
 
-MonsterMash is designed to work as a plugin for **Obsidian** (level generator) and streamlines the process of combining complex monster and weapon mods. Instead of manually merging incompatible WAD files, MonsterMash intelligently resolves conflicts and generates a unified PK3 package ready for use.
+MonsterMash will work as a doom wad merge utility. At it's most basic level, it will take Doom monster or pickups files, and resolve conflicts, outputting a pk3 file that can be used for creating a resource wad that can be referenced in Ultimate Doom Builder (UDB). Instead of manually merging incompatible WAD files, MonsterMash intelligently resolves conflicts and generates a unified PK3 package ready for use.
+
+However, MonsterMash is primarily designed to work as a plugin for **Obsidian** (level generator) and streamlines the process of combining complex monster and weapon mods. 
 
 ### Key Features
 
