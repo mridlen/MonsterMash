@@ -71,6 +71,60 @@ def find_zip_tool : String
   exit(1)
 end
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Rewrite #include "path" directives so they resolve under mm_actors/<wad_name>/.
+#
+# Used by:
+#   - process_script_dir (DECORATE/ZSCRIPT files on disk in mm_actors/<wad>/)
+#   - the text-lump concatenation pass (in-memory GLDEFS/TEXTURES/etc. content
+#     which also supports #include directives in GZDoom)
+#
+# Resolution rules:
+#   - Pathed include (contains "/" or "\"): strip leading "../" segments,
+#     then prefer mm_actors/<wad>/<path>; fall back to <path> from PK3 root;
+#     leave unchanged if neither exists (with a warning).
+#   - Bare include (no path separators): assume it lives in mm_actors/<wad>/.
+#     If no extension is present, append ".raw" (jeutool's extraction naming).
+#     The "mm_actors/" prefix is forced lowercase even though the rest is
+#     uppercased to match WAD lump conventions.
+# ─────────────────────────────────────────────────────────────────────────────
+def rewrite_include_paths(content : String, wad_name : String, pk3_build_dir : String) : String
+  content.gsub(/^(\s*#include\s+")([^"]+)(")/mi) do |match|
+    prefix = $1
+    inc_file = $2
+    suffix = $3
+
+    if inc_file.includes?("/") || inc_file.includes?("\\")
+      normalized_inc = normalize_path(inc_file)  # helpers.cr
+
+      # Strip all leading "../" since those just go up from mm_actors/WadName/
+      stripped = normalized_inc.gsub(/^(\.\.\/)+/, "")
+      candidate_from_root = normalize_path(File.join(pk3_build_dir, stripped))
+      candidate_in_actors = normalize_path(File.join(pk3_build_dir, "mm_actors", wad_name, stripped))
+
+      if File.exists?(candidate_in_actors)
+        new_path = "mm_actors/#{wad_name}/#{stripped}"
+        log(3, "  Rewriting pathed include: #{inc_file} -> #{new_path}")
+        "#{prefix}#{new_path}#{suffix}"
+      elsif File.exists?(candidate_from_root)
+        log(3, "  Rewriting pathed include (from root): #{inc_file} -> #{stripped}")
+        "#{prefix}#{stripped}#{suffix}"
+      else
+        log(1, "  Cannot resolve include path: #{inc_file} in #{wad_name} (tried #{candidate_in_actors} and #{candidate_from_root})")
+        match
+      end
+    else
+      new_path = "mm_actors/#{wad_name}/#{inc_file}"
+      unless new_path =~ /\.\w+$/
+        new_path += ".raw"
+      end
+      new_path = new_path.upcase.sub("MM_ACTORS/", "mm_actors/")
+      log(3, "  Rewriting include: #{inc_file} -> #{new_path}")
+      "#{prefix}#{new_path}#{suffix}"
+    end
+  end
+end
+
 # Recursively process all script files in a directory: strip version directives
 # and rewrite #include paths for PK3 structure.
 def process_script_dir(dir : String, wad_name : String, pk3_build_dir : String)
@@ -107,41 +161,8 @@ def process_script_dir(dir : String, wad_name : String, pk3_build_dir : String)
     # its own doomednums, so replacements would hijack vanilla actors.
     content = content.gsub(/\s+replaces\s+\w+/i, "")
 
-    # Match #include "FILENAME" and update path
-    content = content.gsub(/^(\s*#include\s+")([^"]+)(")/mi) do |match|
-      prefix = $1
-      inc_file = $2
-      suffix = $3
-
-      if inc_file.includes?("/") || inc_file.includes?("\\")
-        normalized_inc = normalize_path(inc_file)
-
-        # Strip all leading "../" since those just go up from mm_actors/WadName/
-        stripped = normalized_inc.gsub(/^(\.\.\/)+/, "")
-        candidate_from_root = normalize_path(File.join(pk3_build_dir, stripped))
-        candidate_in_actors = normalize_path(File.join(pk3_build_dir, "mm_actors", wad_name, stripped))
-
-        if File.exists?(candidate_in_actors)
-          new_path = "mm_actors/#{wad_name}/#{stripped}"
-          log(3, "  Rewriting pathed include: #{inc_file} -> #{new_path}")
-          "#{prefix}#{new_path}#{suffix}"
-        elsif File.exists?(candidate_from_root)
-          log(3, "  Rewriting pathed include (from root): #{inc_file} -> #{stripped}")
-          "#{prefix}#{stripped}#{suffix}"
-        else
-          log(1, "  Cannot resolve include path: #{inc_file} in #{wad_name} (tried #{candidate_in_actors} and #{candidate_from_root})")
-          match
-        end
-      else
-        new_path = "mm_actors/#{wad_name}/#{inc_file}"
-        unless new_path =~ /\.\w+$/
-          new_path += ".raw"
-        end
-        new_path = new_path.upcase.sub("MM_ACTORS/", "mm_actors/")
-        log(3, "  Rewriting include: #{inc_file} -> #{new_path}")
-        "#{prefix}#{new_path}#{suffix}"
-      end
-    end
+    # Rewrite #include paths so they resolve under mm_actors/<wad>/
+    content = rewrite_include_paths(content, wad_name, pk3_build_dir)  # pk3_merge.cr
 
     if content != original_content
       File.write(file_path, content)
@@ -932,8 +953,13 @@ def build_merged_pk3(actordb : Array(Actor), weapon_actor_set : Set(String))
       io << "// ============================================================\n\n"
 
       entries.each do |wad_name, content|
+        # Rewrite any #include "..." paths inside this WAD's section so they
+        # resolve under mm_actors/<wad>/. GLDEFS (and other GZDoom text lumps
+        # like TEXTURES/ANIMDEFS) support #include directives, and without
+        # this rewrite the merged lump points at non-existent top-level paths.
+        rewritten = rewrite_include_paths(content, wad_name, PK3_BUILD_DIR)  # pk3_merge.cr
         io << "// ── Begin: #{wad_name} " << ("─" * [1, 60 - wad_name.size].max) << "\n"
-        io << content.strip
+        io << rewritten.strip
         io << "\n"
         io << "// ── End: #{wad_name} " << ("─" * [1, 62 - wad_name.size].max) << "\n\n"
       end
