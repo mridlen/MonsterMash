@@ -750,11 +750,13 @@ def parse_all_actors(full_dir_list : Array(String), no_touchy : Hash(String, Boo
       next if lines_with_case.empty?
       first_line_with_case = lines_with_case.first
 
-      # [BUGFIX] Normalize colon-glued tokens like "RiflePuff:Bulletpuff" into
-      # "RiflePuff : Bulletpuff" so the word-count parser handles inheritance
-      # correctly and the actor name doesn't include a trailing colon.
-      first_line_with_case = first_line_with_case.gsub(/([A-Za-z0-9_]):([A-Za-z])/, "\\1 : \\2")
-      first_line_with_case = first_line_with_case.gsub(/([A-Za-z0-9_]):\s/, "\\1 : ")
+      # [BUGFIX] Normalize colon spacing in inheritance syntax. DECORATE/ZScript
+      # allow any of: "Name:Parent", "Name :Parent", "Name: Parent", "Name : Parent".
+      # Collapse all four to "Name : Parent" so the word-count parser handles
+      # inheritance correctly and the actor name doesn't include a trailing colon.
+      # Without this, "ACTOR SkullZombie :ZombieMan 6503" (Legion of Bones)
+      # parses to 4 words, doomednum stays -1, and the wipe step is skipped.
+      first_line_with_case = first_line_with_case.gsub(/([A-Za-z0-9_])\s*:\s*([A-Za-z])/, "\\1 : \\2")
 
       name_with_case = first_line_with_case.split[1]?
       next unless name_with_case
@@ -765,8 +767,7 @@ def parse_all_actors(full_dir_list : Array(String), no_touchy : Hash(String, Boo
 
       first_line = lines.first
       # Apply same colon normalization to lowercase line
-      first_line = first_line.gsub(/([a-z0-9_]):([a-z])/, "\\1 : \\2")
-      first_line = first_line.gsub(/([a-z0-9_]):\s/, "\\1 : ")
+      first_line = first_line.gsub(/([a-z0-9_])\s*:\s*([a-z])/, "\\1 : \\2")
       words = first_line.split
 
       # Remove "native" keyword from actor line if present

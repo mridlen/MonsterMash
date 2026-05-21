@@ -79,14 +79,20 @@ end
 #   - the text-lump concatenation pass (in-memory GLDEFS/TEXTURES/etc. content
 #     which also supports #include directives in GZDoom)
 #
-# Resolution rules:
+# Resolution rules (both forms probe the actual on-disk location and only
+# rewrite to a path that exists):
 #   - Pathed include (contains "/" or "\"): strip leading "../" segments,
-#     then prefer mm_actors/<wad>/<path>; fall back to <path> from PK3 root;
-#     leave unchanged if neither exists (with a warning).
-#   - Bare include (no path separators): assume it lives in mm_actors/<wad>/.
-#     If no extension is present, append ".raw" (jeutool's extraction naming).
-#     The "mm_actors/" prefix is forced lowercase even though the rest is
-#     uppercased to match WAD lump conventions.
+#     then prefer mm_actors/<wad>/<path>; fall back to <path> from PK3 root.
+#   - Bare include (no path separators): the referenced lump may have landed
+#     in mm_actors/<wad>/ verbatim (PK3-native include), in mm_actors/<wad>/
+#     as an uppercased .raw file (jeutool-extracted lump), or at the PK3 root
+#     (unknown root file, e.g. *.bm brightmap files). Probe each.
+#
+# If an include cannot be resolved to any existing file, it is COMMENTED OUT
+# rather than left intact. A dangling #include is fatal in GZDoom; commenting
+# it out is non-fatal. This also covers include targets dropped earlier in the
+# pipeline — e.g. a 0-byte include file skipped as a SLADE marker lump (an
+# empty include contributes nothing, so removing it changes nothing at runtime).
 # ─────────────────────────────────────────────────────────────────────────────
 def rewrite_include_paths(content : String, wad_name : String, pk3_build_dir : String) : String
   content.gsub(/^(\s*#include\s+")([^"]+)(")/mi) do |match|
@@ -110,19 +116,99 @@ def rewrite_include_paths(content : String, wad_name : String, pk3_build_dir : S
         log(3, "  Rewriting pathed include (from root): #{inc_file} -> #{stripped}")
         "#{prefix}#{stripped}#{suffix}"
       else
-        log(1, "  Cannot resolve include path: #{inc_file} in #{wad_name} (tried #{candidate_in_actors} and #{candidate_from_root})")
-        match
+        log(1, "  Unresolved #include commented out: #{inc_file} in #{wad_name} (tried #{candidate_in_actors} and #{candidate_from_root})")
+        "// [Monster Mash] removed unresolved #include: #{inc_file}"
       end
     else
-      new_path = "mm_actors/#{wad_name}/#{inc_file}"
-      unless new_path =~ /\.\w+$/
-        new_path += ".raw"
+      # Bare filename — probe the locations a bare include could resolve to.
+      # Each candidate is {pk3-relative-path-to-write, absolute-path-to-test}.
+      actors_verbatim = "mm_actors/#{wad_name}/#{inc_file}"
+      actors_raw_lump = "mm_actors/#{wad_name}/#{inc_file.upcase}.raw"
+      root_verbatim   = inc_file
+
+      if File.exists?(normalize_path(File.join(pk3_build_dir, actors_verbatim)))
+        log(3, "  Rewriting include: #{inc_file} -> #{actors_verbatim}")
+        "#{prefix}#{actors_verbatim}#{suffix}"
+      elsif File.exists?(normalize_path(File.join(pk3_build_dir, actors_raw_lump)))
+        log(3, "  Rewriting include: #{inc_file} -> #{actors_raw_lump}")
+        "#{prefix}#{actors_raw_lump}#{suffix}"
+      elsif File.exists?(normalize_path(File.join(pk3_build_dir, root_verbatim)))
+        log(3, "  Rewriting include (from root): #{inc_file} -> #{root_verbatim}")
+        "#{prefix}#{root_verbatim}#{suffix}"
+      else
+        log(1, "  Unresolved #include commented out: #{inc_file} in #{wad_name}")
+        "// [Monster Mash] removed unresolved #include: #{inc_file}"
       end
-      new_path = new_path.upcase.sub("MM_ACTORS/", "mm_actors/")
-      log(3, "  Rewriting include: #{inc_file} -> #{new_path}")
-      "#{prefix}#{new_path}#{suffix}"
     end
   end
+end
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Rewrite SNDINFO lump references after a file/dir collision rename.
+#
+# Used by the text-lump concatenation pass on each WAD's SNDINFO content.
+# When copy_resource_files detects a file-vs-directory collision under
+# sounds/ (e.g. Legion of Bones ships sounds/pain/ as a folder of variants
+# while another mod ships a bare `pain` lump), the second arriver gets a
+# __<wad> suffix on disk. This function rewrites that WAD's SNDINFO so its
+# logical-name entries point at the renamed lump and the sound still plays.
+#
+# Renames in path_renames are pk3-root-relative ("sounds/pain"); SNDINFO
+# references are sounds/-relative ("pain"), so the "sounds/" prefix is
+# stripped when building the substitution map.
+#
+# A SNDINFO token is rewritten when:
+#   - it equals the original name exactly (bare-lump reference like "pain"), or
+#   - it starts with "<original>/" (path-prefixed reference like "pain/PAIN1")
+#
+# Comment lines (starting with // or #) are left alone so we don't accidentally
+# rewrite something inside the "// ── Begin: <wad>" markers.
+# ─────────────────────────────────────────────────────────────────────────────
+def rewrite_sndinfo_paths(content : String, wad_name : String,
+                          path_renames : Hash(String, Hash(String, String))) : String
+  wad_renames = path_renames[wad_name]?
+  return content if wad_renames.nil? || wad_renames.empty?
+
+  # Filter to sounds/ renames and convert to SNDINFO-relative form
+  snd_renames = Hash(String, String).new
+  wad_renames.each do |orig, new_path|
+    next unless orig.starts_with?("sounds/") && new_path.starts_with?("sounds/")
+    snd_renames[orig.sub("sounds/", "")] = new_path.sub("sounds/", "")
+  end
+  return content if snd_renames.empty?
+
+  rewrite_count = 0
+  result = String.build do |io|
+    content.lines(chomp: false).each do |line|
+      stripped = line.lstrip
+      if stripped.starts_with?("//") || stripped.starts_with?("#")
+        io << line
+        next
+      end
+      rewritten_line = line.gsub(/\S+/) do |token|
+        replaced = token
+        snd_renames.each do |orig, new_name|
+          if replaced == orig
+            replaced = new_name
+            rewrite_count += 1
+            break
+          elsif replaced.starts_with?("#{orig}/")
+            replaced = "#{new_name}#{replaced[orig.size..]}"
+            rewrite_count += 1
+            break
+          end
+        end
+        replaced
+      end
+      io << rewritten_line
+    end
+  end
+
+  if rewrite_count > 0
+    log(2, "  SNDINFO: rewrote #{rewrite_count} reference(s) for #{wad_name} (collision rename)")
+  end
+
+  result
 end
 
 # Recursively process all script files in a directory: strip version directives
@@ -605,6 +691,11 @@ def build_merged_pk3(actordb : Array(Actor), weapon_actor_set : Set(String))
   unknown_files = Hash(String, Array(String)).new                  # filename -> [wad_names]
   wad_decorate_main = Array(Tuple(String, String)).new            # [{wad, pk3_relative_path}]
   wad_zscript_main = Array(Tuple(String, String)).new             # [{wad, pk3_relative_path}]
+  # File-vs-directory collision renames, populated by copy_resource_files.
+  # wad_name -> { pk3_relative_original_path => pk3_relative_renamed_path }
+  # e.g. {"lob" => {"sounds/pain" => "sounds/pain__lob"}}.
+  # Consumed by the SNDINFO rewriter during text-lump concatenation.
+  path_renames = Hash(String, Hash(String, String)).new
   stats_total_files = 0
   stats_total_conflicts = 0
   stats_wads_processed = 0
@@ -742,7 +833,7 @@ def build_merged_pk3(actordb : Array(Actor), weapon_actor_set : Set(String))
           is_sprites = (entry_lower == "sprites")
           is_sounds = (merge_dir == "sounds")
 
-          copied, conflicts = copy_resource_files(entry_path, dest_dir, wad_name, conflict_log, is_sprites, is_sounds)
+          copied, conflicts = copy_resource_files(entry_path, dest_dir, wad_name, conflict_log, path_renames, is_sprites, is_sounds)
           stats_total_files += copied
           stats_total_conflicts += conflicts
           log(3, "  Resources: #{entry_lower}/ — #{copied} files copied, #{conflicts} conflicts")
@@ -754,7 +845,7 @@ def build_merged_pk3(actordb : Array(Actor), weapon_actor_set : Set(String))
           # Redirect these into mm_actors/WadName/ so the master file path stays clear.
           if DECORATE_LUMP_NAMES.includes?(entry_lower)
             dest_dir = normalize_path(File.join(PK3_BUILD_DIR, "mm_actors", wad_name, entry))
-            copied, conflicts = copy_resource_files(entry_path, dest_dir, wad_name, conflict_log)
+            copied, conflicts = copy_resource_files(entry_path, dest_dir, wad_name, conflict_log, path_renames)
             stats_total_files += copied
             stats_total_conflicts += conflicts
             log(2, "  ZSCRIPT/DECORATE subdir: #{entry}/ in #{wad_name} — redirected to mm_actors/#{wad_name}/#{entry}/ (#{copied} files)")
@@ -766,7 +857,7 @@ def build_merged_pk3(actordb : Array(Actor), weapon_actor_set : Set(String))
             unknown_dirs[entry] ||= Array(String).new
             unknown_dirs[entry] << wad_name
             dest_dir = normalize_path(File.join(PK3_BUILD_DIR, "mm_actors", wad_name, entry))
-            copied, conflicts = copy_resource_files(entry_path, dest_dir, wad_name, conflict_log)
+            copied, conflicts = copy_resource_files(entry_path, dest_dir, wad_name, conflict_log, path_renames)
             stats_total_files += copied
             stats_total_conflicts += conflicts
             log(1, "  UNKNOWN DIRECTORY: #{entry}/ in #{wad_name} — redirected to mm_actors/#{wad_name}/#{entry}/ (#{copied} files)")
@@ -958,6 +1049,14 @@ def build_merged_pk3(actordb : Array(Actor), weapon_actor_set : Set(String))
         # like TEXTURES/ANIMDEFS) support #include directives, and without
         # this rewrite the merged lump points at non-existent top-level paths.
         rewritten = rewrite_include_paths(content, wad_name, PK3_BUILD_DIR)  # pk3_merge.cr
+
+        # If this WAD had a sounds/ subdirectory renamed due to a file-vs-dir
+        # collision, rewrite its SNDINFO references to point at the renamed
+        # lump path so the sound still plays at runtime.
+        if canonical_name == "sndinfo"
+          rewritten = rewrite_sndinfo_paths(rewritten, wad_name, path_renames)  # pk3_merge.cr
+        end
+
         io << "// ── Begin: #{wad_name} " << ("─" * [1, 60 - wad_name.size].max) << "\n"
         io << rewritten.strip
         io << "\n"

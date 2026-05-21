@@ -231,6 +231,11 @@ DECORATE_LUMP_NAMES = Set{
 # Returns the canonical name unchanged if there's no dot.
 def lump_base_name(canonical : String) : String
   return canonical unless canonical.includes?(".")
+  # Don't strip ".bm" — it's a real extension for brightmap-definition files
+  # (e.g. "doomdefs.bm" from Legion of Bones), not a jeutool/GZDoom lump
+  # disambiguation suffix. Stripping it would misclassify "doomdefs.bm" as
+  # the DOOMDEFS text lump and merge it into the wrong place.
+  return canonical if canonical.split(".").last.downcase == "bm"
   canonical.split(".").first
 end
 
@@ -244,14 +249,21 @@ end
 
 # Copy all files from src_dir into dest_dir (flat merge).
 # Logs conflicts when a file already exists with different content.
+# Detects file-vs-directory collisions (e.g. one WAD ships sounds/pain/ as a
+# folder of variants while another ships a bare `pain` lump). The second
+# arriver loses: its incoming side gets a __<wad> suffix and the rename is
+# recorded in path_renames so SNDINFO references can be rewritten downstream.
 # Returns count of files copied and conflicts detected.
 def copy_resource_files(src_dir : String, dest_dir : String, wad_name : String,
                         conflict_log : Array(String),
+                        path_renames : Hash(String, Hash(String, String)),
                         is_sprites_dir : Bool = false,
                         strip_raw_ext : Bool = false) : {Int32, Int32}
   copied = 0
   conflicts = 0
   Dir.mkdir_p(dest_dir)
+
+  pk3_root_prefix = "#{PK3_BUILD_DIR}/"
 
   Dir.each_child(src_dir) do |filename|
     src_path = normalize_path(File.join(src_dir, filename))
@@ -269,11 +281,30 @@ def copy_resource_files(src_dir : String, dest_dir : String, wad_name : String,
     dest_path = normalize_path(File.join(dest_dir, dest_filename))
 
     if File.directory?(src_path)
+      # File-vs-dir collision (dir arriving second):
+      # An earlier WAD already placed a FILE at the path where we want to
+      # create our subdirectory. We can't have both, so rename our incoming
+      # subdir with a __<wad> suffix and record the rename.
+      sub_dest = normalize_path(File.join(dest_dir, filename))
+      if File.file?(sub_dest)
+        new_subdir = "#{filename}__#{wad_name}"
+        original_rel = sub_dest.sub(pk3_root_prefix, "")
+        sub_dest = normalize_path(File.join(dest_dir, new_subdir))
+        renamed_rel = sub_dest.sub(pk3_root_prefix, "")
+        path_renames[wad_name] ||= Hash(String, String).new
+        path_renames[wad_name][original_rel] = renamed_rel
+        msg = "COLLISION: directory '#{filename}/' in #{wad_name} clashes with " \
+              "existing file at #{original_rel} — renamed to '#{new_subdir}/' " \
+              "(SNDINFO references rewritten)"
+        conflict_log << msg
+        log(1, msg)
+        conflicts += 1
+      end
+
       # Recurse into subdirectories (e.g., filter/doom.id.doom2/)
       sub_copied, sub_conflicts = copy_resource_files(
-        src_path,
-        normalize_path(File.join(dest_dir, filename)),
-        wad_name, conflict_log, is_sprites_dir, strip_raw_ext
+        src_path, sub_dest,
+        wad_name, conflict_log, path_renames, is_sprites_dir, strip_raw_ext
       )
       copied += sub_copied
       conflicts += sub_conflicts
@@ -308,6 +339,33 @@ def copy_resource_files(src_dir : String, dest_dir : String, wad_name : String,
     end
 
     if File.exists?(dest_path)
+      # File-vs-dir collision (file arriving second):
+      # An earlier WAD already placed a DIRECTORY at this path. We can't
+      # SHA-compare against a directory (would throw AccessDeniedError on
+      # Windows), so rename our incoming file with a __<wad> suffix and
+      # record the rename. Append .lmp if the lump has no extension so the
+      # rename is unambiguous on disk.
+      if File.directory?(dest_path)
+        ext = File.extname(dest_filename)
+        base = File.basename(dest_filename, ext)
+        ext_for_rename = ext.empty? ? ".lmp" : ext
+        new_filename = "#{base}__#{wad_name}#{ext_for_rename}"
+        new_dest_path = normalize_path(File.join(dest_dir, new_filename))
+        original_rel = dest_path.sub(pk3_root_prefix, "")
+        renamed_rel = new_dest_path.sub(pk3_root_prefix, "")
+        path_renames[wad_name] ||= Hash(String, String).new
+        path_renames[wad_name][original_rel] = renamed_rel
+        msg = "COLLISION: file '#{dest_filename}' in #{wad_name} clashes with " \
+              "existing directory at #{original_rel} — renamed to '#{new_filename}' " \
+              "(SNDINFO references rewritten)"
+        conflict_log << msg
+        log(1, msg)
+        conflicts += 1
+        FileUtils.cp(src_path, new_dest_path)
+        copied += 1
+        next
+      end
+
       # File already exists — check if identical
       src_sha = Digest::SHA256.new.file(src_path).hexfinal
       dest_sha = Digest::SHA256.new.file(dest_path).hexfinal
