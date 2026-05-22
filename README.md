@@ -26,6 +26,10 @@ However, MonsterMash is primarily designed to work as a plugin for **Obsidian** 
 
 **Long answer**: MonsterMash is designed for a different use case than most Doom mods. While most mods function as randomizers or replacers, MonsterMash takes a unique approach. It allows you to fully customize your monster and weapon loadout for procedural level generation. If you want to experiment with other mods, you're welcome to try, but compatibility is not guaranteed.
 
+### Will this work with Brutal Doom?
+
+No, unfortunately, I ran into issues with Brutal Doom that were hardcoded ACS and would not resolve.
+
 ## Known Issues
 
 - **Dropbox Compatibility**: If you install MonsterMash with Obsidian living in Dropbox, you may encounter issues. While attempts have been made to mitigate these problems, compatibility is not fully guaranteed.
