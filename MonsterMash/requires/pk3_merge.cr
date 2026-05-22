@@ -211,6 +211,134 @@ def rewrite_sndinfo_paths(content : String, wad_name : String,
   result
 end
 
+# ─────────────────────────────────────────────────────────────────────────────
+# ANIMDEFS texture validation.
+#
+# An ANIMDEFS animation that references a texture not present in the loaded
+# data makes GZDoom fatally error ("Unknown texture X") on load — a single
+# missing frame from one source mod kills the whole merged PK3. Total-conversion
+# mods (e.g. Brutal Doom) ship ANIMDEFS referencing assets they don't bundle.
+#
+# build_texture_name_set collects every texture/graphic/flat/sprite name from
+# the merged PK3 build dir and the extracted IWADs. validate_animdefs walks the
+# merged ANIMDEFS and removes references that cannot resolve:
+#   - "pic <name>" frame whose texture is missing      -> frame dropped
+#   - flat/texture animation left with no valid frames -> whole block dropped
+#   - "warp"/"warp2 <flat|texture> <name>" whose texture is missing -> dropped
+# Header targets (the "flat NAME"/"texture NAME" line) are NOT validated — a
+# missing animation target is only a non-fatal warning in GZDoom, unlike "pic".
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Uppercased, extension-stripped names of every resource file available to the
+# merged PK3 (its own build dir plus the extracted IWADs).
+def build_texture_name_set : Set(String)
+  names = Set(String).new
+  ["#{PK3_BUILD_DIR}/**/*", "#{IWADS_EXTRACTED_DIR}/**/*"].each do |pattern|
+    Dir.glob(pattern).each do |path|
+      next if File.directory?(path)
+      base = File.basename(path)
+      ext = File.extname(base)
+      base = base[0...(base.size - ext.size)] unless ext.empty?
+      names << base.upcase
+    end
+  end
+  names
+end
+
+# Remove ANIMDEFS references to textures that are not present (see above).
+def validate_animdefs(content : String, available : Set(String)) : String
+  # A texture reference resolves if it (or its extension-stripped form) is
+  # a known resource name.
+  resolvable = ->(name : String) : Bool {
+    n = name.upcase
+    return true if available.includes?(n)
+    dot = n.rindex('.')
+    !dot.nil? && available.includes?(n[0...dot])
+  }
+
+  lines = content.lines(chomp: false)
+  dropped_blocks = 0
+  dropped_pics = 0
+  dropped_warps = 0
+
+  result = String.build do |io|
+    i = 0
+    while i < lines.size
+      raw = lines[i]
+      tokens = raw.strip.split(/\s+/)
+      keyword = tokens.first?.try(&.downcase) || ""
+
+      if keyword == "flat" || keyword == "texture"
+        # Gather the animation body: every line up to the next animation
+        # header, warp directive, per-WAD section marker, or end of file.
+        body = [] of String
+        j = i + 1
+        while j < lines.size
+          body_strip = lines[j].strip
+          body_keyword = body_strip.split(/\s+/).first?.try(&.downcase) || ""
+          break if body_keyword == "flat" || body_keyword == "texture"
+          break if body_keyword == "warp" || body_keyword == "warp2"
+          break if body_strip.starts_with?("// ──")
+          body << lines[j]
+          j += 1
+        end
+
+        # Count resolvable vs missing "pic" frames in the body.
+        valid_pics = 0
+        missing_pics = 0
+        body.each do |body_line|
+          frame = body_line.strip.split(/\s+/)
+          next unless frame.first?.try(&.downcase) == "pic"
+          tex = frame[1]?
+          next if tex.nil?
+          next unless tex.to_i?.nil?   # numeric arg = frame offset, not a name
+          resolvable.call(tex) ? (valid_pics += 1) : (missing_pics += 1)
+        end
+
+        if valid_pics == 0 && missing_pics > 0
+          # No usable frames left — drop the entire animation block.
+          io << "// [Monster Mash] dropped animation (missing textures): " << raw.strip << "\n"
+          dropped_blocks += 1
+        else
+          # Keep the block, dropping only the individual missing frames.
+          io << raw
+          body.each do |body_line|
+            frame = body_line.strip.split(/\s+/)
+            if frame.first?.try(&.downcase) == "pic"
+              tex = frame[1]?
+              if !tex.nil? && tex.to_i?.nil? && !resolvable.call(tex)
+                dropped_pics += 1
+                next
+              end
+            end
+            io << body_line
+          end
+        end
+        i = j
+      elsif keyword == "warp" || keyword == "warp2"
+        # Single-line warp animation: "warp <flat|texture> <name> ...".
+        tex = tokens[2]?
+        if !tex.nil? && !resolvable.call(tex)
+          # Dropped silently — a per-line comment would flood the lump.
+          dropped_warps += 1
+        else
+          io << raw
+        end
+        i += 1
+      else
+        io << raw
+        i += 1
+      end
+    end
+  end
+
+  if dropped_blocks > 0 || dropped_pics > 0 || dropped_warps > 0
+    log(2, "  ANIMDEFS: dropped #{dropped_blocks} animation block(s), #{dropped_pics} frame(s), #{dropped_warps} warp(s) — missing textures")
+  end
+
+  result
+end
+
 # Recursively process all script files in a directory: strip version directives
 # and rewrite #include paths for PK3 structure.
 def process_script_dir(dir : String, wad_name : String, pk3_build_dir : String)
@@ -1139,6 +1267,12 @@ def build_merged_pk3(actordb : Array(Actor), weapon_actor_set : Set(String))
       end
     end
 
+    # Post-process ANIMDEFS: drop animations whose textures are missing.
+    # A single unresolved "pic" reference makes GZDoom fatally error on load.
+    if canonical_name == "animdefs"
+      merged = validate_animdefs(merged, build_texture_name_set)  # pk3_merge.cr
+    end
+
     # Skip KEYCONF — weapon slots are now assigned via Weapon.SlotNumber
     # directly in DECORATE/ZSCRIPT files by inject_weapon_slot_numbers().
     if canonical_name == "keyconf"
@@ -1150,6 +1284,7 @@ def build_merged_pk3(actordb : Array(Actor), weapon_actor_set : Set(String))
     #  - DoomEdNums: will be reassigned via our generated block
     #  - ClearSkills + Skill blocks: override Obsidian/engine skill definitions
     #  - Map blocks: override Obsidian-generated map definitions
+    #  - (Add)EventHandlers: register mod-specific ZScript event handler classes
     if canonical_name == "mapinfo" || canonical_name == "zmapinfo"
       stripped_lines = [] of String
       in_block = false
@@ -1162,6 +1297,16 @@ def build_merged_pk3(actordb : Array(Actor), weapon_actor_set : Set(String))
         # Skip ClearSkills standalone directive
         if !in_block && trimmed =~ /^ClearSkills\s*$/i
           strip_count["ClearSkills"] += 1
+          next
+        end
+
+        # Skip event-handler registrations (AddEventHandlers / EventHandlers).
+        # These name ZScript event handler classes from the source mod. The
+        # mod's ZScript may not survive the merge intact, and GZDoom treats an
+        # unknown handler class as a FATAL error. Event handlers are global
+        # gameplay hooks, not needed for Obsidian's level generation.
+        if !in_block && trimmed =~ /^(Add)?EventHandlers\b/i
+          strip_count["EventHandlers"] += 1
           next
         end
 
